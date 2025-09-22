@@ -96,6 +96,12 @@ class CustomerContract:
                     "acquisition_ts must be a datetime instance",
                     {"record_index": idx, "value": acquisition_ts},
                 )
+            now = datetime.now(tz=acquisition_ts.tzinfo)
+            if acquisition_ts.year < 1970 or acquisition_ts > now:
+                raise ValueError(
+                    "acquisition_ts appears to be outside acceptable range",
+                    {"record_index": idx, "value": acquisition_ts.isoformat()},
+                )
 
             is_visible = bool(data.get("is_visible", True))
             if self.enforce_visibility and not is_visible:

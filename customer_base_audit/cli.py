@@ -11,7 +11,16 @@ from typing import Any
 from customer_base_audit.foundation import CustomerDataMartBuilder, PeriodGranularity
 
 
+MAX_INPUT_BYTES = 25 * 1024 * 1024  # 25 MiB cap to avoid accidental OOM
+
+
 def _load_transactions(path: Path) -> list[dict[str, Any]]:
+    resolved = path.resolve()
+    size = resolved.stat().st_size
+    if size > MAX_INPUT_BYTES:
+        raise ValueError(
+            f"Input file {resolved} is {size} bytes; exceeds limit of {MAX_INPUT_BYTES} bytes"
+        )
     with path.open("r", encoding="utf-8") as fh:
         payload = json.load(fh)
     if not isinstance(payload, list):  # pragma: no cover - defensive
@@ -50,9 +59,17 @@ def build_data_mart_cli(argv: list[str] | None = None) -> int:
     mart = builder.build(transactions)
 
     if args.output:
+        output_path = args.output.resolve()
+        cwd = Path.cwd().resolve()
+        try:
+            output_path.relative_to(cwd)
+        except ValueError:
+            raise ValueError(
+                f"Output path {output_path} must reside within the current working directory"
+            )
         payload = mart.as_dict()
-        args.output.parent.mkdir(parents=True, exist_ok=True)
-        with args.output.open("w", encoding="utf-8") as fh:
+        output_path.parent.mkdir(parents=True, exist_ok=True)
+        with output_path.open("w", encoding="utf-8") as fh:
             json.dump(payload, fh, indent=2, sort_keys=True)
     else:  # stdout fallback enables piping in shell usage.
         json.dump(mart.as_dict(), fp=sys.stdout, indent=2, sort_keys=True)

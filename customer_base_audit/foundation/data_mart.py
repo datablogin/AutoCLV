@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta
+from decimal import Decimal, ROUND_HALF_UP
 from enum import Enum
 from typing import Iterable, Mapping, Sequence
 
@@ -125,14 +126,42 @@ class CustomerDataMartBuilder:
                 )
 
             quantity = int(txn.get("quantity", 1) or 0)
-            unit_price = float(txn.get("unit_price", 0.0))
-            line_total = float(txn.get("line_total", unit_price * quantity))
+            if quantity < 0:
+                raise ValueError(
+                    "Transaction quantity cannot be negative",
+                    {"index": idx, "quantity": quantity},
+                )
+
+            unit_price = Decimal(str(txn.get("unit_price", 0.0)))
+            if unit_price < 0:
+                raise ValueError(
+                    "Unit price cannot be negative",
+                    {"index": idx, "unit_price": unit_price},
+                )
+
+            if "line_total" in txn:
+                line_total = Decimal(str(txn["line_total"]))
+            else:
+                line_total = unit_price * quantity
+            if line_total < 0:
+                raise ValueError(
+                    "Line total cannot be negative",
+                    {"index": idx, "line_total": line_total},
+                )
 
             if "line_margin" in txn:
-                line_margin = float(txn["line_margin"])
+                line_margin = Decimal(str(txn["line_margin"]))
             else:
-                unit_cost = float(txn.get("unit_cost", 0.0))
-                unit_margin = float(txn.get("unit_margin", unit_price - unit_cost))
+                unit_cost = Decimal(str(txn.get("unit_cost", 0.0)))
+                if unit_cost < 0:
+                    raise ValueError(
+                        "Unit cost cannot be negative",
+                        {"index": idx, "unit_cost": unit_cost},
+                    )
+                if "unit_margin" in txn:
+                    unit_margin = Decimal(str(txn["unit_margin"]))
+                else:
+                    unit_margin = unit_price - unit_cost
                 line_margin = unit_margin * quantity
 
             product_id = str(txn.get("product_id", ""))
@@ -144,8 +173,8 @@ class CustomerDataMartBuilder:
                     "order_ts": line_ts,
                     "first_item_ts": line_ts,
                     "last_item_ts": line_ts,
-                    "total_spend": 0.0,
-                    "total_margin": 0.0,
+                    "total_spend": Decimal("0"),
+                    "total_margin": Decimal("0"),
                     "total_quantity": 0,
                     "products": set(),
                 },
@@ -169,8 +198,16 @@ class CustomerDataMartBuilder:
                     order_ts=payload["order_ts"],
                     first_item_ts=payload["first_item_ts"],
                     last_item_ts=payload["last_item_ts"],
-                    total_spend=round(payload["total_spend"], 2),
-                    total_margin=round(payload["total_margin"], 2),
+                    total_spend=float(
+                        payload["total_spend"].quantize(
+                            Decimal("0.01"), rounding=ROUND_HALF_UP
+                        )
+                    ),
+                    total_margin=float(
+                        payload["total_margin"].quantize(
+                            Decimal("0.01"), rounding=ROUND_HALF_UP
+                        )
+                    ),
                     total_quantity=int(payload["total_quantity"]),
                     distinct_products=len(payload["products"]),
                 )
@@ -182,35 +219,53 @@ class CustomerDataMartBuilder:
     def _aggregate_periods(
         self, orders: Iterable[OrderAggregation], granularity: PeriodGranularity
     ) -> list[PeriodAggregation]:
-        buckets: dict[tuple[str, datetime], PeriodAggregation] = {}
+        buckets: dict[tuple[str, datetime], dict[str, object]] = {}
         for order in orders:
             period_start, period_end = _normalise_period(order.order_ts, granularity)
             key = (order.customer_id, period_start)
             if key not in buckets:
-                buckets[key] = PeriodAggregation(
-                    customer_id=order.customer_id,
-                    period_start=period_start,
-                    period_end=period_end,
-                    total_orders=0,
-                    total_spend=0.0,
-                    total_margin=0.0,
-                    total_quantity=0,
-                )
+                buckets[key] = {
+                    "customer_id": order.customer_id,
+                    "period_start": period_start,
+                    "period_end": period_end,
+                    "total_orders": 0,
+                    "total_spend": Decimal("0"),
+                    "total_margin": Decimal("0"),
+                    "total_quantity": 0,
+                }
 
             bucket = buckets[key]
-            bucket.total_orders += 1
-            bucket.total_spend += order.total_spend
-            bucket.total_margin += order.total_margin
-            bucket.total_quantity += order.total_quantity
+            bucket["total_orders"] += 1
+            bucket["total_spend"] += Decimal(str(order.total_spend))
+            bucket["total_margin"] += Decimal(str(order.total_margin))
+            bucket["total_quantity"] += order.total_quantity
 
-        aggregates = sorted(
-            buckets.values(),
+        aggregates: list[PeriodAggregation] = []
+        for payload in buckets.values():
+            aggregates.append(
+                PeriodAggregation(
+                    customer_id=payload["customer_id"],
+                    period_start=payload["period_start"],
+                    period_end=payload["period_end"],
+                    total_orders=payload["total_orders"],
+                    total_spend=float(
+                        payload["total_spend"].quantize(
+                            Decimal("0.01"), rounding=ROUND_HALF_UP
+                        )
+                    ),
+                    total_margin=float(
+                        payload["total_margin"].quantize(
+                            Decimal("0.01"), rounding=ROUND_HALF_UP
+                        )
+                    ),
+                    total_quantity=payload["total_quantity"],
+                )
+            )
+
+        return sorted(
+            aggregates,
             key=lambda aggregation: (aggregation.customer_id, aggregation.period_start),
         )
-        for aggregate in aggregates:
-            aggregate.total_spend = round(aggregate.total_spend, 2)
-            aggregate.total_margin = round(aggregate.total_margin, 2)
-        return aggregates
 
 
 def _normalise_period(
@@ -224,13 +279,17 @@ def _normalise_period(
         period_end = next_month
     elif granularity is PeriodGranularity.QUARTER:
         quarter = (dt.month - 1) // 3
-        month = quarter * 3 + 1
+        start_month = quarter * 3 + 1
         period_start = dt.replace(
-            month=month, day=1, hour=0, minute=0, second=0, microsecond=0
+            month=start_month, day=1, hour=0, minute=0, second=0, microsecond=0
         )
-        period_end = (period_start.replace(day=28) + timedelta(days=4)).replace(day=1)
-        period_end = (period_end.replace(day=28) + timedelta(days=4)).replace(day=1)
-        period_end = (period_end.replace(day=28) + timedelta(days=4)).replace(day=1)
+        next_quarter_month = start_month + 3
+        if next_quarter_month > 12:
+            period_end = period_start.replace(
+                year=period_start.year + 1, month=next_quarter_month - 12
+            )
+        else:
+            period_end = period_start.replace(month=next_quarter_month)
     elif granularity is PeriodGranularity.YEAR:
         period_start = dt.replace(
             month=1, day=1, hour=0, minute=0, second=0, microsecond=0

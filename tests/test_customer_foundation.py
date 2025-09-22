@@ -64,6 +64,20 @@ def test_customer_contract_rejects_missing_fields():
         contract.validate_records([{"customer_id": "1"}], source_system="crm")
 
 
+def test_customer_contract_rejects_out_of_range_timestamp():
+    contract = CustomerContract()
+    with pytest.raises(ValueError):
+        contract.validate_records(
+            [
+                {
+                    "customer_id": "666",
+                    "acquisition_ts": datetime(1900, 1, 1),
+                }
+            ],
+            source_system="crm",
+        )
+
+
 @pytest.fixture
 def sample_transactions():
     return [
@@ -92,6 +106,14 @@ def sample_transactions():
             "quantity": 3,
             "unit_price": 10.0,
         },
+        {
+            "order_id": "C-1",
+            "customer_id": "789",
+            "event_ts": datetime(2024, 12, 15, 9, 0),
+            "product_id": "SKU-4",
+            "quantity": 1,
+            "unit_price": 50.0,
+        },
     ]
 
 
@@ -99,7 +121,7 @@ def test_data_mart_builder_orders(sample_transactions):
     builder = CustomerDataMartBuilder(period_granularities=[PeriodGranularity.QUARTER])
     mart = builder.build(sample_transactions)
 
-    assert len(mart.orders) == 2
+    assert len(mart.orders) == 3
     order = mart.orders[0]
     assert order.order_id == "A-1"
     assert order.customer_id == "123"
@@ -114,7 +136,7 @@ def test_data_mart_builder_periods(sample_transactions):
     mart = builder.build(sample_transactions)
 
     periods = mart.periods[PeriodGranularity.QUARTER]
-    assert len(periods) == 2
+    assert len(periods) == 3
     first = periods[0]
     assert first.customer_id == "123"
     assert first.total_orders == 1
@@ -127,6 +149,10 @@ def test_data_mart_builder_periods(sample_transactions):
     assert second.total_orders == 1
     assert second.total_spend == 30.0
     assert second.total_margin == pytest.approx(30.0)
+
+    third = periods[2]
+    assert third.customer_id == "789"
+    assert third.period_end == datetime(2025, 1, 1)
 
 
 def test_data_mart_builder_multiple_periods(sample_transactions):
@@ -141,7 +167,24 @@ def test_data_mart_builder_multiple_periods(sample_transactions):
     }
 
     yearly = mart.periods[PeriodGranularity.YEAR]
-    assert len(yearly) == 2
+    assert len(yearly) == 3
     totals = {aggregate.customer_id: aggregate for aggregate in yearly}
     assert totals["123"].total_spend == 75.0
     assert totals["456"].total_spend == 30.0
+    assert totals["789"].total_spend == 50.0
+
+
+def test_aggregate_orders_rejects_negative_price():
+    builder = CustomerDataMartBuilder()
+    with pytest.raises(ValueError):
+        builder.build(
+            [
+                {
+                    "order_id": "NEG-1",
+                    "customer_id": "321",
+                    "event_ts": datetime(2024, 5, 1, 12, 0),
+                    "quantity": 1,
+                    "unit_price": -10,
+                }
+            ]
+        )
