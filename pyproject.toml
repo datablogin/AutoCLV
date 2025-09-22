@@ -4,3 +4,13 @@ version = "0.1.0"
 description = "Add your description here"
 requires-python = ">=3.12"
 dependencies = []
+
+[tool.pytest.ini_options]
+addopts = "--ignore=analytics"
+
+[tool.setuptools]
+package-dir = {"" = "."}
+
+[tool.setuptools.packages.find]
+include = ["customer_base_audit*"]
+exclude = ["analytics", "analytics.*"]
