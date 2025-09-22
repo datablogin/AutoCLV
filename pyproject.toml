@@ -7,3 +7,10 @@ dependencies = []
 
 [tool.pytest.ini_options]
 addopts = "--ignore=analytics"
+
+[tool.setuptools]
+package-dir = {"" = "."}
+
+[tool.setuptools.packages.find]
+include = ["customer_base_audit*"]
+exclude = ["analytics", "analytics.*"]

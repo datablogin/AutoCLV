@@ -49,7 +49,9 @@ class CustomerDataMart:
     """Container for aggregated order and period level data."""
 
     orders: list[OrderAggregation]
-    periods: dict[PeriodGranularity, list[PeriodAggregation]] = field(default_factory=dict)
+    periods: dict[PeriodGranularity, list[PeriodAggregation]] = field(
+        default_factory=dict
+    )
 
     def as_dict(self) -> dict[str, list[dict[str, object]]]:
         """Return JSON-serialisable representation of the mart."""
@@ -102,14 +104,18 @@ class CustomerDataMartBuilder:
         return CustomerDataMart(orders=orders, periods=periods)
 
     @staticmethod
-    def _aggregate_orders(transactions: Iterable[Mapping[str, object]]) -> list[OrderAggregation]:
+    def _aggregate_orders(
+        transactions: Iterable[Mapping[str, object]],
+    ) -> list[OrderAggregation]:
         grouped: dict[str, dict[str, object]] = {}
         for idx, txn in enumerate(transactions):
             try:
                 order_id = str(txn["order_id"])
                 customer_id = str(txn["customer_id"])
             except KeyError as exc:  # pragma: no cover - defensive
-                raise KeyError(f"Transaction at index {idx} missing key {exc.args[0]}") from exc
+                raise KeyError(
+                    f"Transaction at index {idx} missing key {exc.args[0]}"
+                ) from exc
 
             line_ts = txn.get("event_ts") or txn.get("order_ts")
             if not isinstance(line_ts, datetime):
@@ -219,12 +225,16 @@ def _normalise_period(
     elif granularity is PeriodGranularity.QUARTER:
         quarter = (dt.month - 1) // 3
         month = quarter * 3 + 1
-        period_start = dt.replace(month=month, day=1, hour=0, minute=0, second=0, microsecond=0)
+        period_start = dt.replace(
+            month=month, day=1, hour=0, minute=0, second=0, microsecond=0
+        )
         period_end = (period_start.replace(day=28) + timedelta(days=4)).replace(day=1)
         period_end = (period_end.replace(day=28) + timedelta(days=4)).replace(day=1)
         period_end = (period_end.replace(day=28) + timedelta(days=4)).replace(day=1)
     elif granularity is PeriodGranularity.YEAR:
-        period_start = dt.replace(month=1, day=1, hour=0, minute=0, second=0, microsecond=0)
+        period_start = dt.replace(
+            month=1, day=1, hour=0, minute=0, second=0, microsecond=0
+        )
         period_end = period_start.replace(year=period_start.year + 1)
     else:  # pragma: no cover - defensive
         raise ValueError(f"Unsupported granularity: {granularity}")

@@ -122,7 +122,9 @@ class CustomerContract:
             )
         return canonical
 
-    def merge(self, identifiers: Iterable[CustomerIdentifier]) -> list[CustomerIdentifier]:
+    def merge(
+        self, identifiers: Iterable[CustomerIdentifier]
+    ) -> list[CustomerIdentifier]:
         """Merge identifiers from multiple sources into canonical records.
 
         The merge preserves the earliest acquisition timestamp and marks
@@ -140,7 +142,10 @@ class CustomerContract:
 
             acquisition_ts = min(existing.acquisition_ts, identifier.acquisition_ts)
             is_visible = existing.is_visible or identifier.is_visible
-            merged_metadata = {**existing.normalised_metadata(), **identifier.normalised_metadata()}
+            merged_metadata = {
+                **existing.normalised_metadata(),
+                **identifier.normalised_metadata(),
+            }
             merged[identifier.customer_id] = CustomerIdentifier(
                 customer_id=existing.customer_id,
                 acquisition_ts=acquisition_ts,
@@ -151,7 +156,9 @@ class CustomerContract:
 
         return list(merged.values())
 
-    def to_serialisable(self, identifiers: Iterable[CustomerIdentifier]) -> list[dict[str, Any]]:
+    def to_serialisable(
+        self, identifiers: Iterable[CustomerIdentifier]
+    ) -> list[dict[str, Any]]:
         """Convert identifiers into JSON-serialisable dictionaries."""
 
         payload: list[dict[str, Any]] = []

@@ -23,7 +23,9 @@ def build_data_mart_cli(argv: list[str] | None = None) -> int:
     """Build order and customer-period aggregations from a JSON file."""
 
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("input", type=Path, help="Path to JSON file with raw transactions")
+    parser.add_argument(
+        "input", type=Path, help="Path to JSON file with raw transactions"
+    )
     parser.add_argument(
         "--period",
         dest="periods",
