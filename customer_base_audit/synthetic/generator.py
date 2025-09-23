@@ -50,6 +50,23 @@ class ScenarioConfig:
     quantity_mean: float = 1.3
     seed: Optional[int] = None
 
+    def __post_init__(self) -> None:  # type: ignore[override]
+        # Validate fields to avoid silent misconfiguration
+        if self.promo_month is not None and not (1 <= int(self.promo_month) <= 12):
+            raise ValueError("promo_month must be in 1..12 or None")
+        if self.promo_uplift < 1.0:
+            raise ValueError("promo_uplift must be >= 1.0")
+        if self.churn_hazard < 0.0 or self.churn_hazard > 1.0:
+            raise ValueError("churn_hazard must be between 0.0 and 1.0")
+        if self.base_orders_per_month < 0.0:
+            raise ValueError("base_orders_per_month must be >= 0.0")
+        if self.mean_unit_price <= 0.0:
+            raise ValueError("mean_unit_price must be > 0.0")
+        if not (0.0 < self.price_variability <= 1.0):
+            raise ValueError("price_variability must be in (0.0, 1.0]")
+        if self.quantity_mean <= 0.0:
+            raise ValueError("quantity_mean must be > 0.0")
+
 
 def _month_range(start: date, end: date) -> List[date]:
     cur = date(start.year, start.month, 1)
@@ -149,8 +166,8 @@ def generate_transactions(
     transactions: List[Transaction] = []
     order_seq = 1
 
-    # Track active customers with simple per-month churn
-    active = {c.customer_id: c for c in customers if c.acquisition_date <= end}
+    # Track active customers. Add newly acquired customers progressively.
+    active: dict[str, Customer] = {}
 
     for month_start in months:
         month_end = (
@@ -172,13 +189,21 @@ def generate_transactions(
             )
             launch_uplift = 1.0 + min(0.75, 0.05 * months_since)
 
-        # Per-month churn applied to currently active customers
+        # Add newly acquired customers effective this month
+        for cust in customers:
+            if cust.customer_id in active:
+                continue
+            if cust.acquisition_date < month_end:
+                active[cust.customer_id] = cust
+
+        # Per-month churn applied only to customers acquired before this month starts
         if scenario.churn_hazard > 0:
-            to_remove = []
+            to_remove: list[str] = []
             for cid, cust in active.items():
-                if cust.acquisition_date > month_end:
-                    continue
-                if rng.random() < scenario.churn_hazard:
+                if (
+                    cust.acquisition_date < month_start
+                    and rng.random() < scenario.churn_hazard
+                ):
                     to_remove.append(cid)
             for cid in to_remove:
                 active.pop(cid, None)
@@ -195,13 +220,32 @@ def generate_transactions(
                 launch_uplift,
             )
             for _ in range(num_orders):
-                # Event in the middle of the month +/- random jitter
+                # Event time: unbiased within the calendar month
+                # Compute last day of the month via first day of next month minus one day
+                next_month = (
+                    date(month_start.year + 1, 1, 1)
+                    if month_start.month == 12
+                    else date(month_start.year, month_start.month + 1, 1)
+                )
+                last_day = (next_month - timedelta(days=1)).day
+                # Respect acquisition day if in the same month
+                min_day = 1
+                if (
+                    cust.acquisition_date.year == month_start.year
+                    and cust.acquisition_date.month == month_start.month
+                ):
+                    min_day = max(1, cust.acquisition_date.day)
+                day = rng.randrange(min_day, last_day + 1)
+                hour = rng.randrange(0, 24)
+                minute = rng.randrange(0, 60)
+                second = rng.randrange(0, 60)
                 mid = datetime(
                     month_start.year,
                     month_start.month,
-                    min(28, 15 + rng.randrange(0, 10)),
-                    10 + rng.randrange(0, 9),
-                    rng.randrange(0, 60),
+                    day,
+                    hour,
+                    minute,
+                    second,
                 )
                 order_id = f"O-{order_seq}"
                 order_seq += 1
