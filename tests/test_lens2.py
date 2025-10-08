@@ -32,9 +32,7 @@ class TestCustomerMigration:
 
     def test_retained_and_churned_overlap_raises_error(self):
         """Overlap between retained and churned should raise ValueError."""
-        with pytest.raises(
-            ValueError, match="cannot be both retained and churned"
-        ):
+        with pytest.raises(ValueError, match="cannot be both retained and churned"):
             CustomerMigration(
                 retained=frozenset(["C1", "C2"]),
                 churned=frozenset(["C2", "C3"]),
@@ -44,9 +42,7 @@ class TestCustomerMigration:
 
     def test_retained_and_new_overlap_raises_error(self):
         """Overlap between retained and new should raise ValueError."""
-        with pytest.raises(
-            ValueError, match="cannot be both retained and new"
-        ):
+        with pytest.raises(ValueError, match="cannot be both retained and new"):
             CustomerMigration(
                 retained=frozenset(["C1", "C2"]),
                 churned=frozenset(["C3"]),
@@ -56,9 +52,7 @@ class TestCustomerMigration:
 
     def test_churned_and_new_overlap_raises_error(self):
         """Overlap between churned and new should raise ValueError."""
-        with pytest.raises(
-            ValueError, match="cannot be both churned and new"
-        ):
+        with pytest.raises(ValueError, match="cannot be both churned and new"):
             CustomerMigration(
                 retained=frozenset(["C1"]),
                 churned=frozenset(["C2"]),
@@ -138,7 +132,10 @@ class TestLens2Metrics:
         """Retention rate outside 0-100 should raise ValueError."""
         lens1 = self.create_valid_lens1_metrics()
         migration = CustomerMigration(
-            retained=frozenset(), churned=frozenset(), new=frozenset(), reactivated=frozenset()
+            retained=frozenset(),
+            churned=frozenset(),
+            new=frozenset(),
+            reactivated=frozenset(),
         )
 
         with pytest.raises(ValueError, match="Retention rate must be 0-100"):
@@ -158,7 +155,10 @@ class TestLens2Metrics:
         """Retention + churn must equal 100% (within tolerance)."""
         lens1 = self.create_valid_lens1_metrics()
         migration = CustomerMigration(
-            retained=frozenset(), churned=frozenset(), new=frozenset(), reactivated=frozenset()
+            retained=frozenset(),
+            churned=frozenset(),
+            new=frozenset(),
+            reactivated=frozenset(),
         )
 
         with pytest.raises(
@@ -267,12 +267,18 @@ class TestAnalyzePeriodComparison:
         ]
         period2 = [
             self.create_rfm("C1", 3, Decimal("180"), datetime(2023, 12, 31)),
-            self.create_rfm("C2", 1, Decimal("100"), datetime(2023, 12, 31)),  # Reactivated
-            self.create_rfm("C3", 1, Decimal("150"), datetime(2023, 12, 31)),  # Truly new
+            self.create_rfm(
+                "C2", 1, Decimal("100"), datetime(2023, 12, 31)
+            ),  # Reactivated
+            self.create_rfm(
+                "C3", 1, Decimal("150"), datetime(2023, 12, 31)
+            ),  # Truly new
         ]
         all_history = ["C1", "C2"]  # C2 was seen before period1
 
-        lens2 = analyze_period_comparison(period1, period2, all_customer_history=all_history)
+        lens2 = analyze_period_comparison(
+            period1, period2, all_customer_history=all_history
+        )
 
         assert "C2" in lens2.migration.reactivated
         assert "C3" not in lens2.migration.reactivated
@@ -486,13 +492,17 @@ class TestAnalyzePeriodComparison:
         """Duplicate customer IDs in period1 should raise ValueError."""
         period1 = [
             self.create_rfm("C1", 5, Decimal("250"), datetime(2023, 6, 30)),
-            self.create_rfm("C1", 3, Decimal("150"), datetime(2023, 6, 30)),  # Duplicate
+            self.create_rfm(
+                "C1", 3, Decimal("150"), datetime(2023, 6, 30)
+            ),  # Duplicate
         ]
         period2 = [
             self.create_rfm("C1", 3, Decimal("180"), datetime(2023, 12, 31)),
         ]
 
-        with pytest.raises(ValueError, match="Duplicate customer IDs found in period1_rfm"):
+        with pytest.raises(
+            ValueError, match="Duplicate customer IDs found in period1_rfm"
+        ):
             analyze_period_comparison(period1, period2)
 
     def test_duplicate_customer_ids_in_period2_raises_error(self):
@@ -502,10 +512,14 @@ class TestAnalyzePeriodComparison:
         ]
         period2 = [
             self.create_rfm("C1", 3, Decimal("180"), datetime(2023, 12, 31)),
-            self.create_rfm("C1", 2, Decimal("100"), datetime(2023, 12, 31)),  # Duplicate
+            self.create_rfm(
+                "C1", 2, Decimal("100"), datetime(2023, 12, 31)
+            ),  # Duplicate
         ]
 
-        with pytest.raises(ValueError, match="Duplicate customer IDs found in period2_rfm"):
+        with pytest.raises(
+            ValueError, match="Duplicate customer IDs found in period2_rfm"
+        ):
             analyze_period_comparison(period1, period2)
 
     def test_all_customer_history_missing_period1_customers_raises_error(self):
@@ -523,7 +537,9 @@ class TestAnalyzePeriodComparison:
         with pytest.raises(
             ValueError, match="all_customer_history must include all period1 customers"
         ):
-            analyze_period_comparison(period1, period2, all_customer_history=all_history)
+            analyze_period_comparison(
+                period1, period2, all_customer_history=all_history
+            )
 
     def test_performance_optimization_with_precalculated_lens1(self):
         """Verify that providing pre-calculated Lens1 metrics works correctly."""
@@ -544,9 +560,7 @@ class TestAnalyzePeriodComparison:
 
         # Use them in Lens2 analysis
         lens2 = analyze_period_comparison(
-            period1, period2,
-            period1_metrics=lens1_p1,
-            period2_metrics=lens1_p2
+            period1, period2, period1_metrics=lens1_p1, period2_metrics=lens1_p2
         )
 
         # Results should be identical to calling without pre-calculated metrics
@@ -610,7 +624,9 @@ class TestAnalyzePeriodComparison:
         duration = time.time() - start
 
         # Should complete in < 2 seconds on modern hardware
-        assert duration < 2.0, f"Performance test took {duration:.2f}s (expected < 2.0s)"
+        assert duration < 2.0, (
+            f"Performance test took {duration:.2f}s (expected < 2.0s)"
+        )
 
         # Verify correctness
         assert lens2.retention_rate == Decimal("50.00")

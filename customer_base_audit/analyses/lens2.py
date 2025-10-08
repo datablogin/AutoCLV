@@ -26,7 +26,9 @@ from customer_base_audit.foundation.rfm import RFMMetrics
 
 # Module-level constants
 RATE_SUM_TOLERANCE = Decimal("0.1")  # Tolerance for retention + churn = 100%
-PERCENTAGE_PRECISION = Decimal("0.01")  # Standard precision for all percentages (2 decimal places)
+PERCENTAGE_PRECISION = Decimal(
+    "0.01"
+)  # Standard precision for all percentages (2 decimal places)
 
 
 @dataclass(frozen=True)
@@ -122,13 +124,9 @@ class Lens2Metrics:
     def __post_init__(self) -> None:
         """Validate Lens 2 metrics."""
         if not 0 <= self.retention_rate <= 100:
-            raise ValueError(
-                f"Retention rate must be 0-100: {self.retention_rate}"
-            )
+            raise ValueError(f"Retention rate must be 0-100: {self.retention_rate}")
         if not 0 <= self.churn_rate <= 100:
-            raise ValueError(
-                f"Churn rate must be 0-100: {self.churn_rate}"
-            )
+            raise ValueError(f"Churn rate must be 0-100: {self.churn_rate}")
         if not 0 <= self.reactivation_rate <= 100:
             raise ValueError(
                 f"Reactivation rate must be 0-100: {self.reactivation_rate}"
@@ -214,20 +212,24 @@ def analyze_period_comparison(
     period1_ids = [m.customer_id for m in period1_rfm]
     if len(period1_ids) != len(set(period1_ids)):
         duplicates = {cid for cid in period1_ids if period1_ids.count(cid) > 1}
-        raise ValueError(
-            f"Duplicate customer IDs found in period1_rfm: {duplicates}"
-        )
+        raise ValueError(f"Duplicate customer IDs found in period1_rfm: {duplicates}")
 
     period2_ids = [m.customer_id for m in period2_rfm]
     if len(period2_ids) != len(set(period2_ids)):
         duplicates = {cid for cid in period2_ids if period2_ids.count(cid) > 1}
-        raise ValueError(
-            f"Duplicate customer IDs found in period2_rfm: {duplicates}"
-        )
+        raise ValueError(f"Duplicate customer IDs found in period2_rfm: {duplicates}")
 
     # Calculate or use provided Lens 1 metrics for each period
-    lens1_period1 = period1_metrics if period1_metrics is not None else analyze_single_period(period1_rfm)
-    lens1_period2 = period2_metrics if period2_metrics is not None else analyze_single_period(period2_rfm)
+    lens1_period1 = (
+        period1_metrics
+        if period1_metrics is not None
+        else analyze_single_period(period1_rfm)
+    )
+    lens1_period2 = (
+        period2_metrics
+        if period2_metrics is not None
+        else analyze_single_period(period2_rfm)
+    )
 
     # Extract customer sets
     period1_customers = frozenset(m.customer_id for m in period1_rfm)
@@ -295,7 +297,9 @@ def analyze_period_comparison(
         ).quantize(PERCENTAGE_PRECISION, rounding=ROUND_HALF_UP)
     else:
         # If period 1 had zero revenue, treat any period 2 revenue as 100% increase
-        revenue_change_pct = Decimal("100.00") if lens1_period2.total_revenue > 0 else Decimal("0.00")
+        revenue_change_pct = (
+            Decimal("100.00") if lens1_period2.total_revenue > 0 else Decimal("0.00")
+        )
 
     # Calculate average order value change percentage
     # AOV = total_revenue / total_orders
@@ -312,7 +316,9 @@ def analyze_period_comparison(
             ).quantize(PERCENTAGE_PRECISION, rounding=ROUND_HALF_UP)
         else:
             # If period1 AOV is 0, treat any period2 AOV as 100% increase
-            avg_order_value_change_pct = Decimal("100.00") if period2_aov > 0 else Decimal("0.00")
+            avg_order_value_change_pct = (
+                Decimal("100.00") if period2_aov > 0 else Decimal("0.00")
+            )
     else:
         avg_order_value_change_pct = Decimal("0.00")
 
