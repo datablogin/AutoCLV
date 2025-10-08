@@ -267,7 +267,9 @@ def analyze_cohort_evolution(
 
     # Calculate metrics for each period, starting from acquisition period
     cohort_period_metrics: list[CohortPeriodMetrics] = []
-    cumulative_active_customers: set[str] = set()  # Track customers active in any period
+    cumulative_active_customers: set[str] = (
+        set()
+    )  # Track customers active in any period
 
     for period_number, period_date in enumerate(
         sorted_dates[acquisition_period_idx:], start=0
@@ -348,4 +350,6 @@ def calculate_retention_curve(cohort_metrics: Lens3Metrics) -> Mapping[int, floa
     >>> print(curve)
     {0: 1.0, 1: 0.8, 2: 0.6}
     """
-    return {period.period_number: period.retention_rate for period in cohort_metrics.periods}
+    return {
+        period.period_number: period.retention_rate for period in cohort_metrics.periods
+    }
