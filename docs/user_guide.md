@@ -1,16 +1,163 @@
 # AutoCLV User Guide
 
 ## Version Compatibility
-[To be filled in Phase 1]
+
+**Python Version:** 3.12 or higher
+
+**Core Dependencies:**
+- pandas >= 2.1.0
+- matplotlib >= 3.8.0
+- click >= 8.1.7
+- jinja2 >= 3.1.2
+- plotly >= 5.18.0
+
+**Development Dependencies:**
+- pytest >= 8.4.0
+- ruff == 0.12.12
+
+**Tested Platforms:**
+- macOS (Darwin 24.6.0)
+- Linux (Ubuntu 22.04+)
+- Windows 10/11
 
 ## Installation and Setup
-[To be filled in Phase 1]
+
+### Installing from Source
+
+```bash
+# Clone the repository
+git clone https://github.com/datablogin/AutoCLV.git
+cd AutoCLV
+
+# Install in development mode
+pip install -e .
+
+# Install development dependencies (optional)
+pip install -e ".[dev]"
+```
+
+### Verifying Installation
+
+```python
+# Test the installation
+from customer_base_audit.foundation.data_mart import CustomerDataMartBuilder
+from customer_base_audit.analyses.lens1 import analyze_single_period
+from customer_base_audit.synthetic.texas_clv_client import generate_texas_clv_client
+
+# Generate sample data
+customers, transactions, city_map = generate_texas_clv_client(total_customers=100, seed=42)
+print(f"✓ Generated {len(customers)} customers and {len(transactions)} transactions")
+```
+
+If this runs without errors, your installation is successful!
+
+### Running Tests
+
+```bash
+# Run the full test suite
+pytest
+
+# Run with coverage
+pytest --cov=customer_base_audit
+
+# Run specific test file
+pytest tests/test_lens1.py
+```
 
 ## Configuration Options
 [To be filled in Phase 2]
 
 ## Data Preparation Requirements
-[To be filled in Phase 1]
+
+AutoCLV expects transaction data in a specific format for the CustomerDataMartBuilder.
+
+### Required Transaction Fields
+
+Each transaction must be a dictionary (or dict-like object) with these fields:
+
+| Field | Type | Description | Example |
+|-------|------|-------------|---------|
+| `order_id` | str | Unique identifier for the order | `"ORD-12345"` |
+| `customer_id` | str | Unique identifier for the customer | `"CUST-001"` |
+| `event_ts` or `order_ts` | datetime | Timestamp of the transaction | `datetime(2024, 1, 15, 14, 30)` |
+| `quantity` | int (optional) | Quantity of items purchased | `2` |
+| `unit_price` | float | Price per unit | `29.99` |
+| `product_id` | str (optional) | Product identifier | `"SKU-ABC"` |
+
+### Example Transaction Data
+
+```python
+from datetime import datetime
+
+transactions = [
+    {
+        "order_id": "ORD-001",
+        "customer_id": "CUST-001",
+        "event_ts": datetime(2024, 1, 15, 14, 30),
+        "quantity": 2,
+        "unit_price": 29.99,
+        "product_id": "SKU-ABC"
+    },
+    {
+        "order_id": "ORD-002",
+        "customer_id": "CUST-001",
+        "event_ts": datetime(2024, 2, 10, 9, 15),
+        "quantity": 1,
+        "unit_price": 49.99,
+        "product_id": "SKU-XYZ"
+    },
+    # ... more transactions
+]
+```
+
+### Data Quality Requirements
+
+**Required:**
+- ✅ All `customer_id` values must be strings
+- ✅ All `event_ts`/`order_ts` must be datetime objects (not strings)
+- ✅ Quantities cannot be negative
+- ✅ Unit prices cannot be negative
+
+**Recommended:**
+- 📊 At least 100 customers for stable RFM scoring
+- 📊 At least 1 year of transaction history
+- 📊 Customer acquisition dates available for cohort analysis
+
+### Loading Your Data
+
+```python
+from customer_base_audit.foundation.data_mart import CustomerDataMartBuilder, PeriodGranularity
+
+# If you have a pandas DataFrame
+import pandas as pd
+df = pd.read_csv('your_transactions.csv')
+df['event_ts'] = pd.to_datetime(df['event_ts'])
+transactions = df.to_dict('records')
+
+# Build the data mart
+builder = CustomerDataMartBuilder(period_granularities=[PeriodGranularity.MONTH])
+mart = builder.build(transactions)
+
+print(f"Processed {len(mart.orders)} orders")
+print(f"Generated {len(mart.periods[PeriodGranularity.MONTH])} monthly aggregations")
+```
+
+### Using Synthetic Data for Testing
+
+If you don't have real data yet, use the Texas CLV synthetic data generator:
+
+```python
+from customer_base_audit.synthetic.texas_clv_client import generate_texas_clv_client
+
+# Generate 1000 customers across 4 cities
+customers, transactions, city_map = generate_texas_clv_client(
+    total_customers=1000,
+    seed=42  # For reproducibility
+)
+
+print(f"Generated {len(transactions)} transactions")
+print(f"Cities: {set(city_map.values())}")
+```
 
 ## Running Five Lenses Audit
 
@@ -199,8 +346,48 @@ Documentation will be added once the Lens 3 module is implemented.
 [To be filled in Phase 3]
 
 ## Troubleshooting Common Issues
+
 ### Installation and Setup Issues
-[To be filled in Phase 1]
+
+#### "Module not found" errors
+```bash
+# Ensure you installed the package
+pip install -e .
+
+# Verify installation
+pip list | grep customer-base-audit
+
+# If still failing, try reinstalling
+pip uninstall customer-base-audit
+pip install -e .
+```
+
+#### Python version incompatibility
+```bash
+# Check your Python version
+python --version
+
+# AutoCLV requires Python 3.12+
+# Install Python 3.12 if needed, then:
+python3.12 -m pip install -e .
+```
+
+#### Dependency conflicts
+```bash
+# Create a fresh virtual environment
+python -m venv venv
+source venv/bin/activate  # On Windows: venv\Scripts\activate
+
+# Install in clean environment
+pip install -e .
+```
+
+#### Import errors after installation
+```python
+# Make sure you're importing from the correct package
+from customer_base_audit.foundation.data_mart import CustomerDataMartBuilder  # ✓ Correct
+from customer_data_mart import CustomerDataMartBuilder  # ✗ Wrong
+```
 
 ### Data Preparation Issues
 [To be filled in Phase 2]
@@ -212,4 +399,16 @@ Documentation will be added once the Lens 3 module is implemented.
 [To be filled in Phase 4]
 
 ### General Troubleshooting
-[To be filled throughout]
+
+#### Getting help
+1. **Check the documentation**: Review this user guide and API reference
+2. **Run tests**: `pytest -v` to see if core functionality works
+3. **Enable verbose logging**: Most functions accept a `verbose` parameter
+4. **Synthetic data**: Use `generate_texas_clv_client()` to test with known-good data
+5. **GitHub Issues**: https://github.com/datablogin/AutoCLV/issues
+
+#### Common gotchas
+- ⚠️ **Datetime vs string**: `event_ts` must be a datetime object, not a string
+- ⚠️ **Small datasets**: RFM scoring requires 100+ customers for stable quintiles
+- ⚠️ **Missing acquisitions**: Cohort analysis requires customer acquisition dates
+- ⚠️ **Timezone awareness**: Keep datetimes timezone-naive or all use the same timezone
