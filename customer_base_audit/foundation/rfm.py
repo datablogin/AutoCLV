@@ -16,8 +16,7 @@ from datetime import datetime
 from decimal import Decimal, ROUND_HALF_UP
 from typing import Sequence
 
-import numpy as np
-import pandas as pd
+import pandas as pd  # Used for quantile-based RFM scoring (qcut)
 
 from customer_base_audit.foundation.data_mart import PeriodAggregation
 
@@ -56,31 +55,26 @@ class RFMMetrics:
         """Validate RFM metrics."""
         if self.recency_days < 0:
             raise ValueError(
-                f"Recency cannot be negative: {self.recency_days}",
-                {"customer_id": self.customer_id},
+                f"Recency cannot be negative: {self.recency_days} (customer_id={self.customer_id})"
             )
         if self.frequency <= 0:
             raise ValueError(
-                f"Frequency must be positive: {self.frequency}",
-                {"customer_id": self.customer_id},
+                f"Frequency must be positive: {self.frequency} (customer_id={self.customer_id})"
             )
         if self.monetary < 0:
             raise ValueError(
-                f"Monetary value cannot be negative: {self.monetary}",
-                {"customer_id": self.customer_id},
+                f"Monetary value cannot be negative: {self.monetary} (customer_id={self.customer_id})"
             )
         if self.total_spend < 0:
             raise ValueError(
-                f"Total spend cannot be negative: {self.total_spend}",
-                {"customer_id": self.customer_id},
+                f"Total spend cannot be negative: {self.total_spend} (customer_id={self.customer_id})"
             )
         # Validate monetary = total_spend / frequency (within rounding tolerance)
         expected_monetary = self.total_spend / self.frequency
         tolerance = Decimal("0.01")
         if abs(self.monetary - expected_monetary) > tolerance:
             raise ValueError(
-                f"Monetary ({self.monetary}) != total_spend / frequency ({expected_monetary})",
-                {"customer_id": self.customer_id},
+                f"Monetary ({self.monetary}) != total_spend / frequency ({expected_monetary}) (customer_id={self.customer_id})"
             )
 
 
@@ -90,6 +84,16 @@ def calculate_rfm(
 ) -> list[RFMMetrics]:
     """Calculate RFM metrics from period aggregations.
 
+    **Note on Recency Calculation**: Since PeriodAggregation does not include
+    the exact transaction timestamp, recency is approximated using the end date
+    of the last active period. This provides a conservative estimate (slightly
+    understating recency) compared to using the actual last transaction date.
+
+    For example, if a customer made a purchase on Dec 28 in a monthly period
+    (Dec 1-31), recency will be calculated from Dec 31, not Dec 28. This is
+    more accurate than using period_start (Dec 1) which would overstate recency
+    by ~27 days.
+
     Parameters
     ----------
     period_aggregations:
@@ -97,7 +101,7 @@ def calculate_rfm(
         the full observation period for accurate RFM calculations.
     observation_end:
         End date of observation period. Recency is calculated as days
-        from the last purchase to this date.
+        from the end of the last active period to this date.
 
     Returns
     -------
@@ -146,16 +150,18 @@ def calculate_rfm(
         customer_id = period.customer_id
         if customer_id not in customer_data:
             customer_data[customer_id] = {
-                "last_period_start": period.period_start,
+                "last_period_end": period.period_end,
                 "first_period_start": period.period_start,
                 "total_orders": 0,
                 "total_spend": Decimal("0"),
             }
 
         data = customer_data[customer_id]
-        # Track the most recent period start (proxy for last purchase)
-        if period.period_start > data["last_period_start"]:
-            data["last_period_start"] = period.period_start
+        # Track the most recent period end (conservative proxy for last purchase)
+        # Using period_end instead of period_start provides a more accurate
+        # recency estimate since purchases could occur anywhere in the period
+        if period.period_end > data["last_period_end"]:
+            data["last_period_end"] = period.period_end
         # Track the earliest period start for observation_start
         if period.period_start < data["first_period_start"]:
             data["first_period_start"] = period.period_start
@@ -166,8 +172,9 @@ def calculate_rfm(
     # Calculate RFM metrics for each customer
     rfm_metrics: list[RFMMetrics] = []
     for customer_id, data in customer_data.items():
-        # Recency: days from last period start to observation_end
-        recency_delta = observation_end - data["last_period_start"]
+        # Recency: days from last period end to observation_end
+        # This is a conservative estimate - actual recency may be slightly higher
+        recency_delta = observation_end - data["last_period_end"]
         recency_days = recency_delta.days
 
         # Frequency: total number of orders
@@ -233,14 +240,12 @@ class RFMScore:
         ]:
             if not 1 <= score_value <= 5:
                 raise ValueError(
-                    f"{score_name} must be between 1 and 5: {score_value}",
-                    {"customer_id": self.customer_id},
+                    f"{score_name} must be between 1 and 5: {score_value} (customer_id={self.customer_id})"
                 )
         expected_rfm = f"{self.r_score}{self.f_score}{self.m_score}"
         if self.rfm_score != expected_rfm:
             raise ValueError(
-                f"rfm_score ({self.rfm_score}) does not match r/f/m scores ({expected_rfm})",
-                {"customer_id": self.customer_id},
+                f"rfm_score ({self.rfm_score}) does not match r/f/m scores ({expected_rfm}) (customer_id={self.customer_id})"
             )
 
 
@@ -256,10 +261,18 @@ def calculate_rfm_scores(
     For recency, lower values (more recent) get higher scores.
     For frequency and monetary, higher values get higher scores.
 
+    **Note on Small Datasets**: For small datasets (< 10 customers) or datasets
+    with many duplicate values, pandas qcut with `duplicates="drop"` may produce
+    fewer than 5 bins. This can result in score ranges like 1-3 instead of 1-5.
+    The algorithm handles this gracefully, but be aware that bin distribution
+    depends on data variety. For production use with CLV models, recommend
+    datasets of 100+ customers for stable quintile binning.
+
     Parameters
     ----------
     rfm_metrics:
-        List of RFM metrics to score
+        List of RFM metrics to score. Recommend 100+ customers for stable
+        quintile binning, though smaller datasets are supported.
     recency_bins:
         Number of bins for recency (default: 5 for quintiles)
     frequency_bins:
@@ -270,7 +283,8 @@ def calculate_rfm_scores(
     Returns
     -------
     list[RFMScore]
-        RFM scores for each customer, sorted by customer_id
+        RFM scores for each customer, sorted by customer_id. Scores will be
+        in the range 1-5, but small datasets may not use all values.
 
     Examples
     --------
@@ -299,29 +313,38 @@ def calculate_rfm_scores(
     df = pd.DataFrame(data)
 
     # Calculate quintile scores
+    # Note: Using duplicates="drop" means qcut may produce fewer bins than requested
+    # when there are many duplicate values. We handle this by using labels=False
+    # and manually mapping to 1-5 scale. For completely uniform values, assign score 3.
+
+    # Helper function to safely score a dimension
+    def safe_qcut_score(values: pd.Series, bins: int, reverse: bool = False) -> pd.Series:
+        """Score values using qcut, handling edge cases like uniform values."""
+        unique_count = values.nunique()
+
+        if unique_count == 1:
+            # All values identical - assign middle score (3)
+            return pd.Series([3] * len(values), index=values.index)
+
+        # Use qcut with labels=False to get bin indices
+        categories = pd.qcut(values, q=min(bins, unique_count), labels=False, duplicates="drop")
+
+        if reverse:
+            # For recency: reverse mapping so lower values get higher scores
+            max_bin = categories.max()
+            return (max_bin - categories + 1).astype(int)
+        else:
+            # For frequency/monetary: map 0->1, 1->2, etc.
+            return (categories + 1).astype(int)
+
     # Recency: lower is better, so we reverse the scoring (5 = most recent)
-    df["r_score"] = pd.qcut(
-        df["recency_days"],
-        q=recency_bins,
-        labels=list(range(recency_bins, 0, -1)),  # Reverse: 5, 4, 3, 2, 1
-        duplicates="drop",
-    ).astype(int)
+    df["r_score"] = safe_qcut_score(df["recency_days"], recency_bins, reverse=True)
 
     # Frequency: higher is better
-    df["f_score"] = pd.qcut(
-        df["frequency"],
-        q=frequency_bins,
-        labels=list(range(1, frequency_bins + 1)),
-        duplicates="drop",
-    ).astype(int)
+    df["f_score"] = safe_qcut_score(df["frequency"], frequency_bins, reverse=False)
 
     # Monetary: higher is better
-    df["m_score"] = pd.qcut(
-        df["monetary"],
-        q=monetary_bins,
-        labels=list(range(1, monetary_bins + 1)),
-        duplicates="drop",
-    ).astype(int)
+    df["m_score"] = safe_qcut_score(df["monetary"], monetary_bins, reverse=False)
 
     # Create combined RFM score string
     df["rfm_score"] = (

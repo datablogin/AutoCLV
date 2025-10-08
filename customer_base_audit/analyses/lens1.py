@@ -16,8 +16,6 @@ from dataclasses import dataclass
 from decimal import Decimal, ROUND_HALF_UP
 from typing import Sequence
 
-import numpy as np
-
 from customer_base_audit.foundation.rfm import RFMMetrics, RFMScore
 
 
@@ -242,6 +240,8 @@ def calculate_revenue_concentration(
     concentration: dict[int, Decimal] = {}
     for percentile in percentiles:
         # Calculate number of customers in top N%
+        # Use max(1, ...) to ensure at least 1 customer is included
+        # (e.g., 0.5% of 100 customers = 0.5 -> rounds to 0, but we need >= 1)
         top_n_count = max(1, int(len(sorted_metrics) * percentile / 100))
 
         # Sum revenue from top N% customers

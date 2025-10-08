@@ -116,8 +116,8 @@ class TestCalculateRFM:
         assert rfm[0].frequency == 3
         assert rfm[0].total_spend == Decimal("150.00")
         assert rfm[0].monetary == Decimal("50.00")  # 150 / 3
-        # Recency: from Jan 1 to Apr 15 = ~104 days
-        assert rfm[0].recency_days == (observation_end - datetime(2023, 1, 1)).days
+        # Recency: from period_end (Feb 1) to observation_end (Apr 15)
+        assert rfm[0].recency_days == (observation_end - datetime(2023, 2, 1)).days
 
     def test_single_customer_multiple_periods(self):
         """Calculate RFM for single customer across multiple periods."""
@@ -149,8 +149,8 @@ class TestCalculateRFM:
         assert rfm[0].frequency == 5  # 3 + 2
         assert rfm[0].total_spend == Decimal("250.00")  # 150 + 100
         assert rfm[0].monetary == Decimal("50.00")  # 250 / 5
-        # Recency: from most recent period (Mar 1) to Apr 15
-        assert rfm[0].recency_days == (observation_end - datetime(2023, 3, 1)).days
+        # Recency: from most recent period_end (Apr 1) to observation_end (Apr 15)
+        assert rfm[0].recency_days == (observation_end - datetime(2023, 4, 1)).days
 
     def test_multiple_customers(self):
         """Calculate RFM for multiple customers."""
@@ -332,6 +332,100 @@ class TestCalculateRFMScores:
             assert score.rfm_score.isdigit()
             # Each digit should be 1-5
             assert all(1 <= int(d) <= 5 for d in score.rfm_score)
+
+    def test_small_dataset_edge_case(self):
+        """Small datasets should handle gracefully even with limited bins."""
+        # Test with only 3 customers - may produce fewer than 5 bins
+        metrics = [
+            RFMMetrics(
+                "C1",
+                10,
+                5,
+                Decimal("50.00"),
+                datetime(2023, 1, 1),
+                datetime(2023, 12, 31),
+                Decimal("250.00"),
+            ),
+            RFMMetrics(
+                "C2",
+                30,
+                2,
+                Decimal("75.00"),
+                datetime(2023, 1, 1),
+                datetime(2023, 12, 31),
+                Decimal("150.00"),
+            ),
+            RFMMetrics(
+                "C3",
+                20,
+                3,
+                Decimal("60.00"),
+                datetime(2023, 1, 1),
+                datetime(2023, 12, 31),
+                Decimal("180.00"),
+            ),
+        ]
+        scores = calculate_rfm_scores(metrics)
+
+        # Should still produce valid scores
+        assert len(scores) == 3
+        for score in scores:
+            # All scores should be 1-5
+            assert 1 <= score.r_score <= 5
+            assert 1 <= score.f_score <= 5
+            assert 1 <= score.m_score <= 5
+            # RFM score should be valid format
+            assert len(score.rfm_score) == 3
+            assert score.rfm_score.isdigit()
+
+        # Scores should be ordered correctly (C1 < C2 recency)
+        score_map = {s.customer_id: s for s in scores}
+        assert score_map["C1"].r_score > score_map["C2"].r_score  # C1 more recent
+
+    def test_duplicate_values_edge_case(self):
+        """Datasets with duplicate values should handle gracefully."""
+        # All customers have same frequency - will create only 1 bin
+        metrics = [
+            RFMMetrics(
+                "C1",
+                10,
+                5,
+                Decimal("50.00"),
+                datetime(2023, 1, 1),
+                datetime(2023, 12, 31),
+                Decimal("250.00"),
+            ),
+            RFMMetrics(
+                "C2",
+                30,
+                5,
+                Decimal("75.00"),
+                datetime(2023, 1, 1),
+                datetime(2023, 12, 31),
+                Decimal("375.00"),
+            ),
+            RFMMetrics(
+                "C3",
+                20,
+                5,
+                Decimal("60.00"),
+                datetime(2023, 1, 1),
+                datetime(2023, 12, 31),
+                Decimal("300.00"),
+            ),
+        ]
+        scores = calculate_rfm_scores(metrics)
+
+        # Should still produce valid scores even with duplicate frequencies
+        assert len(scores) == 3
+        for score in scores:
+            assert 1 <= score.r_score <= 5
+            assert 1 <= score.f_score <= 5
+            assert 1 <= score.m_score <= 5
+
+        # All should have same frequency score since all have frequency=5
+        score_map = {s.customer_id: s for s in scores}
+        assert score_map["C1"].f_score == score_map["C2"].f_score == score_map["C3"].f_score
 
 
 class TestRFMScore:
