@@ -19,12 +19,25 @@ from .lens2 import (
     Lens2Metrics,
     analyze_period_comparison,
 )
+from .lens3 import (
+    CohortPeriodMetrics,
+    Lens3Metrics,
+    analyze_cohort_evolution,
+    calculate_retention_curve,
+)
 
 __all__ = [
+    # Lens 1
     "Lens1Metrics",
     "analyze_single_period",
     "calculate_revenue_concentration",
+    # Lens 2
     "CustomerMigration",
     "Lens2Metrics",
     "analyze_period_comparison",
+    # Lens 3
+    "CohortPeriodMetrics",
+    "Lens3Metrics",
+    "analyze_cohort_evolution",
+    "calculate_retention_curve",
 ]
