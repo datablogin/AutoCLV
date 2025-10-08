@@ -58,9 +58,13 @@ class Lens1Metrics:
     def __post_init__(self) -> None:
         """Validate Lens 1 metrics."""
         if self.total_customers < 0:
-            raise ValueError(f"Total customers cannot be negative: {self.total_customers}")
+            raise ValueError(
+                f"Total customers cannot be negative: {self.total_customers}"
+            )
         if self.one_time_buyers < 0:
-            raise ValueError(f"One-time buyers cannot be negative: {self.one_time_buyers}")
+            raise ValueError(
+                f"One-time buyers cannot be negative: {self.one_time_buyers}"
+            )
         if self.one_time_buyers > self.total_customers:
             raise ValueError(
                 f"One-time buyers ({self.one_time_buyers}) cannot exceed total customers ({self.total_customers})"
@@ -152,9 +156,9 @@ def analyze_single_period(
 
     # Order statistics
     total_orders = sum(m.frequency for m in rfm_metrics)
-    avg_orders_per_customer = (Decimal(total_orders) / Decimal(total_customers)).quantize(
-        Decimal("0.01"), rounding=ROUND_HALF_UP
-    )
+    avg_orders_per_customer = (
+        Decimal(total_orders) / Decimal(total_customers)
+    ).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
 
     # Median customer value
     customer_values = sorted([m.total_spend for m in rfm_metrics])

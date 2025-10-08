@@ -1,6 +1,6 @@
 """Tests for RFM (Recency-Frequency-Monetary) calculation utilities."""
 
-from datetime import datetime, timedelta
+from datetime import datetime
 from decimal import Decimal
 
 import pytest
@@ -425,7 +425,11 @@ class TestCalculateRFMScores:
 
         # All should have same frequency score since all have frequency=5
         score_map = {s.customer_id: s for s in scores}
-        assert score_map["C1"].f_score == score_map["C2"].f_score == score_map["C3"].f_score
+        assert (
+            score_map["C1"].f_score
+            == score_map["C2"].f_score
+            == score_map["C3"].f_score
+        )
 
 
 class TestRFMScore:

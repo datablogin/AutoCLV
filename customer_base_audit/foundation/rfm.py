@@ -318,7 +318,9 @@ def calculate_rfm_scores(
     # and manually mapping to 1-5 scale. For completely uniform values, assign score 3.
 
     # Helper function to safely score a dimension
-    def safe_qcut_score(values: pd.Series, bins: int, reverse: bool = False) -> pd.Series:
+    def safe_qcut_score(
+        values: pd.Series, bins: int, reverse: bool = False
+    ) -> pd.Series:
         """Score values using qcut, handling edge cases like uniform values."""
         unique_count = values.nunique()
 
@@ -327,7 +329,9 @@ def calculate_rfm_scores(
             return pd.Series([3] * len(values), index=values.index)
 
         # Use qcut with labels=False to get bin indices
-        categories = pd.qcut(values, q=min(bins, unique_count), labels=False, duplicates="drop")
+        categories = pd.qcut(
+            values, q=min(bins, unique_count), labels=False, duplicates="drop"
+        )
 
         if reverse:
             # For recency: reverse mapping so lower values get higher scores

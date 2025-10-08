@@ -66,9 +66,7 @@ class TestLens1Metrics:
 
     def test_invalid_one_time_buyer_pct_raises_error(self):
         """One-time buyer percentage outside 0-100 should raise ValueError."""
-        with pytest.raises(
-            ValueError, match="One-time buyer percentage must be 0-100"
-        ):
+        with pytest.raises(ValueError, match="One-time buyer percentage must be 0-100"):
             Lens1Metrics(
                 total_customers=10,
                 one_time_buyers=3,
@@ -435,9 +433,7 @@ class TestCalculateRevenueConcentration:
             Decimal("500.00"),
         )
 
-        result = calculate_revenue_concentration(
-            metrics, percentiles=[10, 20, 50, 100]
-        )
+        result = calculate_revenue_concentration(metrics, percentiles=[10, 20, 50, 100])
 
         # Total revenue = 500 + 9*100 = 1400
         # Top 10% (1 customer = C0 with 500) = 500/1400 = 35.7%
