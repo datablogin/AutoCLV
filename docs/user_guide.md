@@ -1,7 +1,13 @@
 # AutoCLV User Guide
 
+## Version Compatibility
+[To be filled in Phase 1]
+
 ## Installation and Setup
 [To be filled in Phase 1]
+
+## Configuration Options
+[To be filled in Phase 2]
 
 ## Data Preparation Requirements
 [To be filled in Phase 1]
@@ -28,5 +34,28 @@
 ## Interpreting Results
 [To be filled in Phase 4]
 
+## Complete Workflow Examples
+### Example 1: Analyzing Subscription Business
+[To be filled in Phase 4]
+
+### Example 2: E-commerce Customer Analysis
+[To be filled in Phase 4]
+
+## API Reference
+[To be filled in Phase 3]
+
 ## Troubleshooting Common Issues
+### Installation and Setup Issues
+[To be filled in Phase 1]
+
+### Data Preparation Issues
+[To be filled in Phase 2]
+
+### Model Training Issues
+[To be filled in Phase 3]
+
+### Validation and Performance Issues
+[To be filled in Phase 4]
+
+### General Troubleshooting
 [To be filled throughout]
