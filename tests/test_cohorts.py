@@ -465,3 +465,165 @@ class TestCohortIntegration:
         assert assignments["C2"] == "paid-search-jan"
         assert cohorts[0].metadata["channel"] == "paid_search"
         assert cohorts[0].metadata["campaign"] == "winter_promo"
+
+
+class TestTimezoneHandling:
+    """Test timezone-aware datetime handling."""
+
+    def test_timezone_aware_datetimes(self):
+        """Test cohort assignment with timezone-aware datetimes."""
+        from datetime import timezone
+
+        customers = [
+            CustomerIdentifier(
+                "C1", datetime(2023, 1, 15, tzinfo=timezone.utc), "system"
+            ),
+            CustomerIdentifier(
+                "C2", datetime(2023, 2, 20, tzinfo=timezone.utc), "system"
+            ),
+        ]
+
+        cohorts = create_monthly_cohorts(customers)
+
+        assert len(cohorts) == 2
+        assert cohorts[0].start_date.tzinfo == timezone.utc
+        assert cohorts[0].end_date.tzinfo == timezone.utc
+        assert cohorts[1].start_date.tzinfo == timezone.utc
+        assert cohorts[1].end_date.tzinfo == timezone.utc
+
+    def test_mixed_timezone_raises_error(self):
+        """Test that mixed timezone-aware and naive datetimes raise error."""
+        from datetime import timezone
+
+        customers = [
+            CustomerIdentifier("C1", datetime(2023, 1, 15), "system"),  # Naive
+            CustomerIdentifier(
+                "C2", datetime(2023, 2, 20, tzinfo=timezone.utc), "system"
+            ),  # Aware
+        ]
+
+        with pytest.raises(
+            ValueError, match="Mixed timezone-aware and naive datetimes"
+        ):
+            create_monthly_cohorts(customers)
+
+
+class TestDataQuality:
+    """Test data quality and validation features."""
+
+    def test_duplicate_customer_ids_raises_error(self):
+        """Test that duplicate customer IDs raise an error."""
+        customers = [
+            CustomerIdentifier("C1", datetime(2023, 1, 15), "system"),
+            CustomerIdentifier("C1", datetime(2023, 1, 20), "system"),  # Duplicate
+        ]
+        cohorts = [
+            CohortDefinition("2023-01", datetime(2023, 1, 1), datetime(2023, 2, 1))
+        ]
+
+        with pytest.raises(ValueError, match="Duplicate customer_id"):
+            assign_cohorts(customers, cohorts)
+
+    def test_duplicate_detection_shows_ids(self):
+        """Test that duplicate detection shows which IDs are duplicated."""
+        customers = [
+            CustomerIdentifier("C1", datetime(2023, 1, 15), "system"),
+            CustomerIdentifier("C1", datetime(2023, 1, 20), "system"),
+            CustomerIdentifier("C2", datetime(2023, 1, 25), "system"),
+            CustomerIdentifier("C2", datetime(2023, 1, 30), "system"),
+        ]
+        cohorts = [
+            CohortDefinition("2023-01", datetime(2023, 1, 1), datetime(2023, 2, 1))
+        ]
+
+        with pytest.raises(ValueError) as exc_info:
+            assign_cohorts(customers, cohorts)
+
+        error_msg = str(exc_info.value)
+        assert "C1" in error_msg or "C2" in error_msg
+
+
+class TestCohortCoverageValidation:
+    """Test cohort coverage validation utility."""
+
+    def test_validate_full_coverage(self):
+        """Test validation when all customers are covered."""
+        from customer_base_audit.foundation.cohorts import validate_cohort_coverage
+
+        customers = [
+            CustomerIdentifier("C1", datetime(2023, 1, 15), "system"),
+            CustomerIdentifier("C2", datetime(2023, 2, 20), "system"),
+        ]
+        cohorts = create_monthly_cohorts(customers)
+
+        assigned, unassigned = validate_cohort_coverage(customers, cohorts)
+
+        assert assigned == 2
+        assert unassigned == 0
+
+    def test_validate_partial_coverage(self):
+        """Test validation when some customers are outside cohort ranges."""
+        from customer_base_audit.foundation.cohorts import validate_cohort_coverage
+
+        customers = [
+            CustomerIdentifier("C1", datetime(2023, 1, 15), "system"),
+            CustomerIdentifier("C2", datetime(2023, 2, 20), "system"),
+            CustomerIdentifier("C3", datetime(2024, 1, 10), "system"),  # Gap!
+        ]
+        cohorts = [
+            CohortDefinition("2023-01", datetime(2023, 1, 1), datetime(2023, 2, 1)),
+            CohortDefinition("2023-02", datetime(2023, 2, 1), datetime(2023, 3, 1)),
+        ]
+
+        assigned, unassigned = validate_cohort_coverage(customers, cohorts)
+
+        assert assigned == 2
+        assert unassigned == 1
+
+    def test_validate_no_coverage(self):
+        """Test validation when no customers are covered."""
+        from customer_base_audit.foundation.cohorts import validate_cohort_coverage
+
+        customers = [
+            CustomerIdentifier("C1", datetime(2024, 1, 15), "system"),
+            CustomerIdentifier("C2", datetime(2024, 2, 20), "system"),
+        ]
+        cohorts = [
+            CohortDefinition("2023-01", datetime(2023, 1, 1), datetime(2023, 2, 1)),
+        ]
+
+        assigned, unassigned = validate_cohort_coverage(customers, cohorts)
+
+        assert assigned == 0
+        assert unassigned == 2
+
+
+class TestPerformance:
+    """Test performance characteristics."""
+
+    def test_performance_large_dataset(self):
+        """Smoke test: 10k customers, 36 monthly cohorts should complete quickly."""
+        import time
+        from datetime import timedelta
+
+        # Generate 10k customers spread over 3 years
+        customers = [
+            CustomerIdentifier(
+                f"C{i}", datetime(2020, 1, 1) + timedelta(days=i % 1095), "system"
+            )
+            for i in range(10000)
+        ]
+
+        # Create monthly cohorts
+        cohorts = create_monthly_cohorts(customers)
+        assert len(cohorts) == 36  # 3 years of monthly cohorts
+
+        # Time the assignment
+        start = time.time()
+        assignments = assign_cohorts(customers, cohorts)
+        elapsed = time.time() - start
+
+        # Verify correctness
+        assert len(assignments) == 10000
+        # Performance check: should complete in under 1 second on typical hardware
+        assert elapsed < 1.0, f"Assignment took {elapsed:.2f}s, expected < 1.0s"
