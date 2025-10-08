@@ -61,7 +61,9 @@ class BGNBDInput:
             )
         if self.recency > self.T:
             raise ValueError(
-                f"Recency ({self.recency}) cannot exceed T ({self.T}) (customer_id={self.customer_id})"
+                f"Invalid BG/NBD input: recency ({self.recency:.2f}) > T ({self.T:.2f}). "
+                f"This indicates last purchase occurred after observation end. "
+                f"Check period boundaries and observation_end date. (customer_id={self.customer_id})"
             )
 
 
@@ -94,9 +96,9 @@ class GammaGammaInput:
             raise ValueError(
                 f"Frequency must be >= 2 for Gamma-Gamma model: {self.frequency} (customer_id={self.customer_id})"
             )
-        if self.monetary_value < 0:
+        if self.monetary_value <= 0:
             raise ValueError(
-                f"Monetary value cannot be negative: {self.monetary_value} (customer_id={self.customer_id})"
+                f"Monetary value must be positive (>0) for Gamma-Gamma model: {self.monetary_value} (customer_id={self.customer_id})"
             )
 
 
@@ -112,12 +114,21 @@ def prepare_bg_nbd_inputs(
     - recency: Time from first purchase to last purchase
     - T: Time from first purchase to observation_end
 
-    **Time Calculation Method**:
+    **⚠️ Time Calculation Approximation Warning**:
     Since PeriodAggregation doesn't include exact transaction timestamps,
     we use period boundaries as conservative estimates:
     - First purchase time: period_start of earliest period
     - Last purchase time: period_end of most recent period
-    - This provides conservative estimates suitable for CLV modeling
+
+    **Known Limitations**:
+    - `recency` will be OVERESTIMATED (using period_end instead of actual last transaction)
+    - `T` will be OVERESTIMATED (using period_start instead of actual first transaction)
+    - This introduces systematic bias in BG/NBD parameter estimation (λ, p)
+    - May underestimate churn probability and overestimate future purchases
+
+    For most accurate CLV predictions, use transaction-level data with exact timestamps.
+    For period-aggregated data, this approximation provides reasonable estimates but
+    should be validated against holdout data
 
     Parameters
     ----------
@@ -177,6 +188,9 @@ def prepare_bg_nbd_inputs(
     rows: list[dict] = []
     for customer_id, data in customer_data.items():
         # Frequency: repeat purchases only (total - 1)
+        # BG/NBD models the repeat purchase process, so first purchase is excluded.
+        # This differs from Gamma-Gamma which uses total purchases to estimate
+        # average monetary value across all transactions.
         frequency = max(0, data["total_orders"] - 1)
 
         # Recency: time from first purchase to last purchase (in days)
@@ -272,6 +286,9 @@ def prepare_gamma_gamma_inputs(
     # Calculate Gamma-Gamma metrics, filtering by min_frequency
     rows: list[dict] = []
     for customer_id, data in customer_data.items():
+        # Frequency: total purchases (NOT repeat purchases like BG/NBD)
+        # Gamma-Gamma uses all transactions to estimate average spend per transaction.
+        # This differs from BG/NBD which uses (total - 1) to model repeat behavior.
         frequency = data["total_orders"]
 
         # Exclude customers below min_frequency threshold

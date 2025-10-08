@@ -48,7 +48,7 @@ class TestBGNBDInput:
 
     def test_recency_exceeds_T_raises_error(self):
         """Recency exceeding T should raise ValueError."""
-        with pytest.raises(ValueError, match="Recency .* cannot exceed T"):
+        with pytest.raises(ValueError, match="Invalid BG/NBD input: recency"):
             BGNBDInput(customer_id="C1", frequency=5, recency=100.0, T=90.0)
 
     def test_recency_equals_T_is_valid(self):
@@ -78,7 +78,7 @@ class TestGammaGammaInput:
 
     def test_negative_monetary_value_raises_error(self):
         """Negative monetary value should raise ValueError."""
-        with pytest.raises(ValueError, match="Monetary value cannot be negative"):
+        with pytest.raises(ValueError, match="Monetary value must be positive"):
             GammaGammaInput(
                 customer_id="C1", frequency=5, monetary_value=Decimal("-50.00")
             )
@@ -460,3 +460,59 @@ class TestPrepareGammaGammaInputs:
         # Total spend: 80 + 40 + 80 = 200
         # Monetary value: 200 / 5 = 40.0
         assert df.loc[0, "monetary_value"] == pytest.approx(40.0, abs=0.01)
+
+
+class TestEdgeCases:
+    """Test edge cases identified in code review."""
+
+    def test_zero_monetary_value_raises_error(self):
+        """Zero monetary value should raise ValueError (Gamma-Gamma requires positive values)."""
+        with pytest.raises(
+            ValueError, match="Monetary value must be positive \\(>0\\)"
+        ):
+            GammaGammaInput(
+                customer_id="C1", frequency=2, monetary_value=Decimal("0.00")
+            )
+
+    def test_very_small_monetary_value_preserves_precision(self):
+        """Very small monetary values should maintain decimal precision."""
+        periods = [
+            PeriodAggregation(
+                "C1",
+                datetime(2023, 1, 1),
+                datetime(2023, 2, 1),
+                100,
+                1.00,  # 100 orders at $0.01 each
+                0.30,
+                100,
+            )
+        ]
+        df = prepare_gamma_gamma_inputs(periods, min_frequency=2)
+        assert len(df) == 1
+        # Monetary value: 1.00 / 100 = 0.01
+        assert df.loc[0, "monetary_value"] == pytest.approx(0.01, abs=0.001)
+
+    def test_decimal_precision_preserved_through_rounding(self):
+        """Decimal precision should be preserved with ROUND_HALF_UP."""
+        periods = [
+            PeriodAggregation(
+                "C1",
+                datetime(2023, 1, 1),
+                datetime(2023, 2, 1),
+                3,
+                10.00,  # 3 orders, $10 total -> $3.33... per order
+                3.00,
+                6,
+            )
+        ]
+        df = prepare_gamma_gamma_inputs(periods, min_frequency=2)
+        assert len(df) == 1
+        # Monetary value: 10.00 / 3 = 3.333... -> should round to 3.33
+        assert df.loc[0, "monetary_value"] == pytest.approx(3.33, abs=0.01)
+
+    def test_gamma_gamma_input_zero_monetary_value_validation(self):
+        """GammaGammaInput should reject zero monetary values."""
+        with pytest.raises(ValueError, match="must be positive"):
+            GammaGammaInput(
+                customer_id="C1", frequency=5, monetary_value=Decimal("0.00")
+            )
