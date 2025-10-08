@@ -501,15 +501,15 @@ class TestAnalyzeCohortEvolution:
 
         # All customers active at some point, so retention should be 100% throughout
         retention_rates = [p.retention_rate for p in metrics.periods]
-        assert all(
-            r == 1.0 for r in retention_rates
-        ), f"Retention should be 100% throughout, got {retention_rates}"
+        assert all(r == 1.0 for r in retention_rates), (
+            f"Retention should be 100% throughout, got {retention_rates}"
+        )
 
         # Verify retention is monotonically non-decreasing
         for i in range(1, len(retention_rates)):
-            assert (
-                retention_rates[i] >= retention_rates[i - 1]
-            ), f"Retention decreased from {retention_rates[i-1]} to {retention_rates[i]} at period {i}"
+            assert retention_rates[i] >= retention_rates[i - 1], (
+                f"Retention decreased from {retention_rates[i - 1]} to {retention_rates[i]} at period {i}"
+            )
 
     def test_duplicate_customer_ids_raises_error(self):
         """Test that duplicate customer IDs in cohort_customer_ids raise ValueError."""
