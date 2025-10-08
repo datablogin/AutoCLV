@@ -502,9 +502,26 @@ class TestTimezoneHandling:
             ),  # Aware
         ]
 
-        with pytest.raises(
-            ValueError, match="Mixed timezone-aware and naive datetimes"
-        ):
+        with pytest.raises(ValueError, match="Inconsistent timezone"):
+            create_monthly_cohorts(customers)
+
+    def test_different_timezone_aware_raises_error(self):
+        """Test that different timezone-aware datetimes raise error."""
+        from datetime import timezone
+        from zoneinfo import ZoneInfo
+
+        customers = [
+            CustomerIdentifier(
+                "C1", datetime(2023, 1, 15, tzinfo=timezone.utc), "system"
+            ),  # UTC
+            CustomerIdentifier(
+                "C2",
+                datetime(2023, 2, 20, tzinfo=ZoneInfo("US/Eastern")),
+                "system",
+            ),  # Eastern
+        ]
+
+        with pytest.raises(ValueError, match="Inconsistent timezone"):
             create_monthly_cohorts(customers)
 
 
@@ -541,6 +558,104 @@ class TestDataQuality:
 
         error_msg = str(exc_info.value)
         assert "C1" in error_msg or "C2" in error_msg
+
+    def test_empty_cohort_definitions(self):
+        """Test assignment with empty cohort list returns empty dict."""
+        customers = [
+            CustomerIdentifier("C1", datetime(2023, 1, 15), "system"),
+        ]
+
+        assignments = assign_cohorts(customers, [])
+
+        assert assignments == {}
+
+    def test_require_full_coverage_raises_on_gaps(self):
+        """Test that require_full_coverage raises error for unassigned customers."""
+        customers = [
+            CustomerIdentifier("C1", datetime(2023, 1, 15), "system"),
+            CustomerIdentifier("C2", datetime(2023, 3, 20), "system"),  # Gap!
+        ]
+        cohorts = [
+            CohortDefinition("2023-01", datetime(2023, 1, 1), datetime(2023, 2, 1)),
+        ]
+
+        with pytest.raises(ValueError, match="1 customers fall outside cohort ranges"):
+            assign_cohorts(customers, cohorts, require_full_coverage=True)
+
+    def test_require_full_coverage_passes_with_complete_coverage(self):
+        """Test that require_full_coverage passes when all customers assigned."""
+        customers = [
+            CustomerIdentifier("C1", datetime(2023, 1, 15), "system"),
+            CustomerIdentifier("C2", datetime(2023, 2, 20), "system"),
+        ]
+        cohorts = create_monthly_cohorts(customers)
+
+        assignments = assign_cohorts(customers, cohorts, require_full_coverage=True)
+
+        assert len(assignments) == 2
+
+
+class TestOverlapValidation:
+    """Test validate_non_overlapping() helper function."""
+
+    def test_non_overlapping_cohorts_pass(self):
+        """Test that non-overlapping cohorts pass validation."""
+        from customer_base_audit.foundation.cohorts import validate_non_overlapping
+
+        cohorts = [
+            CohortDefinition("2023-01", datetime(2023, 1, 1), datetime(2023, 2, 1)),
+            CohortDefinition("2023-02", datetime(2023, 2, 1), datetime(2023, 3, 1)),
+            CohortDefinition("2023-03", datetime(2023, 3, 1), datetime(2023, 4, 1)),
+        ]
+
+        # Should not raise
+        validate_non_overlapping(cohorts)
+
+    def test_overlapping_cohorts_raise_error(self):
+        """Test that overlapping cohorts raise ValueError."""
+        from customer_base_audit.foundation.cohorts import validate_non_overlapping
+
+        overlapping = [
+            CohortDefinition(
+                "A", datetime(2023, 1, 1), datetime(2023, 2, 15)
+            ),  # Ends mid-Feb
+            CohortDefinition(
+                "B", datetime(2023, 2, 1), datetime(2023, 3, 1)
+            ),  # Starts Feb 1
+        ]
+
+        with pytest.raises(ValueError, match="Overlapping cohorts detected"):
+            validate_non_overlapping(overlapping)
+
+    def test_overlapping_validation_with_unsorted_input(self):
+        """Test that validation works even with unsorted cohorts."""
+        from customer_base_audit.foundation.cohorts import validate_non_overlapping
+
+        unsorted_overlapping = [
+            CohortDefinition("B", datetime(2023, 2, 1), datetime(2023, 3, 1)),
+            CohortDefinition(
+                "A", datetime(2023, 1, 1), datetime(2023, 2, 15)
+            ),  # Out of order
+        ]
+
+        with pytest.raises(ValueError, match="Overlapping cohorts detected"):
+            validate_non_overlapping(unsorted_overlapping)
+
+    def test_empty_cohorts_list_passes(self):
+        """Test that empty cohorts list passes validation."""
+        from customer_base_audit.foundation.cohorts import validate_non_overlapping
+
+        validate_non_overlapping([])  # Should not raise
+
+    def test_single_cohort_passes(self):
+        """Test that single cohort passes validation."""
+        from customer_base_audit.foundation.cohorts import validate_non_overlapping
+
+        cohorts = [
+            CohortDefinition("2023-01", datetime(2023, 1, 1), datetime(2023, 2, 1))
+        ]
+
+        validate_non_overlapping(cohorts)  # Should not raise
 
 
 class TestCohortCoverageValidation:

@@ -71,30 +71,86 @@ def _validate_timezone_consistency(customers: Sequence[CustomerIdentifier]) -> N
     Raises
     ------
     ValueError
-        If customers have mixed timezone-aware and naive datetimes.
+        If customers have mixed timezone-aware and naive datetimes, or if
+        timezone-aware customers use different timezones.
 
     Notes
     -----
     This ensures that cohort date range calculations don't fail due to
-    comparing timezone-aware and naive datetimes, which raises TypeError.
+    comparing timezone-aware and naive datetimes (raises TypeError), or
+    comparing different timezones which could lead to incorrect cohort
+    assignments (e.g., UTC vs US/Eastern).
     """
     if not customers:
         return
 
     first_tz = customers[0].acquisition_ts.tzinfo
-    for customer in customers[1:]:
-        if (customer.acquisition_ts.tzinfo is None) != (first_tz is None):
+    for customer in customers:
+        if customer.acquisition_ts.tzinfo != first_tz:
             raise ValueError(
-                f"Mixed timezone-aware and naive datetimes detected. "
-                f"All acquisition_ts must be either timezone-aware or naive. "
-                f"First customer timezone: {first_tz}, "
-                f"problematic customer: {customer.customer_id}"
+                f"Inconsistent timezone detected. "
+                f"Expected {first_tz}, got {customer.acquisition_ts.tzinfo} "
+                f"for customer {customer.customer_id}. "
+                f"All acquisition_ts must use the same timezone."
+            )
+
+
+def validate_non_overlapping(cohort_definitions: Sequence[CohortDefinition]) -> None:
+    """Validate that cohort definitions do not overlap.
+
+    Parameters
+    ----------
+    cohort_definitions:
+        List of cohort definitions to check for overlaps.
+
+    Raises
+    ------
+    ValueError
+        If any cohorts have overlapping date ranges.
+
+    Notes
+    -----
+    This is useful for custom cohort definitions where overlaps might
+    be unintentional. The standard `assign_cohorts()` behavior is to
+    assign to the first matching cohort, but overlaps could indicate
+    a configuration error.
+
+    Examples
+    --------
+    >>> from datetime import datetime
+    >>> cohorts = [
+    ...     CohortDefinition("2023-01", datetime(2023, 1, 1), datetime(2023, 2, 1)),
+    ...     CohortDefinition("2023-02", datetime(2023, 2, 1), datetime(2023, 3, 1)),
+    ... ]
+    >>> validate_non_overlapping(cohorts)  # No overlap, passes
+    >>> overlapping = [
+    ...     CohortDefinition("A", datetime(2023, 1, 1), datetime(2023, 2, 15)),
+    ...     CohortDefinition("B", datetime(2023, 2, 1), datetime(2023, 3, 1)),
+    ... ]
+    >>> validate_non_overlapping(overlapping)  # doctest: +SKIP
+    ValueError: Overlapping cohorts detected: A and B
+    """
+    if not cohort_definitions:
+        return
+
+    sorted_cohorts = sorted(cohort_definitions, key=lambda c: c.start_date)
+
+    for i in range(len(sorted_cohorts) - 1):
+        current = sorted_cohorts[i]
+        next_cohort = sorted_cohorts[i + 1]
+
+        if current.end_date > next_cohort.start_date:
+            raise ValueError(
+                f"Overlapping cohorts detected: '{current.cohort_id}' "
+                f"(ends {current.end_date.isoformat()}) overlaps with "
+                f"'{next_cohort.cohort_id}' (starts {next_cohort.start_date.isoformat()})"
             )
 
 
 def assign_cohorts(
     customers: Sequence[CustomerIdentifier],
     cohort_definitions: Sequence[CohortDefinition],
+    require_full_coverage: bool = False,
 ) -> dict[str, str]:
     """Assign customers to cohorts based on acquisition timestamp.
 
@@ -104,17 +160,23 @@ def assign_cohorts(
         List of customer identifiers with acquisition timestamps.
     cohort_definitions:
         List of cohort definitions with acquisition date ranges.
+    require_full_coverage:
+        If True, raise ValueError if any customers fall outside cohort ranges.
+        This prevents silent data loss in CLV analysis. Default False for
+        backward compatibility.
 
     Returns
     -------
     dict[str, str]
         Mapping of customer_id to cohort_id. Customers whose acquisition_ts
-        does not fall within any cohort definition are excluded from the result.
+        does not fall within any cohort definition are excluded from the result
+        (unless require_full_coverage=True, which raises an error instead).
 
     Raises
     ------
     ValueError
-        If duplicate customer_id values are detected in the input.
+        If duplicate customer_id values are detected in the input, or if
+        require_full_coverage=True and any customers fall outside cohort ranges.
 
     Notes
     -----
@@ -122,8 +184,19 @@ def assign_cohorts(
       their acquisition_ts (start_date <= acquisition_ts < end_date).
     - If cohort definitions overlap, customers are assigned to the first
       matching cohort in the list order.
-    - Customers with acquisition_ts outside all cohort ranges are not assigned.
+    - Customers with acquisition_ts outside all cohort ranges are not assigned
+      (or raise error if require_full_coverage=True).
     - Each customer must appear exactly once; duplicates raise ValueError.
+
+    Examples
+    --------
+    >>> customers = [CustomerIdentifier("C1", datetime(2023, 1, 15), "sys")]
+    >>> cohorts = [CohortDefinition("2023-01", datetime(2023, 1, 1), datetime(2023, 2, 1))]
+    >>> assign_cohorts(customers, cohorts)
+    {'C1': '2023-01'}
+    >>> # With strict coverage validation:
+    >>> assign_cohorts(customers, [], require_full_coverage=True)  # doctest: +SKIP
+    ValueError: 1 customers fall outside cohort ranges
     """
     # Check for duplicate customer IDs
     customer_ids = [c.customer_id for c in customers]
@@ -143,6 +216,17 @@ def assign_cohorts(
             if cohort.start_date <= customer.acquisition_ts < cohort.end_date:
                 assignments[customer.customer_id] = cohort.cohort_id
                 break  # Assign to first matching cohort
+
+    # Validate full coverage if required
+    if require_full_coverage and len(assignments) < len(customers):
+        unassigned = [
+            c.customer_id for c in customers if c.customer_id not in assignments
+        ]
+        raise ValueError(
+            f"{len(unassigned)} customers fall outside cohort ranges. "
+            f"First 5 unassigned: {unassigned[:5]}. "
+            f"This may indicate missing cohort definitions or data quality issues."
+        )
 
     return assignments
 
