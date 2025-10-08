@@ -1,6 +1,0 @@
-pandas
-matplotlib
-click
-jinja2
-plotly
-pytest
