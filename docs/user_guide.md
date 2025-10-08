@@ -98,6 +98,48 @@ Median Customer Value: $3233.89
 
 **Interpretation:** This Texas CLV dataset shows excellent customer retention (only 2.92% one-time buyers) with relatively distributed revenue (top 10% contribute 23%). The high average orders per customer (15.74) indicates strong repeat purchase behavior, typical of a successful subscription or high-engagement retail business.
 
+#### Advanced: Cohort-Specific Lens 1 Analysis
+
+You can analyze specific cohorts by filtering customers before running Lens 1:
+
+```python
+from customer_base_audit.foundation.cohorts import create_monthly_cohorts, assign_cohorts
+
+# Create monthly cohorts
+cohort_definitions = create_monthly_cohorts(
+    customers=customers,
+    start_date=datetime(2024, 4, 1),
+    end_date=datetime(2024, 12, 31)
+)
+
+# Assign customers to cohorts
+cohort_assignments = assign_cohorts(customers, cohort_definitions)
+
+# Analyze a specific cohort (e.g., April 2024 acquisitions)
+april_cohort_id = "2024-04"
+april_customer_ids = {
+    cust_id for cust_id, cohort_id in cohort_assignments.items()
+    if cohort_id == april_cohort_id
+}
+
+# Filter RFM metrics for this cohort
+april_rfm = [rfm for rfm in rfm_metrics if rfm.customer_id in april_customer_ids]
+april_scores = [score for score in rfm_scores if score.customer_id in april_customer_ids]
+
+# Run Lens 1 on the cohort
+april_lens1 = analyze_single_period(april_rfm, april_scores)
+
+print(f"April 2024 Cohort Analysis:")
+print(f"  Customers: {april_lens1.total_customers}")
+print(f"  One-time buyers: {april_lens1.one_time_buyer_pct}%")
+print(f"  Top 20% revenue contribution: {april_lens1.top_20pct_revenue_contribution}%")
+```
+
+This cohort-specific analysis is particularly useful for:
+- Comparing acquisition channel performance
+- Identifying seasonal cohort differences
+- Tracking cohort maturation over time
+
 #### Common Patterns and What They Mean
 
 1. **High one-time buyer % + Low top 10% concentration**
