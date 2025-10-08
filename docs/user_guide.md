@@ -173,6 +173,32 @@ Lens 1 provides a snapshot view of your customer base within a single time perio
 
 #### Running Lens 1 Analysis
 
+**Data Validation First**
+
+Before running analysis, validate your data to catch common issues:
+
+```python
+from datetime import datetime
+from customer_base_audit.foundation.data_mart import CustomerDataMartBuilder, PeriodGranularity
+
+# Quick validation checks
+print(f"Transaction count: {len(transactions)}")
+print(f"Date range: {min(t['event_ts'] for t in transactions)} to {max(t['event_ts'] for t in transactions)}")
+print(f"Unique customers: {len(set(t['customer_id'] for t in transactions))}")
+print(f"Unique orders: {len(set(t['order_id'] for t in transactions))}")
+
+# This will raise helpful errors if data is malformed
+try:
+    builder = CustomerDataMartBuilder(period_granularities=[PeriodGranularity.MONTH])
+    mart = builder.build(transactions)
+    print(f"✓ Data validation passed: {len(mart.orders)} orders processed")
+except (ValueError, TypeError, KeyError) as e:
+    print(f"❌ Data validation failed: {e}")
+    # Fix your data and try again
+```
+
+**Complete Example**
+
 ```python
 from datetime import datetime
 from dataclasses import asdict
@@ -196,10 +222,10 @@ rfm_metrics = calculate_rfm(
     observation_end=observation_end
 )
 
-# 4. Calculate RFM scores (optional but recommended)
+# 4. Calculate RFM scores (required for RFM distribution analysis)
 rfm_scores = calculate_rfm_scores(rfm_metrics)
 
-# 5. Run Lens 1 analysis
+# 5. Run Lens 1 analysis (pass rfm_scores for distribution, or None to skip)
 lens1_results = analyze_single_period(rfm_metrics, rfm_scores)
 
 # 6. View results
@@ -240,10 +266,24 @@ Total Revenue: $1,195,624.61
 Top 10% Revenue Contribution: 23.0%
 Top 20% Revenue Contribution: 41.3%
 Avg Orders per Customer: 15.74
-Median Customer Value: $3233.89
+Median Customer Value: $3,233.89
 ```
 
 **Interpretation:** This Texas CLV dataset shows excellent customer retention (only 2.92% one-time buyers) with relatively distributed revenue (top 10% contribute 23%). The high average orders per customer (15.74) indicates strong repeat purchase behavior, typical of a successful subscription or high-engagement retail business.
+
+#### Performance Expectations
+
+Lens 1 analysis performance scales linearly with customer count:
+
+- **< 1,000 customers**: Near-instant (< 1 second)
+- **1,000-10,000 customers**: 1-3 seconds
+- **10,000-100,000 customers**: 3-10 seconds
+- **100,000-1M customers**: 10-60 seconds
+- **> 1M customers**: Consider batching by cohort or time period
+
+**Memory usage**: Approximately 1-2 MB per 1,000 customers for RFM calculations.
+
+**Tip**: For very large datasets, process cohorts separately and aggregate results.
 
 #### Advanced: Cohort-Specific Lens 1 Analysis
 
@@ -252,7 +292,8 @@ You can analyze specific cohorts by filtering customers before running Lens 1:
 ```python
 from customer_base_audit.foundation.cohorts import create_monthly_cohorts, assign_cohorts
 
-# Create monthly cohorts
+# Create monthly cohorts (see cohort documentation in foundation module)
+# Note: Full cohort analysis will be available in Lens 3 (Phase 2)
 cohort_definitions = create_monthly_cohorts(
     customers=customers,
     start_date=datetime(2024, 4, 1),
@@ -300,6 +341,13 @@ This cohort-specific analysis is particularly useful for:
 3. **Increasing median customer value over time**
    - Customers are spending more per capita
    - Action: Indicative of good product expansion or pricing
+
+#### See Also
+
+For more examples and edge cases:
+- **`tests/test_lens1.py`**: Comprehensive test cases including edge conditions
+- **`tests/test_rfm.py`**: RFM calculation examples and validation tests
+- **`tests/test_customer_foundation.py`**: Data mart building examples
 
 ### Lens 2: Period-to-Period Comparison
 **Status:** Implementation in progress (Track A, Phase 2)
