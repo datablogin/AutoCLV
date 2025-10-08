@@ -14,9 +14,17 @@ customer behavior and business health:
 """
 
 from .lens1 import Lens1Metrics, analyze_single_period, calculate_revenue_concentration
+from .lens2 import (
+    CustomerMigration,
+    Lens2Metrics,
+    analyze_period_comparison,
+)
 
 __all__ = [
     "Lens1Metrics",
     "analyze_single_period",
     "calculate_revenue_concentration",
+    "CustomerMigration",
+    "Lens2Metrics",
+    "analyze_period_comparison",
 ]
