@@ -13,10 +13,12 @@ Quick Start
 >>>
 >>> # Analyze cohort acquired in January 2023
 >>> period_aggregations = [...]  # Your period aggregations
+>>> cohort_customer_ids = ["C1", "C2", "C3"]  # Customer IDs in this cohort
 >>> metrics = analyze_cohort_evolution(
-...     cohort_id="2023-01",
+...     cohort_name="2023-01",
 ...     acquisition_date=datetime(2023, 1, 1),
-...     period_aggregations=period_aggregations
+...     period_aggregations=period_aggregations,
+...     cohort_customer_ids=cohort_customer_ids
 ... )
 >>> print(f"Cohort size: {metrics.cohort_size}")
 >>> print(f"Retention at period 3: {metrics.periods[3].retention_rate}")
@@ -42,11 +44,16 @@ class CohortPeriodMetrics:
     active_customers:
         Number of customers from the cohort who made purchases this period.
     retention_rate:
-        Percentage of original cohort still active (active_customers / cohort_size).
+        Cumulative percentage of cohort that has made at least one purchase since
+        acquisition (includes customers active in any previous period).
     avg_orders_per_customer:
-        Average orders per active customer in this period.
+        Average orders per active customer in this period (active customers only).
     avg_revenue_per_customer:
-        Average revenue per active customer in this period.
+        Average revenue per active customer in this period (active customers only).
+    avg_orders_per_cohort_member:
+        Average orders per original cohort member (includes churned customers as zeros).
+    avg_revenue_per_cohort_member:
+        Average revenue per original cohort member (includes churned customers as zeros).
     total_revenue:
         Total revenue from the cohort in this period.
     """
@@ -56,6 +63,8 @@ class CohortPeriodMetrics:
     retention_rate: float
     avg_orders_per_customer: float
     avg_revenue_per_customer: float
+    avg_orders_per_cohort_member: float
+    avg_revenue_per_cohort_member: float
     total_revenue: float
 
     def __post_init__(self) -> None:
@@ -77,6 +86,14 @@ class CohortPeriodMetrics:
         if self.avg_revenue_per_customer < 0:
             raise ValueError(
                 f"avg_revenue_per_customer must be >= 0, got {self.avg_revenue_per_customer}"
+            )
+        if self.avg_orders_per_cohort_member < 0:
+            raise ValueError(
+                f"avg_orders_per_cohort_member must be >= 0, got {self.avg_orders_per_cohort_member}"
+            )
+        if self.avg_revenue_per_cohort_member < 0:
+            raise ValueError(
+                f"avg_revenue_per_cohort_member must be >= 0, got {self.avg_revenue_per_cohort_member}"
             )
         if self.total_revenue < 0:
             raise ValueError(f"total_revenue must be >= 0, got {self.total_revenue}")
@@ -124,7 +141,7 @@ class Lens3Metrics:
 
 
 def analyze_cohort_evolution(
-    cohort_id: str,
+    cohort_name: str,
     acquisition_date: datetime,
     period_aggregations: Sequence[PeriodAggregation],
     cohort_customer_ids: Sequence[str],
@@ -137,7 +154,7 @@ def analyze_cohort_evolution(
 
     Parameters
     ----------
-    cohort_id:
+    cohort_name:
         Identifier for the cohort (e.g., "2023-01", "Q1-2023").
     acquisition_date:
         Start date of the cohort's acquisition period. Used to align periods
@@ -190,7 +207,7 @@ def analyze_cohort_evolution(
     ... ]
     >>>
     >>> metrics = analyze_cohort_evolution(
-    ...     cohort_id="2023-01",
+    ...     cohort_name="2023-01",
     ...     acquisition_date=acquisition_date,
     ...     period_aggregations=periods,
     ...     cohort_customer_ids=cohort_customers
@@ -198,13 +215,20 @@ def analyze_cohort_evolution(
     >>> print(f"Cohort size: {metrics.cohort_size}")
     Cohort size: 3
     >>> print(f"Period 0 retention: {metrics.periods[0].retention_rate:.2%}")
-    Period 0 retention: 66.67%
+    Period 0 retention: 100.00%
     """
     if not cohort_customer_ids:
         raise ValueError("cohort_customer_ids cannot be empty")
 
-    cohort_size = len(cohort_customer_ids)
+    # Validate no duplicate customer IDs
     cohort_customer_set = set(cohort_customer_ids)
+    if len(cohort_customer_set) != len(cohort_customer_ids):
+        num_duplicates = len(cohort_customer_ids) - len(cohort_customer_set)
+        raise ValueError(
+            f"cohort_customer_ids contains {num_duplicates} duplicate IDs. "
+            "Each customer should appear exactly once."
+        )
+    cohort_size = len(cohort_customer_set)
 
     # Filter period aggregations to only include cohort customers
     cohort_periods = [
@@ -213,7 +237,7 @@ def analyze_cohort_evolution(
 
     if not cohort_periods:
         raise ValueError(
-            f"No period aggregations found for cohort {cohort_id}. "
+            f"No period aggregations found for cohort {cohort_name}. "
             f"Check that cohort_customer_ids match customer_id values in period_aggregations."
         )
 
@@ -243,24 +267,35 @@ def analyze_cohort_evolution(
 
     # Calculate metrics for each period, starting from acquisition period
     cohort_period_metrics: list[CohortPeriodMetrics] = []
+    cumulative_active_customers: set[str] = set()  # Track customers active in any period
+
     for period_number, period_date in enumerate(
         sorted_dates[acquisition_period_idx:], start=0
     ):
         period_data = periods_by_date[period_date]
 
-        # Calculate aggregated metrics
-        active_customers = len(set(p.customer_id for p in period_data))
-        retention_rate = active_customers / cohort_size
+        # Calculate period-specific active customers
+        period_active_customers = set(p.customer_id for p in period_data)
+        active_customers = len(period_active_customers)
+
+        # Update cumulative active set (for cumulative retention)
+        cumulative_active_customers.update(period_active_customers)
+        retention_rate = len(cumulative_active_customers) / cohort_size
 
         total_orders = sum(p.total_orders for p in period_data)
         total_revenue = sum(p.total_spend for p in period_data)
 
+        # Per-active-customer metrics (only includes active customers this period)
         avg_orders_per_customer = (
             total_orders / active_customers if active_customers > 0 else 0.0
         )
         avg_revenue_per_customer = (
             total_revenue / active_customers if active_customers > 0 else 0.0
         )
+
+        # Per-cohort-member metrics (includes all cohort members, churned as zeros)
+        avg_orders_per_cohort_member = total_orders / cohort_size
+        avg_revenue_per_cohort_member = total_revenue / cohort_size
 
         cohort_period_metrics.append(
             CohortPeriodMetrics(
@@ -269,12 +304,14 @@ def analyze_cohort_evolution(
                 retention_rate=retention_rate,
                 avg_orders_per_customer=avg_orders_per_customer,
                 avg_revenue_per_customer=avg_revenue_per_customer,
+                avg_orders_per_cohort_member=avg_orders_per_cohort_member,
+                avg_revenue_per_cohort_member=avg_revenue_per_cohort_member,
                 total_revenue=total_revenue,
             )
         )
 
     return Lens3Metrics(
-        cohort_name=cohort_id,
+        cohort_name=cohort_name,
         acquisition_date=acquisition_date,
         cohort_size=cohort_size,
         periods=cohort_period_metrics,
