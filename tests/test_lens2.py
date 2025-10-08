@@ -461,3 +461,158 @@ class TestAnalyzePeriodComparison:
         period2_count = len(period2)
         reconciled_p2_count = len(lens2.migration.retained) + len(lens2.migration.new)
         assert period2_count == reconciled_p2_count
+
+    def test_rounding_edge_case_prime_number_customers(self):
+        """Verify retention + churn = 100% with 7 customers (prime number)."""
+        period1 = [
+            self.create_rfm(f"C{i}", 1, Decimal("100"), datetime(2023, 6, 30))
+            for i in range(7)
+        ]
+        period2 = [
+            self.create_rfm(f"C{i}", 1, Decimal("100"), datetime(2023, 12, 31))
+            for i in range(3)
+        ]
+
+        lens2 = analyze_period_comparison(period1, period2)
+
+        # Verify rates sum to 100% (within tolerance)
+        rate_sum = lens2.retention_rate + lens2.churn_rate
+        assert abs(rate_sum - 100) <= Decimal("0.1")
+        # With 7 customers, 3 retained = 42.86% retention, 57.14% churn
+        assert lens2.retention_rate == Decimal("42.86")
+        assert lens2.churn_rate == Decimal("57.14")
+
+    def test_duplicate_customer_ids_in_period1_raises_error(self):
+        """Duplicate customer IDs in period1 should raise ValueError."""
+        period1 = [
+            self.create_rfm("C1", 5, Decimal("250"), datetime(2023, 6, 30)),
+            self.create_rfm("C1", 3, Decimal("150"), datetime(2023, 6, 30)),  # Duplicate
+        ]
+        period2 = [
+            self.create_rfm("C1", 3, Decimal("180"), datetime(2023, 12, 31)),
+        ]
+
+        with pytest.raises(ValueError, match="Duplicate customer IDs found in period1_rfm"):
+            analyze_period_comparison(period1, period2)
+
+    def test_duplicate_customer_ids_in_period2_raises_error(self):
+        """Duplicate customer IDs in period2 should raise ValueError."""
+        period1 = [
+            self.create_rfm("C1", 5, Decimal("250"), datetime(2023, 6, 30)),
+        ]
+        period2 = [
+            self.create_rfm("C1", 3, Decimal("180"), datetime(2023, 12, 31)),
+            self.create_rfm("C1", 2, Decimal("100"), datetime(2023, 12, 31)),  # Duplicate
+        ]
+
+        with pytest.raises(ValueError, match="Duplicate customer IDs found in period2_rfm"):
+            analyze_period_comparison(period1, period2)
+
+    def test_all_customer_history_missing_period1_customers_raises_error(self):
+        """all_customer_history missing period1 customers should raise ValueError."""
+        period1 = [
+            self.create_rfm("C1", 5, Decimal("250"), datetime(2023, 6, 30)),
+            self.create_rfm("C2", 3, Decimal("200"), datetime(2023, 6, 30)),
+        ]
+        period2 = [
+            self.create_rfm("C1", 3, Decimal("180"), datetime(2023, 12, 31)),
+        ]
+        # History is missing C2 (which was in period1)
+        all_history = ["C1", "C0"]  # C0 is pre-period1, but C2 is missing
+
+        with pytest.raises(
+            ValueError, match="all_customer_history must include all period1 customers"
+        ):
+            analyze_period_comparison(period1, period2, all_customer_history=all_history)
+
+    def test_performance_optimization_with_precalculated_lens1(self):
+        """Verify that providing pre-calculated Lens1 metrics works correctly."""
+        from customer_base_audit.analyses.lens1 import analyze_single_period
+
+        period1 = [
+            self.create_rfm("C1", 5, Decimal("250"), datetime(2023, 6, 30)),
+            self.create_rfm("C2", 2, Decimal("200"), datetime(2023, 6, 30)),
+        ]
+        period2 = [
+            self.create_rfm("C1", 3, Decimal("180"), datetime(2023, 12, 31)),
+            self.create_rfm("C3", 1, Decimal("150"), datetime(2023, 12, 31)),
+        ]
+
+        # Pre-calculate Lens1 metrics
+        lens1_p1 = analyze_single_period(period1)
+        lens1_p2 = analyze_single_period(period2)
+
+        # Use them in Lens2 analysis
+        lens2 = analyze_period_comparison(
+            period1, period2,
+            period1_metrics=lens1_p1,
+            period2_metrics=lens1_p2
+        )
+
+        # Results should be identical to calling without pre-calculated metrics
+        lens2_without_cache = analyze_period_comparison(period1, period2)
+
+        assert lens2.retention_rate == lens2_without_cache.retention_rate
+        assert lens2.churn_rate == lens2_without_cache.churn_rate
+        assert lens2.period1_metrics.total_revenue == lens1_p1.total_revenue
+        assert lens2.period2_metrics.total_revenue == lens1_p2.total_revenue
+
+    def test_revenue_change_precision_two_decimal_places(self):
+        """Verify revenue change uses 2 decimal places (not 1)."""
+        period1 = [
+            self.create_rfm("C1", 10, Decimal("1000"), datetime(2023, 6, 30)),
+        ]
+        period2 = [
+            self.create_rfm("C1", 10, Decimal("1234.56"), datetime(2023, 12, 31)),
+        ]
+
+        lens2 = analyze_period_comparison(period1, period2)
+
+        # Revenue change: (1234.56 - 1000) / 1000 * 100 = 23.456%
+        # Should round to 23.46% (2 decimal places), not 23.5% (1 decimal place)
+        assert lens2.revenue_change_pct == Decimal("23.46")
+
+    def test_aov_change_precision_two_decimal_places(self):
+        """Verify AOV change uses 2 decimal places (not 1)."""
+        period1 = [
+            self.create_rfm("C1", 10, Decimal("1000"), datetime(2023, 6, 30)),
+        ]
+        period2 = [
+            self.create_rfm("C1", 10, Decimal("1234.56"), datetime(2023, 12, 31)),
+        ]
+
+        lens2 = analyze_period_comparison(period1, period2)
+
+        # AOV P1 = 1000/10 = 100
+        # AOV P2 = 1234.56/10 = 123.456
+        # Change = (123.456 - 100) / 100 * 100 = 23.456%
+        # Should round to 23.46% (2 decimal places)
+        assert lens2.avg_order_value_change_pct == Decimal("23.46")
+
+    @pytest.mark.slow
+    def test_large_dataset_performance(self):
+        """Verify acceptable performance with 10k customers (marked slow)."""
+        import time
+
+        # Create 10k customers in period1 (smaller dataset for CI)
+        period1 = [
+            self.create_rfm(f"C{i}", 1, Decimal("100"), datetime(2023, 6, 30))
+            for i in range(10000)
+        ]
+        # 50% retention, 50% new customers
+        period2 = period1[:5000] + [
+            self.create_rfm(f"NEW{i}", 1, Decimal("100"), datetime(2023, 12, 31))
+            for i in range(5000)
+        ]
+
+        start = time.time()
+        lens2 = analyze_period_comparison(period1, period2)
+        duration = time.time() - start
+
+        # Should complete in < 2 seconds on modern hardware
+        assert duration < 2.0, f"Performance test took {duration:.2f}s (expected < 2.0s)"
+
+        # Verify correctness
+        assert lens2.retention_rate == Decimal("50.00")
+        assert len(lens2.migration.retained) == 5000
+        assert len(lens2.migration.new) == 5000

@@ -1,6 +1,6 @@
 """Lens 2: Period-to-Period Comparison Analysis.
 
-Tracks customer migration patterns and metric changes between two adjacent periods,
+Tracks customer migration patterns and metric changes between two periods,
 answering questions like:
 - How many customers were retained vs. churned?
 - How many new customers appeared?
@@ -8,6 +8,11 @@ answering questions like:
 - What changed in revenue, AOV, and frequency between periods?
 
 This is the second lens from "The Customer-Base Audit" framework.
+
+Note: While this lens is typically used for adjacent time periods (e.g., Q1 → Q2),
+it can compare any two periods. The interpretation of "churn" depends on the
+time gap between periods: consecutive periods indicate true churn, while
+non-consecutive periods may indicate temporary inactivity.
 """
 
 from __future__ import annotations
@@ -18,6 +23,10 @@ from typing import Sequence
 
 from customer_base_audit.analyses.lens1 import Lens1Metrics, analyze_single_period
 from customer_base_audit.foundation.rfm import RFMMetrics
+
+# Module-level constants
+RATE_SUM_TOLERANCE = Decimal("0.1")  # Tolerance for retention + churn = 100%
+PERCENTAGE_PRECISION = Decimal("0.01")  # Standard precision for all percentages (2 decimal places)
 
 
 @dataclass(frozen=True)
@@ -128,8 +137,7 @@ class Lens2Metrics:
         # Retention + churn should equal 100% (within rounding tolerance)
         # Exception: when period1 is empty, both rates are 0 (which is valid)
         rate_sum = self.retention_rate + self.churn_rate
-        tolerance = Decimal("0.1")
-        if rate_sum > 0 and abs(rate_sum - 100) > tolerance:
+        if rate_sum > 0 and abs(rate_sum - 100) > RATE_SUM_TOLERANCE:
             raise ValueError(
                 f"Retention rate ({self.retention_rate}) + churn rate ({self.churn_rate}) "
                 f"must equal 100, got {rate_sum}"
@@ -140,26 +148,44 @@ def analyze_period_comparison(
     period1_rfm: Sequence[RFMMetrics],
     period2_rfm: Sequence[RFMMetrics],
     all_customer_history: Sequence[str] | None = None,
+    period1_metrics: Lens1Metrics | None = None,
+    period2_metrics: Lens1Metrics | None = None,
 ) -> Lens2Metrics:
-    """Compare two adjacent periods to identify customer migration patterns.
+    """Compare two periods to identify customer migration patterns.
 
     Parameters
     ----------
     period1_rfm:
-        RFM metrics for all customers active in period 1
+        RFM metrics for all customers active in period 1.
+        Must contain unique customer IDs (no duplicates).
     period2_rfm:
-        RFM metrics for all customers active in period 2
+        RFM metrics for all customers active in period 2.
+        Must contain unique customer IDs (no duplicates).
     all_customer_history:
-        Optional list of all customer IDs ever seen (across all historical periods).
-        If provided, enables identification of reactivated customers (those who
-        were inactive in period 1 but were active in some earlier period).
+        Optional list of all customer IDs ever seen across ALL historical periods,
+        including periods 1 and 2. If provided, enables identification of reactivated
+        customers (those who were inactive in period 1 but were active in some
+        earlier period). Must be a superset of period1 customer IDs.
         If not provided, all "new" customers in period 2 will be considered
         truly new (reactivated will be empty).
+    period1_metrics:
+        Optional pre-calculated Lens1Metrics for period 1. If not provided,
+        will be calculated from period1_rfm. Providing this can improve
+        performance for large datasets if Lens1 metrics are already available.
+    period2_metrics:
+        Optional pre-calculated Lens1Metrics for period 2. If not provided,
+        will be calculated from period2_rfm.
 
     Returns
     -------
     Lens2Metrics
         Comprehensive period-to-period comparison results
+
+    Raises
+    ------
+    ValueError
+        If duplicate customer IDs are found in period1_rfm or period2_rfm,
+        or if all_customer_history does not include period1 customers.
 
     Examples
     --------
@@ -184,9 +210,24 @@ def analyze_period_comparison(
     >>> float(lens2.retention_rate)
     50.0
     """
-    # Calculate Lens 1 metrics for each period
-    lens1_period1 = analyze_single_period(period1_rfm)
-    lens1_period2 = analyze_single_period(period2_rfm)
+    # Validate no duplicate customer IDs in input
+    period1_ids = [m.customer_id for m in period1_rfm]
+    if len(period1_ids) != len(set(period1_ids)):
+        duplicates = {cid for cid in period1_ids if period1_ids.count(cid) > 1}
+        raise ValueError(
+            f"Duplicate customer IDs found in period1_rfm: {duplicates}"
+        )
+
+    period2_ids = [m.customer_id for m in period2_rfm]
+    if len(period2_ids) != len(set(period2_ids)):
+        duplicates = {cid for cid in period2_ids if period2_ids.count(cid) > 1}
+        raise ValueError(
+            f"Duplicate customer IDs found in period2_rfm: {duplicates}"
+        )
+
+    # Calculate or use provided Lens 1 metrics for each period
+    lens1_period1 = period1_metrics if period1_metrics is not None else analyze_single_period(period1_rfm)
+    lens1_period2 = period2_metrics if period2_metrics is not None else analyze_single_period(period2_rfm)
 
     # Extract customer sets
     period1_customers = frozenset(m.customer_id for m in period1_rfm)
@@ -200,7 +241,18 @@ def analyze_period_comparison(
     # Identify reactivated customers (if history provided)
     if all_customer_history:
         all_history_set = frozenset(all_customer_history)
+
+        # Validate that all_customer_history includes period1 customers
+        # (It should contain ALL historical customers, including those in period1)
+        if not period1_customers.issubset(all_history_set):
+            missing = period1_customers - all_history_set
+            raise ValueError(
+                f"all_customer_history must include all period1 customers. "
+                f"Missing customer IDs: {missing}"
+            )
+
         # Reactivated = customers who are new in period 2 but were seen before period 1
+        # (i.e., in history but not in period 1)
         reactivated = new & (all_history_set - period1_customers)
     else:
         reactivated = frozenset()
@@ -212,14 +264,14 @@ def analyze_period_comparison(
         reactivated=reactivated,
     )
 
-    # Calculate rates
+    # Calculate rates (all using standard percentage precision)
     if len(period1_customers) > 0:
         retention_rate = (
             Decimal(len(retained)) / Decimal(len(period1_customers)) * 100
-        ).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
+        ).quantize(PERCENTAGE_PRECISION, rounding=ROUND_HALF_UP)
         churn_rate = (
             Decimal(len(churned)) / Decimal(len(period1_customers)) * 100
-        ).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
+        ).quantize(PERCENTAGE_PRECISION, rounding=ROUND_HALF_UP)
     else:
         retention_rate = Decimal("0")
         churn_rate = Decimal("0")
@@ -227,7 +279,7 @@ def analyze_period_comparison(
     if len(period2_customers) > 0:
         reactivation_rate = (
             Decimal(len(reactivated)) / Decimal(len(period2_customers)) * 100
-        ).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
+        ).quantize(PERCENTAGE_PRECISION, rounding=ROUND_HALF_UP)
     else:
         reactivation_rate = Decimal("0")
 
@@ -240,10 +292,10 @@ def analyze_period_comparison(
             (lens1_period2.total_revenue - lens1_period1.total_revenue)
             / lens1_period1.total_revenue
             * 100
-        ).quantize(Decimal("0.1"), rounding=ROUND_HALF_UP)
+        ).quantize(PERCENTAGE_PRECISION, rounding=ROUND_HALF_UP)
     else:
         # If period 1 had zero revenue, treat any period 2 revenue as 100% increase
-        revenue_change_pct = Decimal("100.0") if lens1_period2.total_revenue > 0 else Decimal("0")
+        revenue_change_pct = Decimal("100.00") if lens1_period2.total_revenue > 0 else Decimal("0.00")
 
     # Calculate average order value change percentage
     # AOV = total_revenue / total_orders
@@ -257,12 +309,12 @@ def analyze_period_comparison(
         if period1_aov > 0:
             avg_order_value_change_pct = (
                 (period2_aov - period1_aov) / period1_aov * 100
-            ).quantize(Decimal("0.1"), rounding=ROUND_HALF_UP)
+            ).quantize(PERCENTAGE_PRECISION, rounding=ROUND_HALF_UP)
         else:
             # If period1 AOV is 0, treat any period2 AOV as 100% increase
-            avg_order_value_change_pct = Decimal("100.0") if period2_aov > 0 else Decimal("0")
+            avg_order_value_change_pct = Decimal("100.00") if period2_aov > 0 else Decimal("0.00")
     else:
-        avg_order_value_change_pct = Decimal("0")
+        avg_order_value_change_pct = Decimal("0.00")
 
     return Lens2Metrics(
         period1_metrics=lens1_period1,
