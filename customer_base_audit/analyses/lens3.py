@@ -21,7 +21,7 @@ Quick Start
 ...     cohort_customer_ids=cohort_customer_ids
 ... )
 >>> print(f"Cohort size: {metrics.cohort_size}")
->>> print(f"Retention at period 3: {metrics.periods[3].retention_rate}")
+>>> print(f"Cumulative activation at period 3: {metrics.periods[3].cumulative_activation_rate}")
 """
 
 from __future__ import annotations
@@ -43,9 +43,10 @@ class CohortPeriodMetrics:
         Periods since acquisition (0 = acquisition period).
     active_customers:
         Number of customers from the cohort who made purchases this period.
-    retention_rate:
+    cumulative_activation_rate:
         Cumulative percentage of cohort that has made at least one purchase since
-        acquisition (includes customers active in any previous period).
+        acquisition (includes customers active in any previous period). This is NOT
+        period-specific retention; it tracks ever-active customers, so it never decreases.
     avg_orders_per_customer:
         Average orders per active customer in this period (active customers only).
     avg_revenue_per_customer:
@@ -60,7 +61,7 @@ class CohortPeriodMetrics:
 
     period_number: int
     active_customers: int
-    retention_rate: float
+    cumulative_activation_rate: float
     avg_orders_per_customer: float
     avg_revenue_per_customer: float
     avg_orders_per_cohort_member: float
@@ -75,9 +76,9 @@ class CohortPeriodMetrics:
             raise ValueError(
                 f"active_customers must be >= 0, got {self.active_customers}"
             )
-        if not 0 <= self.retention_rate <= 1:
+        if not 0 <= self.cumulative_activation_rate <= 1:
             raise ValueError(
-                f"retention_rate must be between 0 and 1, got {self.retention_rate}"
+                f"cumulative_activation_rate must be between 0 and 1, got {self.cumulative_activation_rate}"
             )
         if self.avg_orders_per_customer < 0:
             raise ValueError(
@@ -214,8 +215,8 @@ def analyze_cohort_evolution(
     ... )
     >>> print(f"Cohort size: {metrics.cohort_size}")
     Cohort size: 3
-    >>> print(f"Period 0 retention: {metrics.periods[0].retention_rate:.2%}")
-    Period 0 retention: 100.00%
+    >>> print(f"Period 0 cumulative activation: {metrics.periods[0].cumulative_activation_rate:.2%}")
+    Period 0 cumulative activation: 100.00%
     """
     if not cohort_customer_ids:
         raise ValueError("cohort_customer_ids cannot be empty")
@@ -280,9 +281,9 @@ def analyze_cohort_evolution(
         period_active_customers = set(p.customer_id for p in period_data)
         active_customers = len(period_active_customers)
 
-        # Update cumulative active set (for cumulative retention)
+        # Update cumulative active set (for cumulative activation tracking)
         cumulative_active_customers.update(period_active_customers)
-        retention_rate = len(cumulative_active_customers) / cohort_size
+        cumulative_activation_rate = len(cumulative_active_customers) / cohort_size
 
         total_orders = sum(p.total_orders for p in period_data)
         total_revenue = sum(p.total_spend for p in period_data)
@@ -303,7 +304,7 @@ def analyze_cohort_evolution(
             CohortPeriodMetrics(
                 period_number=period_number,
                 active_customers=active_customers,
-                retention_rate=retention_rate,
+                cumulative_activation_rate=cumulative_activation_rate,
                 avg_orders_per_customer=avg_orders_per_customer,
                 avg_revenue_per_customer=avg_revenue_per_customer,
                 avg_orders_per_cohort_member=avg_orders_per_cohort_member,
@@ -321,7 +322,10 @@ def analyze_cohort_evolution(
 
 
 def calculate_retention_curve(cohort_metrics: Lens3Metrics) -> Mapping[int, float]:
-    """Extract retention rates by period number.
+    """Extract cumulative activation rates by period number.
+
+    Note: Despite the function name (kept for backward compatibility), this
+    returns cumulative activation rates, not period-specific retention rates.
 
     Parameters
     ----------
@@ -331,7 +335,7 @@ def calculate_retention_curve(cohort_metrics: Lens3Metrics) -> Mapping[int, floa
     Returns
     -------
     Mapping[int, float]
-        Dictionary mapping period_number to retention_rate.
+        Dictionary mapping period_number to cumulative_activation_rate.
 
     Examples
     --------
@@ -351,5 +355,5 @@ def calculate_retention_curve(cohort_metrics: Lens3Metrics) -> Mapping[int, floa
     {0: 1.0, 1: 0.8, 2: 0.6}
     """
     return {
-        period.period_number: period.retention_rate for period in cohort_metrics.periods
+        period.period_number: period.cumulative_activation_rate for period in cohort_metrics.periods
     }

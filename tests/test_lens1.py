@@ -436,12 +436,12 @@ class TestCalculateRevenueConcentration:
         result = calculate_revenue_concentration(metrics, percentiles=[10, 20, 50, 100])
 
         # Total revenue = 500 + 9*100 = 1400
-        # Top 10% (1 customer = C0 with 500) = 500/1400 = 35.7%
-        assert result[10] == Decimal("35.7")
-        # Top 20% (2 customers = C0 + C1) = 600/1400 = 42.9%
-        assert result[20] == Decimal("42.9")
+        # Top 10% (1 customer = C0 with 500) = 500/1400 = 35.71%
+        assert result[10] == Decimal("35.71")
+        # Top 20% (2 customers = C0 + C1) = 600/1400 = 42.86%
+        assert result[20] == Decimal("42.86")
         # Top 100% should be 100%
-        assert result[100] == Decimal("100.0")
+        assert result[100] == Decimal("100.00")
 
     def test_concentration_sorting(self):
         """Revenue concentration should sort by spend (not customer_id)."""
@@ -476,5 +476,5 @@ class TestCalculateRevenueConcentration:
         ]
         result = calculate_revenue_concentration(metrics, percentiles=[33])
 
-        # Top 33% (1 customer) should be C2 with $500 = 62.5% of $800 total
-        assert result[33] == Decimal("62.5")
+        # Top 33% (1 customer) should be C2 with $500 = 62.50% of $800 total
+        assert result[33] == Decimal("62.50")
