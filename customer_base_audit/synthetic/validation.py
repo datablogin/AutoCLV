@@ -126,7 +126,9 @@ def check_spend_distribution_is_realistic(
 
     # Basic statistical checks
     if mean_value <= 0:
-        return ValidationResult(False, f"mean transaction value is non-positive: {mean_value:.2f}")
+        return ValidationResult(
+            False, f"mean transaction value is non-positive: {mean_value:.2f}"
+        )
 
     # Coefficient of variation (CV) should be reasonable for retail data
     # Typical retail CV is 0.5 to 2.0
@@ -196,7 +198,9 @@ def check_cohort_decay_pattern(
         cohorts[month_key].append(c.customer_id)
 
     # Count active customers by cohort and month
-    cohort_activity: dict[tuple[tuple[int, int], tuple[int, int]], set[str]] = defaultdict(set)
+    cohort_activity: dict[tuple[tuple[int, int], tuple[int, int]], set[str]] = (
+        defaultdict(set)
+    )
     for t in transactions:
         txn_month = (t.event_ts.year, t.event_ts.month)
         # Find which cohort this customer belongs to
@@ -221,7 +225,9 @@ def check_cohort_decay_pattern(
                 continue
 
             # Calculate months since acquisition
-            months_diff = (txn_month[0] - cohort_month[0]) * 12 + (txn_month[1] - cohort_month[1])
+            months_diff = (txn_month[0] - cohort_month[0]) * 12 + (
+                txn_month[1] - cohort_month[1]
+            )
             if months_diff >= 0:
                 retention = len(active_ids) / cohort_size
                 months_after_acquisition.append(months_diff)
@@ -242,7 +248,9 @@ def check_cohort_decay_pattern(
     return ValidationResult(True, "cohort decay patterns are realistic")
 
 
-def check_no_duplicate_transactions(transactions: Sequence[Transaction]) -> ValidationResult:
+def check_no_duplicate_transactions(
+    transactions: Sequence[Transaction],
+) -> ValidationResult:
     """Validate that there are no exact duplicate transactions.
 
     Note: Multiple transaction records can share the same order_id (representing
@@ -288,7 +296,8 @@ def check_no_duplicate_transactions(transactions: Sequence[Transaction]) -> Vali
         )
 
     return ValidationResult(
-        True, f"all {len(transactions)} transactions are unique (multi-line orders allowed)"
+        True,
+        f"all {len(transactions)} transactions are unique (multi-line orders allowed)",
     )
 
 
@@ -318,7 +327,9 @@ def check_temporal_coverage(
         return ValidationResult(False, "no transactions to validate")
 
     # Get unique months with activity
-    months_with_activity = set((t.event_ts.year, t.event_ts.month) for t in transactions)
+    months_with_activity = set(
+        (t.event_ts.year, t.event_ts.month) for t in transactions
+    )
 
     if len(months_with_activity) < min_months_with_activity:
         return ValidationResult(
@@ -339,5 +350,6 @@ def check_temporal_coverage(
             )
 
     return ValidationResult(
-        True, f"temporal coverage adequate: {len(months_with_activity)} months with activity"
+        True,
+        f"temporal coverage adequate: {len(months_with_activity)} months with activity",
     )

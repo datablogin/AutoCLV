@@ -22,7 +22,6 @@ from customer_base_audit.synthetic import (
     check_spend_distribution_is_realistic,
     check_temporal_coverage,
     check_no_duplicate_transactions,
-    check_cohort_decay_pattern,
 )
 
 
@@ -35,7 +34,9 @@ def test_synthetic_data_quality_baseline() -> None:
 
     # Validate data quality
     assert check_spend_distribution_is_realistic(transactions).ok
-    assert check_temporal_coverage(transactions, customers, min_months_with_activity=6).ok
+    assert check_temporal_coverage(
+        transactions, customers, min_months_with_activity=6
+    ).ok
     assert check_no_duplicate_transactions(transactions).ok
     # Note: cohort_decay_pattern check can be noisy with small samples due to reactivations
 
@@ -81,7 +82,10 @@ def test_promotion_scenario_produces_spike() -> None:
     )
 
     txns_promotion = generate_transactions(
-        customers, date(2024, 1, 1), date(2024, 12, 31), scenario=HEAVY_PROMOTION_SCENARIO
+        customers,
+        date(2024, 1, 1),
+        date(2024, 12, 31),
+        scenario=HEAVY_PROMOTION_SCENARIO,
     )
 
     # Promotion should generate more transactions
@@ -99,13 +103,18 @@ def test_stable_business_high_repeat_rate() -> None:
     customers = generate_customers(100, date(2024, 1, 1), date(2024, 12, 31), seed=333)
 
     txns = generate_transactions(
-        customers, date(2024, 1, 1), date(2024, 12, 31), scenario=STABLE_BUSINESS_SCENARIO
+        customers,
+        date(2024, 1, 1),
+        date(2024, 12, 31),
+        scenario=STABLE_BUSINESS_SCENARIO,
     )
 
     # Stable business should have high transaction volume
     # (low churn + high frequency)
     txns_per_customer = len(txns) / len(customers)
-    assert txns_per_customer > 10, f"Stable business should have high repeat rate, got {txns_per_customer:.2f}"
+    assert txns_per_customer > 10, (
+        f"Stable business should have high repeat rate, got {txns_per_customer:.2f}"
+    )
 
     # Validate quality
     assert check_spend_distribution_is_realistic(txns).ok
@@ -126,7 +135,9 @@ def test_large_scale_synthetic_generation() -> None:
 
     # Validate at scale
     assert check_spend_distribution_is_realistic(transactions).ok
-    assert check_temporal_coverage(transactions, customers, min_months_with_activity=6).ok
+    assert check_temporal_coverage(
+        transactions, customers, min_months_with_activity=6
+    ).ok
     assert check_no_duplicate_transactions(transactions).ok
 
     # Data integrity checks

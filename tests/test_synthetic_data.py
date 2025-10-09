@@ -117,7 +117,9 @@ def test_baseline_scenario() -> None:
 
     # Should have moderate transaction volume (not too high, not too low)
     txns_per_customer = len(txns) / len(customers)
-    assert 5 < txns_per_customer < 30, f"Expected moderate txn rate, got {txns_per_customer}"
+    assert 5 < txns_per_customer < 30, (
+        f"Expected moderate txn rate, got {txns_per_customer}"
+    )
 
 
 def test_high_churn_scenario() -> None:
@@ -133,8 +135,9 @@ def test_high_churn_scenario() -> None:
     )
 
     # High churn should produce fewer total transactions
-    assert len(high_churn_txns) < len(baseline_txns), \
+    assert len(high_churn_txns) < len(baseline_txns), (
         f"High churn ({len(high_churn_txns)}) should have fewer txns than baseline ({len(baseline_txns)})"
+    )
 
     # Verify churn rate is high (30%)
     assert HIGH_CHURN_SCENARIO.churn_hazard == 0.30
@@ -144,7 +147,10 @@ def test_product_recall_scenario() -> None:
     """Product recall scenario should show depressed activity in recall month."""
     customers = generate_customers(150, date(2024, 1, 1), date(2024, 12, 31), seed=99)
     txns = generate_transactions(
-        customers, date(2024, 1, 1), date(2024, 12, 31), scenario=PRODUCT_RECALL_SCENARIO
+        customers,
+        date(2024, 1, 1),
+        date(2024, 12, 31),
+        scenario=PRODUCT_RECALL_SCENARIO,
     )
 
     # Count transactions by month
@@ -153,17 +159,23 @@ def test_product_recall_scenario() -> None:
 
     # June (recall month) should have significantly fewer transactions
     june_rate = len(june_txns) / len(customers) if customers else 0
-    other_months_rate = len(other_months_txns) / (len(customers) * 11) if customers else 0
+    other_months_rate = (
+        len(other_months_txns) / (len(customers) * 11) if customers else 0
+    )
 
-    assert june_rate < other_months_rate, \
+    assert june_rate < other_months_rate, (
         f"Recall month ({june_rate:.2f}) should have fewer txns than other months ({other_months_rate:.2f})"
+    )
 
 
 def test_heavy_promotion_scenario() -> None:
     """Heavy promotion scenario should show spike in promo month."""
     customers = generate_customers(100, date(2024, 1, 1), date(2024, 12, 31), seed=55)
     txns = generate_transactions(
-        customers, date(2024, 1, 1), date(2024, 12, 31), scenario=HEAVY_PROMOTION_SCENARIO
+        customers,
+        date(2024, 1, 1),
+        date(2024, 12, 31),
+        scenario=HEAVY_PROMOTION_SCENARIO,
     )
 
     # November should show strong spike in transaction volume
@@ -179,11 +191,13 @@ def test_product_launch_scenario() -> None:
     """Product launch scenario should show gradual ramp-up after launch."""
     customers = generate_customers(100, date(2023, 1, 1), date(2023, 12, 31), seed=77)
     txns = generate_transactions(
-        customers, date(2023, 1, 1), date(2023, 12, 31), scenario=PRODUCT_LAUNCH_SCENARIO
+        customers,
+        date(2023, 1, 1),
+        date(2023, 12, 31),
+        scenario=PRODUCT_LAUNCH_SCENARIO,
     )
 
     # Launch date is March 15, 2023
-    pre_launch_txns = [t for t in txns if t.event_ts.date() < date(2023, 3, 15)]
     post_launch_txns = [t for t in txns if t.event_ts.date() >= date(2023, 3, 15)]
 
     # Post-launch should have significantly more activity
@@ -196,7 +210,10 @@ def test_seasonal_business_scenario() -> None:
     """Seasonal business should show strong December spike."""
     customers = generate_customers(120, date(2024, 1, 1), date(2024, 12, 31), seed=88)
     txns = generate_transactions(
-        customers, date(2024, 1, 1), date(2024, 12, 31), scenario=SEASONAL_BUSINESS_SCENARIO
+        customers,
+        date(2024, 1, 1),
+        date(2024, 12, 31),
+        scenario=SEASONAL_BUSINESS_SCENARIO,
     )
 
     # December should show spike
@@ -208,13 +225,17 @@ def test_stable_business_scenario() -> None:
     """Stable business should show high repeat purchase rate and low churn."""
     customers = generate_customers(100, date(2024, 1, 1), date(2024, 12, 31), seed=33)
     txns = generate_transactions(
-        customers, date(2024, 1, 1), date(2024, 12, 31), scenario=STABLE_BUSINESS_SCENARIO
+        customers,
+        date(2024, 1, 1),
+        date(2024, 12, 31),
+        scenario=STABLE_BUSINESS_SCENARIO,
     )
 
     # Stable business should have high transaction volume due to low churn + high frequency
     txns_per_customer = len(txns) / len(customers)
-    assert txns_per_customer > 10, \
+    assert txns_per_customer > 10, (
         f"Stable business should have high repeat rate, got {txns_per_customer:.2f} txns/customer"
+    )
 
     # Verify low churn (4%)
     assert STABLE_BUSINESS_SCENARIO.churn_hazard == 0.04
@@ -239,8 +260,9 @@ def test_all_scenarios_produce_valid_data() -> None:
             customers, date(2024, 1, 1), date(2024, 12, 31), scenario=scenario
         )
         assert len(txns) > 0, f"Scenario {scenario} produced no transactions"
-        assert check_non_negative_amounts(txns).ok, \
+        assert check_non_negative_amounts(txns).ok, (
             f"Scenario {scenario} produced invalid amounts"
+        )
 
 
 # ========== Statistical Validation Tests ==========
@@ -255,7 +277,9 @@ def test_spend_distribution_validation() -> None:
 
     # Should pass with default heuristics
     result = check_spend_distribution_is_realistic(txns)
-    assert result.ok, f"Baseline scenario should have realistic spend distribution: {result.message}"
+    assert result.ok, (
+        f"Baseline scenario should have realistic spend distribution: {result.message}"
+    )
 
     # Check that CV is reported in message
     assert "CV=" in result.message
@@ -267,11 +291,15 @@ def test_spend_distribution_with_expected_values() -> None:
 
     # Generate with known scenario parameters
     scenario = ScenarioConfig(mean_unit_price=50.0, quantity_mean=1.5, seed=42)
-    txns = generate_transactions(customers, date(2024, 1, 1), date(2024, 12, 31), scenario=scenario)
+    txns = generate_transactions(
+        customers, date(2024, 1, 1), date(2024, 12, 31), scenario=scenario
+    )
 
     # Should pass with generous tolerance
     result = check_spend_distribution_is_realistic(
-        txns, expected_mean=75.0, tolerance=0.5  # 50 * 1.5 = 75
+        txns,
+        expected_mean=75.0,
+        tolerance=0.5,  # 50 * 1.5 = 75
     )
     assert result.ok, f"Should pass with generous tolerance: {result.message}"
 
@@ -284,7 +312,7 @@ def test_cohort_decay_validation() -> None:
     )
 
     # Test with realistic decay (allow reactivations)
-    result = check_cohort_decay_pattern(txns, customers, max_expected_churn_rate=0.5)
+    check_cohort_decay_pattern(txns, customers, max_expected_churn_rate=0.5)
     # Cohort decay validation can be noisy with small random datasets due to reactivations
     # The main integration test will verify it works with realistic data
 
@@ -315,8 +343,9 @@ def test_temporal_coverage_validation() -> None:
     # Verify no transactions precede acquisitions
     earliest_acquisition = min(c.acquisition_date for c in customers)
     earliest_txn = min(t.event_ts.date() for t in txns)
-    assert earliest_txn >= earliest_acquisition, \
+    assert earliest_txn >= earliest_acquisition, (
         "Transactions should not precede earliest acquisition"
+    )
 
 
 def test_statistical_validation_on_all_scenarios() -> None:
@@ -337,8 +366,9 @@ def test_statistical_validation_on_all_scenarios() -> None:
 
         # All scenarios should produce realistic distributions
         spend_result = check_spend_distribution_is_realistic(txns)
-        assert spend_result.ok, \
+        assert spend_result.ok, (
             f"Scenario {scenario} failed spend distribution check: {spend_result.message}"
+        )
 
         # All scenarios should have minimal/no duplicates
         # Note: With random generation, rare collisions are possible but should be < 0.1%
@@ -346,14 +376,19 @@ def test_statistical_validation_on_all_scenarios() -> None:
         if not dup_result.ok:
             # Extract duplicate count from message like "found 1 exact duplicate..."
             import re
-            match = re.search(r'found (\d+) exact duplicate', dup_result.message)
+
+            match = re.search(r"found (\d+) exact duplicate", dup_result.message)
             if match:
                 dup_count = int(match.group(1))
                 dup_rate = dup_count / len(txns)
-                assert dup_rate < 0.001, \
+                assert dup_rate < 0.001, (
                     f"Scenario {scenario} has excessive duplicates: {dup_rate:.2%} ({dup_count}/{len(txns)})"
+                )
 
         # All scenarios should have temporal coverage
-        temporal_result = check_temporal_coverage(txns, customers, min_months_with_activity=1)
-        assert temporal_result.ok, \
+        temporal_result = check_temporal_coverage(
+            txns, customers, min_months_with_activity=1
+        )
+        assert temporal_result.ok, (
             f"Scenario {scenario} failed temporal coverage: {temporal_result.message}"
+        )
