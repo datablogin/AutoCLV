@@ -29,10 +29,8 @@ class ScenarioConfig:
 
     Attributes
     ----------
-    promo_month: A specific month that should see modified purchase activity.
-    promo_uplift: Multiplicative factor for purchase propensity during promo month.
-        Values > 1.0 represent promotions (e.g., 2.0 = 2x normal volume).
-        Values < 1.0 represent drops (e.g., 0.3 = 30% of normal volume, for recalls).
+    promo_month: A specific month that should see higher purchase activity.
+    promo_uplift: Multiplicative uplift for purchase propensity during promo month.
     launch_date: Date after which demand gradually increases.
     churn_hazard: Baseline monthly churn probability for existing customers.
     base_orders_per_month: Average orders per active customer per month.
@@ -56,8 +54,8 @@ class ScenarioConfig:
         # Validate fields to avoid silent misconfiguration
         if self.promo_month is not None and not (1 <= int(self.promo_month) <= 12):
             raise ValueError("promo_month must be in 1..12 or None")
-        if self.promo_uplift <= 0.0:
-            raise ValueError("promo_uplift must be > 0.0")
+        if self.promo_uplift < 1.0:
+            raise ValueError("promo_uplift must be >= 1.0")
         if self.churn_hazard < 0.0 or self.churn_hazard > 1.0:
             raise ValueError("churn_hazard must be between 0.0 and 1.0")
         if self.base_orders_per_month < 0.0:
