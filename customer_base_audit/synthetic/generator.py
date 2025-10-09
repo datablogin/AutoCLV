@@ -29,8 +29,10 @@ class ScenarioConfig:
 
     Attributes
     ----------
-    promo_month: A specific month that should see higher purchase activity.
-    promo_uplift: Multiplicative uplift for purchase propensity during promo month.
+    promo_month: A specific month that should see modified purchase activity.
+    promo_uplift: Multiplicative factor for purchase propensity during promo month.
+        Values > 1.0 represent promotions (e.g., 2.0 = 2x normal volume).
+        Values < 1.0 represent drops (e.g., 0.3 = 30% of normal volume, for recalls).
     launch_date: Date after which demand gradually increases.
     churn_hazard: Baseline monthly churn probability for existing customers.
     base_orders_per_month: Average orders per active customer per month.
@@ -54,8 +56,8 @@ class ScenarioConfig:
         # Validate fields to avoid silent misconfiguration
         if self.promo_month is not None and not (1 <= int(self.promo_month) <= 12):
             raise ValueError("promo_month must be in 1..12 or None")
-        if self.promo_uplift < 1.0:
-            raise ValueError("promo_uplift must be >= 1.0")
+        if self.promo_uplift <= 0.0:
+            raise ValueError("promo_uplift must be > 0.0")
         if self.churn_hazard < 0.0 or self.churn_hazard > 1.0:
             raise ValueError("churn_hazard must be between 0.0 and 1.0")
         if self.base_orders_per_month < 0.0:
@@ -112,10 +114,22 @@ def _orders_for_customer_month(
     promo_multiplier: float,
     launch_uplift: float,
 ) -> int:
-    # Poisson-like draw via Knuth's algorithm approximation for small lambdas
+    """Sample number of orders from Poisson distribution.
+
+    Uses Knuth's algorithm for small λ (<10) and normal approximation for large λ (>=10)
+    for better performance.
+    """
     lam = max(0.0, base_orders_per_month * promo_multiplier * launch_uplift)
     if lam <= 0:
         return 0
+
+    # For large λ, use normal approximation (more efficient than Knuth's algorithm)
+    if lam >= 10:
+        # Poisson(λ) ≈ Normal(λ, λ) for large λ
+        k = int(round(rng.normalvariate(lam, math.sqrt(lam))))
+        return max(0, k)
+
+    # For small λ, use Knuth's algorithm (efficient for λ < 10)
     L = math.exp(-lam)
     k = 0
     p = 1.0
@@ -197,6 +211,10 @@ def generate_transactions(
                 active[cust.customer_id] = cust
 
         # Per-month churn applied only to customers acquired before this month starts
+        # NOTE: Customers cannot churn in their acquisition month (acquisition_date < month_start).
+        # This prevents immediate churn and ensures at least one month of activity.
+        # For scenarios with high churn rates (>30%) and short observation windows,
+        # this can slightly overstate retention in the acquisition cohort.
         if scenario.churn_hazard > 0:
             to_remove: list[str] = []
             for cid, cust in active.items():
@@ -235,6 +253,8 @@ def generate_transactions(
                     and cust.acquisition_date.month == month_start.month
                 ):
                     min_day = max(1, cust.acquisition_date.day)
+                # Handle edge case: if acquisition day exceeds month's last day
+                min_day = min(min_day, last_day)
                 day = rng.randrange(min_day, last_day + 1)
                 hour = rng.randrange(0, 24)
                 minute = rng.randrange(0, 60)
