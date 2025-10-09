@@ -130,8 +130,7 @@ class GammaGammaModelWrapper:
         # Validate data types
         if not pd.api.types.is_numeric_dtype(data["frequency"]):
             raise ValueError(
-                "frequency column must be numeric type, "
-                f"got {data['frequency'].dtype}"
+                f"frequency column must be numeric type, got {data['frequency'].dtype}"
             )
         if not pd.api.types.is_numeric_dtype(data["monetary_value"]):
             raise ValueError(
@@ -254,9 +253,7 @@ class GammaGammaModelWrapper:
 
         if data.empty:
             # Return empty DataFrame with correct schema
-            return pd.DataFrame(
-                columns=["customer_id", "predicted_monetary_value"]
-            )
+            return pd.DataFrame(columns=["customer_id", "predicted_monetary_value"])
 
         # Check for duplicate customer IDs
         if data["customer_id"].duplicated().any():
@@ -293,9 +290,7 @@ class GammaGammaModelWrapper:
 
         # Get expected conditional average
         # This is the customer's predicted mean transaction value
-        predictions = self.model.expected_customer_spend(
-            customer_data=model_data
-        )
+        predictions = self.model.expected_customer_spend(data=model_data)
 
         # Build result DataFrame with customer_id
         result = pd.DataFrame(
