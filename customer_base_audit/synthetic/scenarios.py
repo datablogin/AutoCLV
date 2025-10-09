@@ -33,7 +33,7 @@ BASELINE_SCENARIO = ScenarioConfig(
     mean_unit_price=30.0,
     price_variability=0.4,
     quantity_mean=1.3,
-    seed=None,
+    seed=42,  # Fixed seed for reproducibility
 )
 
 # High churn scenario - simulates struggling business with customer retention issues
@@ -46,7 +46,7 @@ HIGH_CHURN_SCENARIO = ScenarioConfig(
     mean_unit_price=25.0,  # Slightly lower prices
     price_variability=0.5,  # Higher price variance
     quantity_mean=1.1,  # Lower quantities per order
-    seed=None,
+    seed=43,  # Fixed seed for reproducibility
 )
 
 # Product recall scenario - sudden drop in orders during recall month, then recovery
@@ -59,7 +59,7 @@ PRODUCT_RECALL_SCENARIO = ScenarioConfig(
     mean_unit_price=35.0,
     price_variability=0.3,
     quantity_mean=1.4,
-    seed=None,
+    seed=44,  # Fixed seed for reproducibility
 )
 
 # Heavy promotion scenario - extended promotional period with strong uplift
@@ -72,7 +72,7 @@ HEAVY_PROMOTION_SCENARIO = ScenarioConfig(
     mean_unit_price=28.0,  # Slightly discounted prices
     price_variability=0.6,  # High variance (deep discounts on some items)
     quantity_mean=2.0,  # Customers buy more items per order
-    seed=None,
+    seed=45,  # Fixed seed for reproducibility
 )
 
 # Product launch scenario - gradual ramp-up after launch date
@@ -85,7 +85,7 @@ PRODUCT_LAUNCH_SCENARIO = ScenarioConfig(
     mean_unit_price=45.0,  # Premium product
     price_variability=0.25,  # Consistent pricing
     quantity_mean=1.2,
-    seed=None,
+    seed=46,  # Fixed seed for reproducibility
 )
 
 # Seasonal business scenario - strong promotional spike with moderate churn
@@ -98,7 +98,7 @@ SEASONAL_BUSINESS_SCENARIO = ScenarioConfig(
     mean_unit_price=40.0,
     price_variability=0.45,
     quantity_mean=1.5,
-    seed=None,
+    seed=47,  # Fixed seed for reproducibility
 )
 
 # Stable mature business scenario - low churn, consistent behavior
@@ -111,7 +111,7 @@ STABLE_BUSINESS_SCENARIO = ScenarioConfig(
     mean_unit_price=32.0,
     price_variability=0.3,  # Consistent pricing
     quantity_mean=1.4,
-    seed=None,
+    seed=48,  # Fixed seed for reproducibility
 )
 
 __all__ = [

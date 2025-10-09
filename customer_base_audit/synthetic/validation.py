@@ -121,7 +121,8 @@ def check_spend_distribution_is_realistic(
         return ValidationResult(False, "no transaction values found")
 
     mean_value = sum(values) / len(values)
-    variance = sum((v - mean_value) ** 2 for v in values) / len(values)
+    # Use sample variance (N-1) instead of population variance (N) for better estimation
+    variance = sum((v - mean_value) ** 2 for v in values) / max(1, len(values) - 1)
     std_value = variance**0.5
 
     # Basic statistical checks
@@ -193,21 +194,23 @@ def check_cohort_decay_pattern(
     from collections import defaultdict
 
     cohorts: dict[tuple[int, int], list[str]] = defaultdict(list)
+    customer_to_cohort: dict[str, tuple[int, int]] = {}
     for c in customers:
         month_key = (c.acquisition_date.year, c.acquisition_date.month)
         cohorts[month_key].append(c.customer_id)
+        customer_to_cohort[c.customer_id] = month_key
 
     # Count active customers by cohort and month
+    # Performance: O(T) instead of O(C×T×N) by using customer_to_cohort lookup
     cohort_activity: dict[tuple[tuple[int, int], tuple[int, int]], set[str]] = (
         defaultdict(set)
     )
     for t in transactions:
         txn_month = (t.event_ts.year, t.event_ts.month)
-        # Find which cohort this customer belongs to
-        for cohort_month, cohort_customers in cohorts.items():
-            if t.customer_id in cohort_customers:
-                cohort_activity[(cohort_month, txn_month)].add(t.customer_id)
-                break
+        # O(1) lookup instead of O(C×N) nested loop
+        cohort_month = customer_to_cohort.get(t.customer_id)
+        if cohort_month is not None:
+            cohort_activity[(cohort_month, txn_month)].add(t.customer_id)
 
     # Check decay rates for each cohort
     for cohort_month, cohort_ids in cohorts.items():
@@ -216,8 +219,7 @@ def check_cohort_decay_pattern(
             continue
 
         # Track retention over months following acquisition
-        months_after_acquisition = []
-        retention_rates = []
+        retention_data: list[tuple[int, float]] = []
 
         for activity_key, active_ids in cohort_activity.items():
             coh_month, txn_month = activity_key
@@ -230,19 +232,23 @@ def check_cohort_decay_pattern(
             )
             if months_diff >= 0:
                 retention = len(active_ids) / cohort_size
-                months_after_acquisition.append(months_diff)
-                retention_rates.append(retention)
+                retention_data.append((months_diff, retention))
+
+        # Sort by months_after_acquisition to ensure we compare consecutive periods
+        retention_data.sort(key=lambda x: x[0])
 
         # Check that retention doesn't increase dramatically (unrealistic recovery)
         # Note: Small increases are acceptable (reactivations, seasonality)
         # We only flag increases > 2x from one period to next
-        if len(retention_rates) >= 2:
-            for i in range(1, len(retention_rates)):
-                if retention_rates[i] > retention_rates[i - 1] * 2.0:
+        if len(retention_data) >= 2:
+            for i in range(1, len(retention_data)):
+                prev_retention = retention_data[i - 1][1]
+                curr_retention = retention_data[i][1]
+                if curr_retention > prev_retention * 2.0:
                     return ValidationResult(
                         False,
                         f"unrealistic retention increase in cohort {cohort_month}: "
-                        f"{retention_rates[i - 1]:.2%} → {retention_rates[i]:.2%}",
+                        f"{prev_retention:.2%} → {curr_retention:.2%}",
                     )
 
     return ValidationResult(True, "cohort decay patterns are realistic")
