@@ -158,7 +158,8 @@ class GammaGammaModelWrapper:
 
         # Fit model using configured method
         if self.config.method == "map":
-            self.model.fit(fit_method="map", random_seed=self.config.random_seed)
+            # MAP doesn't use random_seed (deterministic optimization)
+            self.model.fit(fit_method="map")
         elif self.config.method == "mcmc":
             self.model.fit(
                 fit_method="mcmc",

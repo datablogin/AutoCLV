@@ -145,11 +145,8 @@ class TestGammaGammaModelWrapper:
         call_kwargs = mock_gamma_gamma_model.call_args[1]
         pd.testing.assert_frame_equal(call_kwargs["data"], expected_data)
 
-        # Verify fit was called with correct parameters
-        mock_model_instance.fit.assert_called_once_with(
-            fit_method="map",
-            random_seed=42
-        )
+        # Verify fit was called with correct parameters (MAP doesn't use random_seed)
+        mock_model_instance.fit.assert_called_once_with(fit_method="map")
 
         # Verify model is stored
         assert wrapper.model == mock_model_instance
@@ -461,9 +458,9 @@ class TestGammaGammaDeterminism:
         wrapper2.fit(data)
         _ = wrapper2.predict_spend(data)
 
-        # Both should use same random seed
-        assert mock_model_instance1.fit.call_args[1]["random_seed"] == 42
-        assert mock_model_instance2.fit.call_args[1]["random_seed"] == 42
+        # Both should call fit with MAP method (MAP is deterministic, no random seed)
+        assert mock_model_instance1.fit.call_args[1]["fit_method"] == "map"
+        assert mock_model_instance2.fit.call_args[1]["fit_method"] == "map"
 
 
 class TestGammaGammaExtremeValues:
