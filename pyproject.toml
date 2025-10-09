@@ -13,6 +13,9 @@ dependencies = [
     "click>=8.1.7,<9.0.0",
     "jinja2>=3.1.2,<4.0.0",
     "plotly>=5.18.0,<6.0.0",
+    "pymc-marketing>=0.3.0",
+    "pymc>=5.10.0",
+    "arviz>=0.16.0",
 ]
 
 [project.optional-dependencies]
