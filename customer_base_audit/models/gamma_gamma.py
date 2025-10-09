@@ -118,6 +118,27 @@ class GammaGammaModelWrapper:
                 "Ensure at least some customers have frequency >= 2."
             )
 
+        # Check for duplicate customer IDs
+        if data["customer_id"].duplicated().any():
+            duplicates = data[data["customer_id"].duplicated()]["customer_id"].tolist()
+            raise ValueError(
+                f"Duplicate customer_ids found in training data: {duplicates[:5]}"
+                f"{'...' if len(duplicates) > 5 else ''}. "
+                f"Each customer should appear only once."
+            )
+
+        # Validate data types
+        if not pd.api.types.is_numeric_dtype(data["frequency"]):
+            raise ValueError(
+                "frequency column must be numeric type, "
+                f"got {data['frequency'].dtype}"
+            )
+        if not pd.api.types.is_numeric_dtype(data["monetary_value"]):
+            raise ValueError(
+                "monetary_value column must be numeric type, "
+                f"got {data['monetary_value'].dtype}"
+            )
+
         # Validate frequency >= 2 (Gamma-Gamma requirement)
         invalid_freq = data[data["frequency"] < 2]
         if not invalid_freq.empty:
@@ -146,10 +167,45 @@ class GammaGammaModelWrapper:
                 tune=self.config.tune,
                 random_seed=self.config.random_seed,
             )
+            # Check MCMC convergence diagnostics
+            self._check_mcmc_convergence()
         else:
             raise ValueError(
                 f"Invalid fitting method: {self.config.method}. "
                 f"Must be 'map' or 'mcmc'."
+            )
+
+    def _check_mcmc_convergence(self) -> None:
+        """Check MCMC convergence diagnostics and warn if issues detected.
+
+        Checks R-hat values to ensure chains have converged. Issues a warning
+        if any parameter has R-hat > 1.1, which suggests non-convergence.
+        """
+        import warnings
+
+        import arviz as az
+
+        if not hasattr(self.model, "idata") or self.model.idata is None:
+            warnings.warn(
+                "MCMC fitting completed but inference data not available. "
+                "Cannot check convergence diagnostics."
+            )
+            return
+
+        try:
+            summary = az.summary(self.model.idata)
+            if "r_hat" in summary.columns:
+                max_rhat = summary["r_hat"].max()
+                if max_rhat > 1.1:
+                    warnings.warn(
+                        f"MCMC chains may not have converged (max R-hat={max_rhat:.3f} > 1.1). "
+                        f"Consider increasing tune/draws or checking model specification.",
+                        UserWarning,
+                    )
+        except Exception as e:
+            warnings.warn(
+                f"Could not check MCMC convergence diagnostics: {e}",
+                UserWarning,
             )
 
     def predict_spend(self, data: pd.DataFrame) -> pd.DataFrame:
@@ -163,8 +219,8 @@ class GammaGammaModelWrapper:
         data:
             DataFrame with columns:
             - customer_id: Unique customer identifier
-            - frequency: Number of transactions
-            - monetary_value: Observed average transaction value
+            - frequency: Number of transactions (must be >= 2)
+            - monetary_value: Observed average transaction value (must be > 0)
 
         Returns
         -------
@@ -178,9 +234,10 @@ class GammaGammaModelWrapper:
         RuntimeError:
             If model has not been fitted yet (call fit() first)
         ValueError:
-            If required columns are missing
+            If required columns are missing, frequency < 2, monetary_value <= 0,
+            or duplicate customer IDs exist
         """
-        if self.model is None:
+        if self.model is None or not hasattr(self.model, "idata"):
             raise RuntimeError(
                 "Model has not been fitted. Call fit() before predict_spend()."
             )
@@ -198,6 +255,36 @@ class GammaGammaModelWrapper:
             # Return empty DataFrame with correct schema
             return pd.DataFrame(
                 columns=["customer_id", "predicted_monetary_value"]
+            )
+
+        # Check for duplicate customer IDs
+        if data["customer_id"].duplicated().any():
+            duplicates = data[data["customer_id"].duplicated()]["customer_id"].tolist()
+            raise ValueError(
+                f"Duplicate customer_ids found in prediction data: {duplicates[:5]}"
+                f"{'...' if len(duplicates) > 5 else ''}. "
+                f"Each customer should appear only once."
+            )
+
+        # Validate frequency >= 2 (Gamma-Gamma requirement)
+        invalid_freq = data[data["frequency"] < 2]
+        if not invalid_freq.empty:
+            invalid_ids = invalid_freq["customer_id"].tolist()
+            raise ValueError(
+                f"Gamma-Gamma predictions require frequency >= 2. "
+                f"Found {len(invalid_ids)} customers with frequency < 2: "
+                f"{invalid_ids[:5]}{'...' if len(invalid_ids) > 5 else ''}. "
+                f"One-time buyers cannot be predicted by the Gamma-Gamma model."
+            )
+
+        # Validate monetary_value > 0 (prevent numerical issues)
+        invalid_monetary = data[data["monetary_value"] <= 0]
+        if not invalid_monetary.empty:
+            invalid_ids = invalid_monetary["customer_id"].tolist()
+            raise ValueError(
+                f"monetary_value must be positive (>0) for all customers. "
+                f"Found {len(invalid_ids)} customers with monetary_value <= 0: "
+                f"{invalid_ids[:5]}{'...' if len(invalid_ids) > 5 else ''}."
             )
 
         # Prepare data for prediction (PyMC-Marketing expects customer_id, frequency, monetary_value)

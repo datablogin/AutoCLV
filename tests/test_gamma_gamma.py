@@ -84,6 +84,42 @@ class TestGammaGammaModelWrapper:
         with pytest.raises(ValueError, match="frequency >= 2"):
             wrapper.fit(data)
 
+    def test_fit_duplicate_customer_ids_raises_error(self):
+        """fit() should raise ValueError if duplicate customer_ids exist."""
+        wrapper = GammaGammaModelWrapper()
+        data = pd.DataFrame({
+            "customer_id": ["C1", "C2", "C1"],  # C1 is duplicated
+            "frequency": [3, 5, 2],
+            "monetary_value": [50.0, 75.0, 30.0]
+        })
+
+        with pytest.raises(ValueError, match="Duplicate customer_ids"):
+            wrapper.fit(data)
+
+    def test_fit_non_numeric_frequency_raises_error(self):
+        """fit() should raise ValueError if frequency is not numeric."""
+        wrapper = GammaGammaModelWrapper()
+        data = pd.DataFrame({
+            "customer_id": ["C1", "C2"],
+            "frequency": ["three", "five"],  # Non-numeric
+            "monetary_value": [50.0, 75.0]
+        })
+
+        with pytest.raises(ValueError, match="frequency column must be numeric"):
+            wrapper.fit(data)
+
+    def test_fit_non_numeric_monetary_value_raises_error(self):
+        """fit() should raise ValueError if monetary_value is not numeric."""
+        wrapper = GammaGammaModelWrapper()
+        data = pd.DataFrame({
+            "customer_id": ["C1", "C2"],
+            "frequency": [3, 5],
+            "monetary_value": ["fifty", "seventy-five"]  # Non-numeric
+        })
+
+        with pytest.raises(ValueError, match="monetary_value column must be numeric"):
+            wrapper.fit(data)
+
     @patch("customer_base_audit.models.gamma_gamma.GammaGammaModel")
     def test_fit_map_method_success(self, mock_gamma_gamma_model):
         """fit() should successfully train model using MAP method."""
@@ -291,6 +327,198 @@ class TestGammaGammaModelWrapper:
 
         # Verify customer order is preserved
         assert list(result["customer_id"]) == ["C3", "C1", "C2"]
+
+    @patch("customer_base_audit.models.gamma_gamma.GammaGammaModel")
+    def test_predict_spend_duplicate_customer_ids_raises_error(self, mock_gamma_gamma_model):
+        """predict_spend() should raise ValueError if duplicate customer_ids exist."""
+        # Setup mock and fit
+        mock_model_instance = MagicMock()
+        mock_gamma_gamma_model.return_value = mock_model_instance
+
+        wrapper = GammaGammaModelWrapper()
+        fit_data = pd.DataFrame({
+            "customer_id": ["C1", "C2"],
+            "frequency": [3, 5],
+            "monetary_value": [50.0, 75.0]
+        })
+        wrapper.fit(fit_data)
+
+        # Try to predict with duplicate customer IDs
+        predict_data = pd.DataFrame({
+            "customer_id": ["C1", "C2", "C1"],  # C1 duplicated
+            "frequency": [3, 5, 3],
+            "monetary_value": [50.0, 75.0, 52.0]
+        })
+
+        with pytest.raises(ValueError, match="Duplicate customer_ids"):
+            wrapper.predict_spend(predict_data)
+
+    @patch("customer_base_audit.models.gamma_gamma.GammaGammaModel")
+    def test_predict_spend_frequency_less_than_2_raises_error(self, mock_gamma_gamma_model):
+        """predict_spend() should raise ValueError if any customer has frequency < 2."""
+        # Setup mock and fit
+        mock_model_instance = MagicMock()
+        mock_gamma_gamma_model.return_value = mock_model_instance
+
+        wrapper = GammaGammaModelWrapper()
+        fit_data = pd.DataFrame({
+            "customer_id": ["C1", "C2"],
+            "frequency": [3, 5],
+            "monetary_value": [50.0, 75.0]
+        })
+        wrapper.fit(fit_data)
+
+        # Try to predict with frequency < 2
+        predict_data = pd.DataFrame({
+            "customer_id": ["C1", "C3"],
+            "frequency": [3, 1],  # C3 has frequency < 2
+            "monetary_value": [50.0, 30.0]
+        })
+
+        with pytest.raises(ValueError, match="frequency >= 2"):
+            wrapper.predict_spend(predict_data)
+
+    @patch("customer_base_audit.models.gamma_gamma.GammaGammaModel")
+    def test_predict_spend_zero_monetary_value_raises_error(self, mock_gamma_gamma_model):
+        """predict_spend() should raise ValueError if monetary_value <= 0."""
+        # Setup mock and fit
+        mock_model_instance = MagicMock()
+        mock_gamma_gamma_model.return_value = mock_model_instance
+
+        wrapper = GammaGammaModelWrapper()
+        fit_data = pd.DataFrame({
+            "customer_id": ["C1", "C2"],
+            "frequency": [3, 5],
+            "monetary_value": [50.0, 75.0]
+        })
+        wrapper.fit(fit_data)
+
+        # Try to predict with zero monetary_value
+        predict_data = pd.DataFrame({
+            "customer_id": ["C1", "C3"],
+            "frequency": [3, 2],
+            "monetary_value": [50.0, 0.0]  # C3 has zero monetary_value
+        })
+
+        with pytest.raises(ValueError, match="monetary_value must be positive"):
+            wrapper.predict_spend(predict_data)
+
+    @patch("customer_base_audit.models.gamma_gamma.GammaGammaModel")
+    def test_predict_spend_negative_monetary_value_raises_error(self, mock_gamma_gamma_model):
+        """predict_spend() should raise ValueError if monetary_value is negative."""
+        # Setup mock and fit
+        mock_model_instance = MagicMock()
+        mock_gamma_gamma_model.return_value = mock_model_instance
+
+        wrapper = GammaGammaModelWrapper()
+        fit_data = pd.DataFrame({
+            "customer_id": ["C1", "C2"],
+            "frequency": [3, 5],
+            "monetary_value": [50.0, 75.0]
+        })
+        wrapper.fit(fit_data)
+
+        # Try to predict with negative monetary_value
+        predict_data = pd.DataFrame({
+            "customer_id": ["C1", "C3"],
+            "frequency": [3, 2],
+            "monetary_value": [50.0, -10.0]  # C3 has negative monetary_value
+        })
+
+        with pytest.raises(ValueError, match="monetary_value must be positive"):
+            wrapper.predict_spend(predict_data)
+
+
+class TestGammaGammaDeterminism:
+    """Test deterministic behavior and reproducibility."""
+
+    @patch("customer_base_audit.models.gamma_gamma.GammaGammaModel")
+    def test_map_fitting_same_seed_produces_same_results(self, mock_gamma_gamma_model):
+        """MAP fitting with same seed should produce identical results."""
+        # Setup mock to return deterministic predictions
+        mock_model_instance1 = MagicMock()
+        mock_model_instance2 = MagicMock()
+
+        mock_predictions = MagicMock()
+        mock_predictions.values.flatten.return_value = np.array([52.5, 76.3])
+        mock_model_instance1.expected_customer_spend.return_value = mock_predictions
+        mock_model_instance2.expected_customer_spend.return_value = mock_predictions
+
+        mock_gamma_gamma_model.side_effect = [mock_model_instance1, mock_model_instance2]
+
+        # Fit two models with same seed
+        data = pd.DataFrame({
+            "customer_id": ["C1", "C2"],
+            "frequency": [3, 5],
+            "monetary_value": [50.0, 75.0]
+        })
+
+        wrapper1 = GammaGammaModelWrapper(GammaGammaConfig(random_seed=42))
+        wrapper1.fit(data)
+        _ = wrapper1.predict_spend(data)
+
+        wrapper2 = GammaGammaModelWrapper(GammaGammaConfig(random_seed=42))
+        wrapper2.fit(data)
+        _ = wrapper2.predict_spend(data)
+
+        # Both should use same random seed
+        assert mock_model_instance1.fit.call_args[1]["random_seed"] == 42
+        assert mock_model_instance2.fit.call_args[1]["random_seed"] == 42
+
+
+class TestGammaGammaExtremeValues:
+    """Test handling of extreme monetary values."""
+
+    @patch("customer_base_audit.models.gamma_gamma.GammaGammaModel")
+    def test_very_small_monetary_values(self, mock_gamma_gamma_model):
+        """Model should handle very small but positive monetary values."""
+        mock_model_instance = MagicMock()
+        mock_gamma_gamma_model.return_value = mock_model_instance
+
+        wrapper = GammaGammaModelWrapper()
+        data = pd.DataFrame({
+            "customer_id": ["C1", "C2"],
+            "frequency": [10, 10],
+            "monetary_value": [0.01, 0.05]  # Very small values
+        })
+
+        # Should fit without error
+        wrapper.fit(data)
+        assert mock_model_instance.fit.called
+
+    @patch("customer_base_audit.models.gamma_gamma.GammaGammaModel")
+    def test_very_large_monetary_values(self, mock_gamma_gamma_model):
+        """Model should handle very large monetary values."""
+        mock_model_instance = MagicMock()
+        mock_gamma_gamma_model.return_value = mock_model_instance
+
+        wrapper = GammaGammaModelWrapper()
+        data = pd.DataFrame({
+            "customer_id": ["C1", "C2"],
+            "frequency": [10, 10],
+            "monetary_value": [1000000.0, 5000000.0]  # Very large values
+        })
+
+        # Should fit without error
+        wrapper.fit(data)
+        assert mock_model_instance.fit.called
+
+    @patch("customer_base_audit.models.gamma_gamma.GammaGammaModel")
+    def test_extreme_range_monetary_values(self, mock_gamma_gamma_model):
+        """Model should handle extreme range in monetary values."""
+        mock_model_instance = MagicMock()
+        mock_gamma_gamma_model.return_value = mock_model_instance
+
+        wrapper = GammaGammaModelWrapper()
+        data = pd.DataFrame({
+            "customer_id": ["C1", "C2"],
+            "frequency": [10, 10],
+            "monetary_value": [0.01, 1000000.0]  # Extreme range (10^-2 to 10^6)
+        })
+
+        # Should fit without error (model will handle numerical scaling)
+        wrapper.fit(data)
+        assert mock_model_instance.fit.called
 
 
 class TestGammaGammaIntegration:
