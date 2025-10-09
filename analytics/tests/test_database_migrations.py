@@ -5,10 +5,10 @@ import tempfile
 from unittest.mock import patch
 
 import pytest
+from alembic.config import Config
 from sqlalchemy import select, text
 
 from alembic import command
-from alembic.config import Config
 from libs.analytics_core.database import initialize_database
 from libs.analytics_core.models import AuditLog, Role, User, UserRole
 
