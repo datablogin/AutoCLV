@@ -24,7 +24,10 @@ from customer_base_audit.synthetic import (
 def test_generate_customers_and_transactions_basic() -> None:
     customers = generate_customers(50, date(2024, 1, 1), date(2024, 12, 31), seed=7)
     assert len(customers) == 50
-    txns = generate_transactions(customers, date(2024, 1, 1), date(2024, 12, 31))
+    # Use BASELINE_SCENARIO for deterministic test results
+    txns = generate_transactions(
+        customers, date(2024, 1, 1), date(2024, 12, 31), scenario=BASELINE_SCENARIO
+    )
     assert isinstance(txns, list)
     # Not asserting an exact count; ensure plausible volume
     assert len(txns) > 0
