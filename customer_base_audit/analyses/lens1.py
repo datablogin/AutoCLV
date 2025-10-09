@@ -19,6 +19,10 @@ from typing import Sequence
 from customer_base_audit.foundation.rfm import RFMMetrics, RFMScore
 
 # Standard percentage precision: 2 decimal places (e.g., 45.67%)
+# Note: 2 decimal places may not be granular enough for highly concentrated
+# customer bases where top 0.1% or 0.01% might be critical for business decisions.
+# For such cases, consider using calculate_revenue_concentration() directly with
+# custom precision if needed.
 PERCENTAGE_PRECISION = Decimal("0.01")
 
 

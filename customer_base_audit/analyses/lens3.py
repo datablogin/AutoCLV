@@ -321,11 +321,59 @@ def analyze_cohort_evolution(
     )
 
 
+def calculate_cumulative_activation_curve(cohort_metrics: Lens3Metrics) -> Mapping[int, float]:
+    """Extract cumulative activation rates by period number.
+
+    This function returns the percentage of cohort members who have made at least
+    one purchase by each period (cumulative, ever-active). This is NOT period-specific
+    retention (which measures active customers in each specific period).
+
+    Parameters
+    ----------
+    cohort_metrics:
+        Lens3Metrics containing cohort evolution data.
+
+    Returns
+    -------
+    Mapping[int, float]
+        Dictionary mapping period_number to cumulative_activation_rate.
+        Values range from 0.0 to 1.0 and are monotonically non-decreasing.
+
+    Examples
+    --------
+    >>> from datetime import datetime
+    >>> metrics = Lens3Metrics(
+    ...     cohort_name="2023-01",
+    ...     acquisition_date=datetime(2023, 1, 1),
+    ...     cohort_size=100,
+    ...     periods=[
+    ...         CohortPeriodMetrics(0, 100, 1.0, 1.5, 50.0, 1.5, 50.0, 5000.0),
+    ...         CohortPeriodMetrics(1, 80, 1.0, 1.2, 40.0, 0.96, 32.0, 3200.0),
+    ...         CohortPeriodMetrics(2, 60, 1.0, 1.0, 35.0, 0.60, 21.0, 2100.0),
+    ...     ]
+    ... )
+    >>> curve = calculate_cumulative_activation_curve(metrics)
+    >>> print(curve)
+    {0: 1.0, 1: 1.0, 2: 1.0}
+
+    Notes
+    -----
+    The cumulative activation rate is monotonically non-decreasing because once a customer
+    has made a purchase, they are counted in all subsequent periods' activation rates.
+    This differs from period-specific retention, which can decrease.
+    """
+    return {
+        period.period_number: period.cumulative_activation_rate for period in cohort_metrics.periods
+    }
+
+
 def calculate_retention_curve(cohort_metrics: Lens3Metrics) -> Mapping[int, float]:
     """Extract cumulative activation rates by period number.
 
-    Note: Despite the function name (kept for backward compatibility), this
-    returns cumulative activation rates, not period-specific retention rates.
+    .. deprecated::
+        Use :func:`calculate_cumulative_activation_curve` instead. This function
+        has a misleading name - it returns cumulative activation rates (ever-active
+        customers), not period-specific retention rates (active this period).
 
     Parameters
     ----------
@@ -337,6 +385,10 @@ def calculate_retention_curve(cohort_metrics: Lens3Metrics) -> Mapping[int, floa
     Mapping[int, float]
         Dictionary mapping period_number to cumulative_activation_rate.
 
+    See Also
+    --------
+    calculate_cumulative_activation_curve : The preferred function with clearer semantics.
+
     Examples
     --------
     >>> from datetime import datetime
@@ -345,15 +397,23 @@ def calculate_retention_curve(cohort_metrics: Lens3Metrics) -> Mapping[int, floa
     ...     acquisition_date=datetime(2023, 1, 1),
     ...     cohort_size=100,
     ...     periods=[
-    ...         CohortPeriodMetrics(0, 100, 1.0, 1.5, 50.0, 5000.0),
-    ...         CohortPeriodMetrics(1, 80, 0.8, 1.2, 40.0, 3200.0),
-    ...         CohortPeriodMetrics(2, 60, 0.6, 1.0, 35.0, 2100.0),
+    ...         CohortPeriodMetrics(0, 100, 1.0, 1.5, 50.0, 1.5, 50.0, 5000.0),
+    ...         CohortPeriodMetrics(1, 80, 0.8, 1.2, 40.0, 0.96, 32.0, 3200.0),
+    ...         CohortPeriodMetrics(2, 60, 0.6, 1.0, 35.0, 0.60, 21.0, 2100.0),
     ...     ]
     ... )
     >>> curve = calculate_retention_curve(metrics)
     >>> print(curve)
     {0: 1.0, 1: 0.8, 2: 0.6}
     """
-    return {
-        period.period_number: period.cumulative_activation_rate for period in cohort_metrics.periods
-    }
+    import warnings
+
+    warnings.warn(
+        "calculate_retention_curve() is deprecated and will be removed in a future version. "
+        "Use calculate_cumulative_activation_curve() instead for clearer semantics. "
+        "Note: This function returns cumulative activation (ever-active customers), "
+        "not period-specific retention (active this period).",
+        DeprecationWarning,
+        stacklevel=2
+    )
+    return calculate_cumulative_activation_curve(cohort_metrics)
