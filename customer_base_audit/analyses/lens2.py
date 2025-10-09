@@ -17,6 +17,7 @@ non-consecutive periods may indicate temporary inactivity.
 
 from __future__ import annotations
 
+from collections import Counter
 from dataclasses import dataclass
 from decimal import Decimal, ROUND_HALF_UP
 from typing import Sequence
@@ -210,13 +211,15 @@ def analyze_period_comparison(
     """
     # Validate no duplicate customer IDs in input
     period1_ids = [m.customer_id for m in period1_rfm]
-    if len(period1_ids) != len(set(period1_ids)):
-        duplicates = {cid for cid in period1_ids if period1_ids.count(cid) > 1}
+    customer_counts = Counter(period1_ids)
+    duplicates = [cid for cid, count in customer_counts.items() if count > 1]
+    if duplicates:
         raise ValueError(f"Duplicate customer IDs found in period1_rfm: {duplicates}")
 
     period2_ids = [m.customer_id for m in period2_rfm]
-    if len(period2_ids) != len(set(period2_ids)):
-        duplicates = {cid for cid in period2_ids if period2_ids.count(cid) > 1}
+    customer_counts = Counter(period2_ids)
+    duplicates = [cid for cid, count in customer_counts.items() if count > 1]
+    if duplicates:
         raise ValueError(f"Duplicate customer IDs found in period2_rfm: {duplicates}")
 
     # Calculate or use provided Lens 1 metrics for each period

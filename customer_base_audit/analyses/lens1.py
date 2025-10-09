@@ -18,6 +18,13 @@ from typing import Sequence
 
 from customer_base_audit.foundation.rfm import RFMMetrics, RFMScore
 
+# Standard percentage precision: 2 decimal places (e.g., 45.67%)
+# Note: 2 decimal places may not be granular enough for highly concentrated
+# customer bases where top 0.1% or 0.01% might be critical for business decisions.
+# For such cases, consider using calculate_revenue_concentration() directly with
+# custom precision if needed.
+PERCENTAGE_PRECISION = Decimal("0.01")
+
 
 @dataclass(frozen=True)
 class Lens1Metrics:
@@ -140,7 +147,7 @@ def analyze_single_period(
     one_time_buyers = sum(1 for m in rfm_metrics if m.frequency == 1)
     one_time_buyer_pct = (
         Decimal(one_time_buyers) / Decimal(total_customers) * 100
-    ).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
+    ).quantize(PERCENTAGE_PRECISION, rounding=ROUND_HALF_UP)
 
     # Revenue metrics
     total_revenue = sum(m.total_spend for m in rfm_metrics).quantize(
@@ -213,9 +220,9 @@ def calculate_revenue_concentration(
     -------
     dict[int, Decimal]
         Mapping of percentile to revenue contribution percentage.
-        Example: {10: Decimal('45.2'), 20: Decimal('62.8')}
-        means top 10% of customers drive 45.2% of revenue,
-        and top 20% drive 62.8% of revenue.
+        Example: {10: Decimal('45.20'), 20: Decimal('62.80')}
+        means top 10% of customers drive 45.20% of revenue,
+        and top 20% drive 62.80% of revenue.
 
     Examples
     --------
@@ -253,7 +260,7 @@ def calculate_revenue_concentration(
 
         # Calculate percentage contribution
         contribution_pct = (top_n_revenue / total_revenue * 100).quantize(
-            Decimal("0.1"), rounding=ROUND_HALF_UP
+            PERCENTAGE_PRECISION, rounding=ROUND_HALF_UP
         )
         concentration[percentile] = contribution_pct
 
