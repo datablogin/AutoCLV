@@ -84,15 +84,17 @@ def calculate_rfm(
 ) -> list[RFMMetrics]:
     """Calculate RFM metrics from period aggregations.
 
-    **Note on Recency Calculation**: Since PeriodAggregation does not include
-    the exact transaction timestamp, recency is approximated using the end date
-    of the last active period. This provides a conservative estimate (slightly
-    understating recency) compared to using the actual last transaction date.
+    **Note on Recency Calculation**: This function uses the actual last transaction
+    timestamp from PeriodAggregation.last_transaction_ts when available, providing
+    accurate recency calculations for CLV modeling. If last_transaction_ts is None
+    (backward compatibility with older data), it falls back to using period_end as
+    a conservative approximation.
 
     For example, if a customer made a purchase on Dec 28 in a monthly period
-    (Dec 1-31), recency will be calculated from Dec 31, not Dec 28. This is
-    more accurate than using period_start (Dec 1) which would overstate recency
-    by ~27 days.
+    (Dec 1-31):
+    - With last_transaction_ts: recency calculated from Dec 28 (accurate)
+    - Without last_transaction_ts: recency calculated from Dec 31 (conservative,
+      understates recency by 3 days)
 
     Parameters
     ----------
@@ -150,6 +152,7 @@ def calculate_rfm(
         customer_id = period.customer_id
         if customer_id not in customer_data:
             customer_data[customer_id] = {
+                "last_transaction_ts": None,
                 "last_period_end": period.period_end,
                 "first_period_start": period.period_start,
                 "total_orders": 0,
@@ -157,11 +160,17 @@ def calculate_rfm(
             }
 
         data = customer_data[customer_id]
-        # Track the most recent period end (conservative proxy for last purchase)
-        # Using period_end instead of period_start provides a more accurate
-        # recency estimate since purchases could occur anywhere in the period
+
+        # Track the most recent transaction timestamp (accurate recency)
+        # Fall back to period_end if last_transaction_ts is not available
+        if period.last_transaction_ts is not None:
+            if data["last_transaction_ts"] is None or period.last_transaction_ts > data["last_transaction_ts"]:
+                data["last_transaction_ts"] = period.last_transaction_ts
+
+        # Track the most recent period end (fallback for recency calculation)
         if period.period_end > data["last_period_end"]:
             data["last_period_end"] = period.period_end
+
         # Track the earliest period start for observation_start
         if period.period_start < data["first_period_start"]:
             data["first_period_start"] = period.period_start
@@ -172,9 +181,15 @@ def calculate_rfm(
     # Calculate RFM metrics for each customer
     rfm_metrics: list[RFMMetrics] = []
     for customer_id, data in customer_data.items():
-        # Recency: days from last period end to observation_end
-        # This is a conservative estimate - actual recency may be slightly higher
-        recency_delta = observation_end - data["last_period_end"]
+        # Recency: days from last transaction to observation_end
+        # Use actual last_transaction_ts if available, otherwise fall back to period_end
+        if data["last_transaction_ts"] is not None:
+            recency_reference = data["last_transaction_ts"]
+        else:
+            # Backward compatibility: use period_end approximation
+            recency_reference = data["last_period_end"]
+
+        recency_delta = observation_end - recency_reference
         recency_days = recency_delta.days
 
         # Frequency: total number of orders
