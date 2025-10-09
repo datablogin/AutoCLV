@@ -321,7 +321,9 @@ def analyze_cohort_evolution(
     )
 
 
-def calculate_cumulative_activation_curve(cohort_metrics: Lens3Metrics) -> Mapping[int, float]:
+def calculate_cumulative_activation_curve(
+    cohort_metrics: Lens3Metrics,
+) -> Mapping[int, float]:
     """Extract cumulative activation rates by period number.
 
     This function returns the percentage of cohort members who have made at least
@@ -363,7 +365,8 @@ def calculate_cumulative_activation_curve(cohort_metrics: Lens3Metrics) -> Mappi
     This differs from period-specific retention, which can decrease.
     """
     return {
-        period.period_number: period.cumulative_activation_rate for period in cohort_metrics.periods
+        period.period_number: period.cumulative_activation_rate
+        for period in cohort_metrics.periods
     }
 
 
@@ -414,6 +417,6 @@ def calculate_retention_curve(cohort_metrics: Lens3Metrics) -> Mapping[int, floa
         "Note: This function returns cumulative activation (ever-active customers), "
         "not period-specific retention (active this period).",
         DeprecationWarning,
-        stacklevel=2
+        stacklevel=2,
     )
     return calculate_cumulative_activation_curve(cohort_metrics)

@@ -62,7 +62,9 @@ class TestCohortPeriodMetrics:
 
     def test_invalid_cumulative_activation_rate_raises_error(self):
         """Test that cumulative_activation_rate outside [0, 1] raises ValueError."""
-        with pytest.raises(ValueError, match="cumulative_activation_rate must be between 0 and 1"):
+        with pytest.raises(
+            ValueError, match="cumulative_activation_rate must be between 0 and 1"
+        ):
             CohortPeriodMetrics(
                 period_number=0,
                 active_customers=100,
@@ -227,19 +229,25 @@ class TestAnalyzeCohortEvolution:
         # Period 0: All 3 customers (100% cumulative retention)
         assert metrics.periods[0].period_number == 0
         assert metrics.periods[0].active_customers == 3
-        assert metrics.periods[0].cumulative_activation_rate == 1.0  # 3/3 customers seen
+        assert (
+            metrics.periods[0].cumulative_activation_rate == 1.0
+        )  # 3/3 customers seen
         assert metrics.periods[0].total_revenue == 225.0  # 100 + 50 + 75
 
         # Period 1: 2 customers active this period (100% cumulative retention)
         assert metrics.periods[1].period_number == 1
         assert metrics.periods[1].active_customers == 2  # C1 and C3
-        assert metrics.periods[1].cumulative_activation_rate == 1.0  # All 3 customers seen by now
+        assert (
+            metrics.periods[1].cumulative_activation_rate == 1.0
+        )  # All 3 customers seen by now
         assert metrics.periods[1].total_revenue == 175.0  # 75 + 100
 
         # Period 2: 1 customer active this period (100% cumulative retention)
         assert metrics.periods[2].period_number == 2
         assert metrics.periods[2].active_customers == 1  # Only C1
-        assert metrics.periods[2].cumulative_activation_rate == 1.0  # All 3 customers seen by now
+        assert (
+            metrics.periods[2].cumulative_activation_rate == 1.0
+        )  # All 3 customers seen by now
         assert metrics.periods[2].total_revenue == 50.0
 
     def test_cohort_with_single_period(self):
@@ -500,14 +508,18 @@ class TestAnalyzeCohortEvolution:
         )
 
         # All customers active at some point, so retention should be 100% throughout
-        cumulative_activation_rates = [p.cumulative_activation_rate for p in metrics.periods]
+        cumulative_activation_rates = [
+            p.cumulative_activation_rate for p in metrics.periods
+        ]
         assert all(r == 1.0 for r in cumulative_activation_rates), (
             f"Retention should be 100% throughout, got {cumulative_activation_rates}"
         )
 
         # Verify retention is monotonically non-decreasing
         for i in range(1, len(cumulative_activation_rates)):
-            assert cumulative_activation_rates[i] >= cumulative_activation_rates[i - 1], (
+            assert (
+                cumulative_activation_rates[i] >= cumulative_activation_rates[i - 1]
+            ), (
                 f"Retention decreased from {cumulative_activation_rates[i - 1]} to {cumulative_activation_rates[i]} at period {i}"
             )
 
