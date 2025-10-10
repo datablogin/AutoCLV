@@ -49,12 +49,14 @@ class TestBGNBDModelWrapper:
         config = BGNBDConfig(method="map")
         wrapper = BGNBDModelWrapper(config)
 
-        data = pd.DataFrame({
-            "customer_id": ["C1", "C2"],
-            "frequency": [2, 5],
-            "recency": [30.0, 60.0],
-            "T": [90.0, 90.0],
-        })
+        data = pd.DataFrame(
+            {
+                "customer_id": ["C1", "C2"],
+                "frequency": [2, 5],
+                "recency": [30.0, 60.0],
+                "T": [90.0, 90.0],
+            }
+        )
 
         wrapper.fit(data)
         mock_model_instance.fit.assert_called_once_with(fit_method="map")
@@ -70,12 +72,14 @@ class TestBGNBDModelWrapper:
         mock_model_instance.expected_purchases.return_value = mock_predictions
 
         wrapper = BGNBDModelWrapper()
-        fit_data = pd.DataFrame({
-            "customer_id": ["C1", "C2"],
-            "frequency": [2, 5],
-            "recency": [30.0, 60.0],
-            "T": [90.0, 90.0],
-        })
+        fit_data = pd.DataFrame(
+            {
+                "customer_id": ["C1", "C2"],
+                "frequency": [2, 5],
+                "recency": [30.0, 60.0],
+                "T": [90.0, 90.0],
+            }
+        )
         wrapper.fit(fit_data)
 
         result = wrapper.predict_purchases(fit_data, time_periods=90.0)
@@ -89,12 +93,14 @@ class TestBGNBDModelWrapper:
         """End-to-end test with real BetaGeoModel using MAP."""
         np.random.seed(42)
         n_customers = 20
-        data = pd.DataFrame({
-            "customer_id": [f"C{i}" for i in range(n_customers)],
-            "frequency": np.random.randint(0, 10, size=n_customers),
-            "recency": np.random.uniform(0.0, 90.0, size=n_customers),
-            "T": np.full(n_customers, 90.0),
-        })
+        data = pd.DataFrame(
+            {
+                "customer_id": [f"C{i}" for i in range(n_customers)],
+                "frequency": np.random.randint(0, 10, size=n_customers),
+                "recency": np.random.uniform(0.0, 90.0, size=n_customers),
+                "T": np.full(n_customers, 90.0),
+            }
+        )
         data["recency"] = data[["recency", "T"]].min(axis=1)
 
         config = BGNBDConfig(method="map")

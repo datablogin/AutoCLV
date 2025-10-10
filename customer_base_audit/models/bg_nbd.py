@@ -97,6 +97,131 @@ class BGNBDModelWrapper:
         self.config = config
         self.model: Optional[BetaGeoModel] = None
 
+    def _validate_bg_nbd_data(
+        self, data: pd.DataFrame, operation: str, allow_empty: bool = False
+    ) -> None:
+        """Validate input data for BG/NBD operations.
+
+        Parameters
+        ----------
+        data:
+            DataFrame to validate
+        operation:
+            Operation name (for error messages): 'fit', 'predict', 'probability'
+        allow_empty:
+            If True, allow empty DataFrames (for prediction operations)
+
+        Raises
+        ------
+        ValueError:
+            If data fails validation checks
+        """
+        # Check required columns
+        required_cols = {"customer_id", "frequency", "recency", "T"}
+        if not required_cols.issubset(data.columns):
+            missing = required_cols - set(data.columns)
+            raise ValueError(
+                f"Input data missing required columns: {missing}. "
+                f"Expected columns: {required_cols}"
+            )
+
+        # Allow empty for prediction operations
+        if data.empty:
+            if not allow_empty:
+                raise ValueError(
+                    f"Cannot {operation} BG/NBD model on empty dataset. "
+                    "Provide customer transaction histories."
+                )
+            return  # Empty is valid for predictions
+
+        # Check for duplicate customer IDs
+        if data["customer_id"].duplicated().any():
+            duplicates = data[data["customer_id"].duplicated()]["customer_id"].tolist()
+            raise ValueError(
+                f"Duplicate customer_ids found in {operation} data: {duplicates[:5]}"
+                f"{'...' if len(duplicates) > 5 else ''}. "
+                "Each customer should appear only once."
+            )
+
+        # Validate data types
+        if not pd.api.types.is_numeric_dtype(data["frequency"]):
+            raise ValueError(
+                f"frequency column must be numeric type, got {data['frequency'].dtype}"
+            )
+        if not pd.api.types.is_numeric_dtype(data["recency"]):
+            raise ValueError(
+                f"recency column must be numeric type, got {data['recency'].dtype}"
+            )
+        if not pd.api.types.is_numeric_dtype(data["T"]):
+            raise ValueError(f"T column must be numeric type, got {data['T'].dtype}")
+
+        # Check for NaN/Inf values
+        for col in ["frequency", "recency", "T"]:
+            if data[col].isna().any():
+                nan_ids = data[data[col].isna()]["customer_id"].tolist()
+                raise ValueError(
+                    f"{col} contains NaN values. "
+                    f"Found {len(nan_ids)} customers: {nan_ids[:5]}"
+                    f"{'...' if len(nan_ids) > 5 else ''}."
+                )
+            if (data[col] == float("inf")).any() or (data[col] == float("-inf")).any():
+                inf_ids = data[
+                    (data[col] == float("inf")) | (data[col] == float("-inf"))
+                ]["customer_id"].tolist()
+                raise ValueError(
+                    f"{col} contains infinite values. "
+                    f"Found {len(inf_ids)} customers: {inf_ids[:5]}"
+                    f"{'...' if len(inf_ids) > 5 else ''}."
+                )
+
+        # Validate frequency is integer-valued (counts)
+        non_integer_freq = data[data["frequency"] % 1 != 0]
+        if not non_integer_freq.empty:
+            invalid_ids = non_integer_freq["customer_id"].tolist()
+            raise ValueError(
+                "frequency must be integer-valued (purchase counts). "
+                f"Found {len(invalid_ids)} customers with non-integer frequency: "
+                f"{invalid_ids[:5]}{'...' if len(invalid_ids) > 5 else ''}."
+            )
+
+        # Validate BG/NBD constraints
+        invalid_freq = data[data["frequency"] < 0]
+        if not invalid_freq.empty:
+            invalid_ids = invalid_freq["customer_id"].tolist()
+            raise ValueError(
+                "frequency must be non-negative. "
+                f"Found {len(invalid_ids)} customers with negative frequency: "
+                f"{invalid_ids[:5]}{'...' if len(invalid_ids) > 5 else ''}."
+            )
+
+        invalid_recency = data[data["recency"] < 0]
+        if not invalid_recency.empty:
+            invalid_ids = invalid_recency["customer_id"].tolist()
+            raise ValueError(
+                "recency must be non-negative. "
+                f"Found {len(invalid_ids)} customers with negative recency: "
+                f"{invalid_ids[:5]}{'...' if len(invalid_ids) > 5 else ''}."
+            )
+
+        invalid_T = data[data["T"] <= 0]
+        if not invalid_T.empty:
+            invalid_ids = invalid_T["customer_id"].tolist()
+            raise ValueError(
+                "T must be positive. "
+                f"Found {len(invalid_ids)} customers with T <= 0: "
+                f"{invalid_ids[:5]}{'...' if len(invalid_ids) > 5 else ''}."
+            )
+
+        # Check recency <= T constraint
+        invalid_recency_T = data[data["recency"] > data["T"]]
+        if not invalid_recency_T.empty:
+            invalid_ids = invalid_recency_T["customer_id"].tolist()
+            raise ValueError(
+                "recency must be <= T (last purchase can't occur after observation end). "
+                f"Found {len(invalid_ids)} customers with recency > T: "
+                f"{invalid_ids[:5]}{'...' if len(invalid_ids) > 5 else ''}."
+            )
+
     def fit(self, data: pd.DataFrame) -> None:
         """Fit BG/NBD model to customer transaction data.
 
@@ -118,79 +243,8 @@ class BGNBDModelWrapper:
             If required columns are missing, data types are invalid,
             or duplicate customer IDs exist
         """
-        # Validate input
-        required_cols = {"customer_id", "frequency", "recency", "T"}
-        if not required_cols.issubset(data.columns):
-            missing = required_cols - set(data.columns)
-            raise ValueError(
-                f"Input data missing required columns: {missing}. "
-                f"Expected columns: {required_cols}"
-            )
-
-        if data.empty:
-            raise ValueError(
-                "Cannot fit BG/NBD model on empty dataset. "
-                "Provide customer transaction histories."
-            )
-
-        # Check for duplicate customer IDs
-        if data["customer_id"].duplicated().any():
-            duplicates = data[data["customer_id"].duplicated()]["customer_id"].tolist()
-            raise ValueError(
-                f"Duplicate customer_ids found in training data: {duplicates[:5]}"
-                f"{'...' if len(duplicates) > 5 else ''}. "
-                f"Each customer should appear only once."
-            )
-
-        # Validate data types
-        if not pd.api.types.is_numeric_dtype(data["frequency"]):
-            raise ValueError(
-                f"frequency column must be numeric type, got {data['frequency'].dtype}"
-            )
-        if not pd.api.types.is_numeric_dtype(data["recency"]):
-            raise ValueError(
-                f"recency column must be numeric type, got {data['recency'].dtype}"
-            )
-        if not pd.api.types.is_numeric_dtype(data["T"]):
-            raise ValueError(f"T column must be numeric type, got {data['T'].dtype}")
-
-        # Validate BG/NBD constraints
-        invalid_freq = data[data["frequency"] < 0]
-        if not invalid_freq.empty:
-            invalid_ids = invalid_freq["customer_id"].tolist()
-            raise ValueError(
-                f"frequency must be non-negative. "
-                f"Found {len(invalid_ids)} customers with negative frequency: "
-                f"{invalid_ids[:5]}{'...' if len(invalid_ids) > 5 else ''}."
-            )
-
-        invalid_recency = data[data["recency"] < 0]
-        if not invalid_recency.empty:
-            invalid_ids = invalid_recency["customer_id"].tolist()
-            raise ValueError(
-                f"recency must be non-negative. "
-                f"Found {len(invalid_ids)} customers with negative recency: "
-                f"{invalid_ids[:5]}{'...' if len(invalid_ids) > 5 else ''}."
-            )
-
-        invalid_T = data[data["T"] <= 0]
-        if not invalid_T.empty:
-            invalid_ids = invalid_T["customer_id"].tolist()
-            raise ValueError(
-                f"T must be positive. "
-                f"Found {len(invalid_ids)} customers with T <= 0: "
-                f"{invalid_ids[:5]}{'...' if len(invalid_ids) > 5 else ''}."
-            )
-
-        # Check recency <= T constraint
-        invalid_recency_T = data[data["recency"] > data["T"]]
-        if not invalid_recency_T.empty:
-            invalid_ids = invalid_recency_T["customer_id"].tolist()
-            raise ValueError(
-                f"recency must be <= T (last purchase can't occur after observation end). "
-                f"Found {len(invalid_ids)} customers with recency > T: "
-                f"{invalid_ids[:5]}{'...' if len(invalid_ids) > 5 else ''}."
-            )
+        # Validate input using shared validation method
+        self._validate_bg_nbd_data(data, operation="fit", allow_empty=False)
 
         # Create BetaGeoModel instance
         # PyMC-Marketing expects customer_id, frequency, recency, T
@@ -286,7 +340,12 @@ class BGNBDModelWrapper:
             If required columns are missing, constraints are violated,
             duplicate customer IDs exist, or time_periods <= 0
         """
-        if self.model is None or not hasattr(self.model, "idata"):
+        # Improved model state checking
+        if self.model is None:
+            raise RuntimeError(
+                "Model not initialized. Call fit() before predict_purchases()."
+            )
+        if not hasattr(self.model, "idata") or self.model.idata is None:
             raise RuntimeError(
                 "Model has not been fitted. Call fit() before predict_purchases()."
             )
@@ -294,68 +353,15 @@ class BGNBDModelWrapper:
         if time_periods <= 0:
             raise ValueError(
                 f"time_periods must be positive, got {time_periods}. "
-                f"Specify prediction horizon (e.g., 365.0 for one year)."
+                "Specify prediction horizon (e.g., 365.0 for one year)."
             )
 
-        # Validate input
-        required_cols = {"customer_id", "frequency", "recency", "T"}
-        if not required_cols.issubset(data.columns):
-            missing = required_cols - set(data.columns)
-            raise ValueError(
-                f"Input data missing required columns: {missing}. "
-                f"Expected columns: {required_cols}"
-            )
+        # Validate input using shared validation method (allow empty for predictions)
+        self._validate_bg_nbd_data(data, operation="predict", allow_empty=True)
 
         if data.empty:
             # Return empty DataFrame with correct schema
             return pd.DataFrame(columns=["customer_id", "predicted_purchases"])
-
-        # Check for duplicate customer IDs
-        if data["customer_id"].duplicated().any():
-            duplicates = data[data["customer_id"].duplicated()]["customer_id"].tolist()
-            raise ValueError(
-                f"Duplicate customer_ids found in prediction data: {duplicates[:5]}"
-                f"{'...' if len(duplicates) > 5 else ''}. "
-                f"Each customer should appear only once."
-            )
-
-        # Validate BG/NBD constraints
-        invalid_freq = data[data["frequency"] < 0]
-        if not invalid_freq.empty:
-            invalid_ids = invalid_freq["customer_id"].tolist()
-            raise ValueError(
-                f"frequency must be non-negative. "
-                f"Found {len(invalid_ids)} customers with negative frequency: "
-                f"{invalid_ids[:5]}{'...' if len(invalid_ids) > 5 else ''}."
-            )
-
-        invalid_recency = data[data["recency"] < 0]
-        if not invalid_recency.empty:
-            invalid_ids = invalid_recency["customer_id"].tolist()
-            raise ValueError(
-                f"recency must be non-negative. "
-                f"Found {len(invalid_ids)} customers with negative recency: "
-                f"{invalid_ids[:5]}{'...' if len(invalid_ids) > 5 else ''}."
-            )
-
-        invalid_T = data[data["T"] <= 0]
-        if not invalid_T.empty:
-            invalid_ids = invalid_T["customer_id"].tolist()
-            raise ValueError(
-                f"T must be positive. "
-                f"Found {len(invalid_ids)} customers with T <= 0: "
-                f"{invalid_ids[:5]}{'...' if len(invalid_ids) > 5 else ''}."
-            )
-
-        # Check recency <= T constraint
-        invalid_recency_T = data[data["recency"] > data["T"]]
-        if not invalid_recency_T.empty:
-            invalid_ids = invalid_recency_T["customer_id"].tolist()
-            raise ValueError(
-                f"recency must be <= T (last purchase can't occur after observation end). "
-                f"Found {len(invalid_ids)} customers with recency > T: "
-                f"{invalid_ids[:5]}{'...' if len(invalid_ids) > 5 else ''}."
-            )
 
         # Prepare data for prediction
         model_data = data[["customer_id", "frequency", "recency", "T"]].copy()
@@ -409,70 +415,22 @@ class BGNBDModelWrapper:
             If required columns are missing, constraints are violated,
             or duplicate customer IDs exist
         """
-        if self.model is None or not hasattr(self.model, "idata"):
+        # Improved model state checking
+        if self.model is None:
+            raise RuntimeError(
+                "Model not initialized. Call fit() before calculate_probability_alive()."
+            )
+        if not hasattr(self.model, "idata") or self.model.idata is None:
             raise RuntimeError(
                 "Model has not been fitted. Call fit() before calculate_probability_alive()."
             )
 
-        # Validate input (same as predict_purchases)
-        required_cols = {"customer_id", "frequency", "recency", "T"}
-        if not required_cols.issubset(data.columns):
-            missing = required_cols - set(data.columns)
-            raise ValueError(
-                f"Input data missing required columns: {missing}. "
-                f"Expected columns: {required_cols}"
-            )
+        # Validate input using shared validation method (allow empty for predictions)
+        self._validate_bg_nbd_data(data, operation="probability", allow_empty=True)
 
         if data.empty:
             # Return empty DataFrame with correct schema
             return pd.DataFrame(columns=["customer_id", "prob_alive"])
-
-        # Check for duplicate customer IDs
-        if data["customer_id"].duplicated().any():
-            duplicates = data[data["customer_id"].duplicated()]["customer_id"].tolist()
-            raise ValueError(
-                f"Duplicate customer_ids found in probability calculation data: {duplicates[:5]}"
-                f"{'...' if len(duplicates) > 5 else ''}. "
-                f"Each customer should appear only once."
-            )
-
-        # Validate BG/NBD constraints
-        invalid_freq = data[data["frequency"] < 0]
-        if not invalid_freq.empty:
-            invalid_ids = invalid_freq["customer_id"].tolist()
-            raise ValueError(
-                f"frequency must be non-negative. "
-                f"Found {len(invalid_ids)} customers with negative frequency: "
-                f"{invalid_ids[:5]}{'...' if len(invalid_ids) > 5 else ''}."
-            )
-
-        invalid_recency = data[data["recency"] < 0]
-        if not invalid_recency.empty:
-            invalid_ids = invalid_recency["customer_id"].tolist()
-            raise ValueError(
-                f"recency must be non-negative. "
-                f"Found {len(invalid_ids)} customers with negative recency: "
-                f"{invalid_ids[:5]}{'...' if len(invalid_ids) > 5 else ''}."
-            )
-
-        invalid_T = data[data["T"] <= 0]
-        if not invalid_T.empty:
-            invalid_ids = invalid_T["customer_id"].tolist()
-            raise ValueError(
-                f"T must be positive. "
-                f"Found {len(invalid_ids)} customers with T <= 0: "
-                f"{invalid_ids[:5]}{'...' if len(invalid_ids) > 5 else ''}."
-            )
-
-        # Check recency <= T constraint
-        invalid_recency_T = data[data["recency"] > data["T"]]
-        if not invalid_recency_T.empty:
-            invalid_ids = invalid_recency_T["customer_id"].tolist()
-            raise ValueError(
-                f"recency must be <= T (last purchase can't occur after observation end). "
-                f"Found {len(invalid_ids)} customers with recency > T: "
-                f"{invalid_ids[:5]}{'...' if len(invalid_ids) > 5 else ''}."
-            )
 
         # Prepare data for prediction
         model_data = data[["customer_id", "frequency", "recency", "T"]].copy()
