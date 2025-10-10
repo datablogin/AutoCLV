@@ -34,7 +34,37 @@ class PeriodGranularity(str, Enum):
 
 @dataclass(slots=True)
 class PeriodAggregation:
-    """Aggregated metrics for a customer within a time period."""
+    """Aggregated metrics for a customer within a time period.
+
+    Attributes
+    ----------
+    customer_id:
+        Unique customer identifier
+    period_start:
+        Start of the time period (inclusive)
+    period_end:
+        End of the time period (exclusive)
+    total_orders:
+        Total number of orders in this period
+    total_spend:
+        Total spend amount in this period
+    total_margin:
+        Total margin in this period
+    total_quantity:
+        Total quantity of items purchased in this period
+    last_transaction_ts:
+        Timestamp of the last transaction in this period.
+        This provides accurate recency calculation for RFM analysis.
+        If None, RFM calculation will fall back to using period_end
+        as a conservative approximation.
+
+    Notes
+    -----
+    **Timezone Assumptions**: All datetime fields (period_start, period_end,
+    last_transaction_ts) must use the same timezone (or all be timezone-naive).
+    For production use, recommend using UTC timestamps consistently across the
+    data pipeline. Mixing timezones will result in incorrect recency calculations.
+    """
 
     customer_id: str
     period_start: datetime
@@ -43,6 +73,7 @@ class PeriodAggregation:
     total_spend: float
     total_margin: float
     total_quantity: int
+    last_transaction_ts: datetime | None = None
 
 
 @dataclass
@@ -71,7 +102,7 @@ class CustomerDataMart:
             }
 
         def serialise_period(period: PeriodAggregation) -> dict[str, object]:
-            return {
+            result = {
                 "customer_id": period.customer_id,
                 "period_start": period.period_start.isoformat(),
                 "period_end": period.period_end.isoformat(),
@@ -80,6 +111,9 @@ class CustomerDataMart:
                 "total_margin": period.total_margin,
                 "total_quantity": period.total_quantity,
             }
+            if period.last_transaction_ts is not None:
+                result["last_transaction_ts"] = period.last_transaction_ts.isoformat()
+            return result
 
         payload = {"orders": [serialise_order(order) for order in self.orders]}
         for granularity, aggregates in self.periods.items():
@@ -232,6 +266,7 @@ class CustomerDataMartBuilder:
                     "total_spend": Decimal("0"),
                     "total_margin": Decimal("0"),
                     "total_quantity": 0,
+                    "last_transaction_ts": order.order_ts,
                 }
 
             bucket = buckets[key]
@@ -239,6 +274,9 @@ class CustomerDataMartBuilder:
             bucket["total_spend"] += Decimal(str(order.total_spend))
             bucket["total_margin"] += Decimal(str(order.total_margin))
             bucket["total_quantity"] += order.total_quantity
+            # Track the latest transaction timestamp in this period
+            if order.order_ts > bucket["last_transaction_ts"]:
+                bucket["last_transaction_ts"] = order.order_ts
 
         aggregates: list[PeriodAggregation] = []
         for payload in buckets.values():
@@ -259,6 +297,7 @@ class CustomerDataMartBuilder:
                         )
                     ),
                     total_quantity=payload["total_quantity"],
+                    last_transaction_ts=payload["last_transaction_ts"],
                 )
             )
 
