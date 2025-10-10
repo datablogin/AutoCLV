@@ -24,10 +24,37 @@ Quick Start
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from datetime import datetime
-from typing import Mapping, Any, Sequence
+from datetime import datetime, timezone
+from typing import Mapping, Any, Sequence, TypedDict
 
 from customer_base_audit.foundation.customer_contract import CustomerIdentifier
+
+
+class CohortMetadata(TypedDict, total=False):
+    """Common cohort metadata fields.
+
+    All fields are optional. This TypedDict provides type safety and IDE
+    auto-completion for common metadata patterns.
+
+    Attributes
+    ----------
+    description:
+        Human-readable description of the cohort
+    campaign_id:
+        Marketing campaign identifier
+    acquisition_channel:
+        Channel through which customers were acquired (e.g., "paid-search", "organic", "email")
+    created_by:
+        User or system that created the cohort
+    created_at:
+        ISO 8601 timestamp when the cohort was created
+    """
+
+    description: str
+    campaign_id: str
+    acquisition_channel: str
+    created_by: str
+    created_at: str
 
 
 @dataclass(frozen=True)
@@ -43,13 +70,15 @@ class CohortDefinition:
     end_date:
         Exclusive end of the acquisition period for this cohort.
     metadata:
-        Optional metadata about the cohort (e.g., channel, campaign, region).
+        Optional metadata about the cohort. Use CohortMetadata TypedDict for
+        type-safe common fields (description, campaign_id, acquisition_channel, etc.),
+        or Mapping[str, Any] for custom fields.
     """
 
     cohort_id: str
     start_date: datetime
     end_date: datetime
-    metadata: Mapping[str, Any] = field(default_factory=dict)
+    metadata: CohortMetadata | Mapping[str, Any] = field(default_factory=dict)
 
     def __post_init__(self) -> None:
         """Validate cohort definition constraints."""
@@ -93,6 +122,60 @@ def _validate_timezone_consistency(customers: Sequence[CustomerIdentifier]) -> N
                 f"for customer {customer.customer_id}. "
                 f"All acquisition_ts must use the same timezone."
             )
+
+
+def normalize_to_utc(dt: datetime) -> datetime:
+    """Convert datetime to UTC timezone.
+
+    This utility function helps prevent timezone-related bugs in distributed
+    analytics systems by enforcing consistent UTC timestamps.
+
+    Parameters
+    ----------
+    dt:
+        Datetime to normalize to UTC
+
+    Returns
+    -------
+    datetime
+        Datetime converted to UTC timezone
+
+    Raises
+    ------
+    ValueError
+        If the datetime is naive (no timezone info). All datetimes must be
+        timezone-aware for safe conversion.
+
+    Examples
+    --------
+    >>> from datetime import datetime, timezone, timedelta
+    >>> from customer_base_audit.foundation.cohorts import normalize_to_utc
+    >>>
+    >>> # Convert timezone-aware datetime to UTC
+    >>> dt_eastern = datetime(2023, 1, 15, 10, 0, tzinfo=timezone(timedelta(hours=-5)))
+    >>> dt_utc = normalize_to_utc(dt_eastern)
+    >>> dt_utc.tzinfo
+    datetime.timezone.utc
+    >>> dt_utc.hour
+    15
+
+    Notes
+    -----
+    **Best Practice for CLV Analytics**: Always use UTC timestamps for all
+    customer analytics to avoid timezone-related bugs, especially when:
+    - Aggregating data from multiple regions
+    - Comparing metrics across different time periods
+    - Integrating with distributed systems
+
+    This aligns with the Customer-Base Audit framework's requirement for
+    consistent timezone handling across all Five Lenses analyses.
+    """
+    if dt.tzinfo is None:
+        raise ValueError(
+            "Naive datetime not allowed. Use timezone-aware datetimes. "
+            "For UTC timestamps, use: datetime(..., tzinfo=timezone.utc)"
+        )
+    return dt.astimezone(timezone.utc)
 
 
 def validate_non_overlapping(cohort_definitions: Sequence[CohortDefinition]) -> None:
