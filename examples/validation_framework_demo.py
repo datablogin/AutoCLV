@@ -41,73 +41,63 @@ def prepare_rfm_data(transactions, observation_end_date):
     tuple[pd.DataFrame, pd.DataFrame]
         (bg_nbd_data, gamma_gamma_data)
     """
-    from collections import defaultdict
+    # Vectorized aggregation instead of iterrows() for better performance
+    # Convert event_ts to date if needed
+    transactions = transactions.copy()
+    if hasattr(transactions["event_ts"].iloc[0], "date"):
+        transactions["event_date"] = transactions["event_ts"].dt.date
+    else:
+        transactions["event_date"] = transactions["event_ts"]
 
-    customer_txns = defaultdict(
-        lambda: {"txn_count": 0, "spend": 0.0, "first_date": None, "last_date": None}
+    # Group by customer and aggregate statistics
+    customer_stats = transactions.groupby("customer_id").agg(
+        txn_count=("customer_id", "size"),
+        spend=("amount", "sum"),
+        first_date=("event_date", "min"),
+        last_date=("event_date", "max"),
     )
 
-    # Iterate over DataFrame rows
-    for _, row in transactions.iterrows():
-        cust_id = row["customer_id"]
-        cust_data = customer_txns[cust_id]
-        cust_data["txn_count"] += 1
-        cust_data["spend"] += row["amount"]
-        txn_date = (
-            row["event_ts"].date()
-            if hasattr(row["event_ts"], "date")
-            else row["event_ts"]
+    # BG/NBD inputs - vectorized calculations
+    bg_nbd_data = customer_stats.reset_index()
+    bg_nbd_data["frequency"] = (bg_nbd_data["txn_count"] - 1).clip(lower=0)
+
+    # Calculate recency in days
+    bg_nbd_data["first_datetime"] = pd.to_datetime(
+        bg_nbd_data["first_date"].apply(
+            lambda d: datetime.combine(d, datetime.min.time())
         )
-        if cust_data["first_date"] is None or txn_date < cust_data["first_date"]:
-            cust_data["first_date"] = txn_date
-        if cust_data["last_date"] is None or txn_date > cust_data["last_date"]:
-            cust_data["last_date"] = txn_date
-
-    # BG/NBD inputs
-    bg_nbd_rows = []
-    for cust_id, cust_data in customer_txns.items():
-        txn_count = cust_data["txn_count"]
-        frequency = max(0, txn_count - 1)
-
-        first_dt = datetime.combine(cust_data["first_date"], datetime.min.time())
-        last_dt = datetime.combine(cust_data["last_date"], datetime.min.time())
-
-        if frequency > 0:
-            recency = (last_dt - first_dt).total_seconds() / 86400.0
-        else:
-            recency = 0.0
-
-        T = (observation_end_date - first_dt).total_seconds() / 86400.0
-
-        if T <= 0:
-            continue
-
-        bg_nbd_rows.append(
-            {
-                "customer_id": cust_id,
-                "frequency": frequency,
-                "recency": recency,
-                "T": T,
-            }
+    )
+    bg_nbd_data["last_datetime"] = pd.to_datetime(
+        bg_nbd_data["last_date"].apply(
+            lambda d: datetime.combine(d, datetime.min.time())
         )
+    )
 
-    bg_nbd_data = pd.DataFrame(bg_nbd_rows)
+    bg_nbd_data["recency"] = (
+        bg_nbd_data["last_datetime"] - bg_nbd_data["first_datetime"]
+    ).dt.total_seconds() / 86400.0
+    bg_nbd_data.loc[bg_nbd_data["frequency"] == 0, "recency"] = 0.0
 
-    # Gamma-Gamma inputs
-    gg_rows = []
-    for cust_id, cust_data in customer_txns.items():
-        txn_count = cust_data["txn_count"]
-        if txn_count >= 2:
-            monetary_value = cust_data["spend"] / txn_count
-            gg_rows.append(
-                {
-                    "customer_id": cust_id,
-                    "frequency": txn_count,
-                    "monetary_value": monetary_value,
-                }
-            )
+    # Calculate T (age) in days
+    bg_nbd_data["T"] = (
+        pd.to_datetime(observation_end_date) - bg_nbd_data["first_datetime"]
+    ).dt.total_seconds() / 86400.0
 
-    gamma_gamma_data = pd.DataFrame(gg_rows)
+    # Filter out customers with T <= 0
+    bg_nbd_data = bg_nbd_data[bg_nbd_data["T"] > 0]
+
+    # Select final columns
+    bg_nbd_data = bg_nbd_data[["customer_id", "frequency", "recency", "T"]]
+
+    # Gamma-Gamma inputs - only customers with 2+ transactions
+    gamma_gamma_data = customer_stats[customer_stats["txn_count"] >= 2].copy()
+    gamma_gamma_data["monetary_value"] = (
+        gamma_gamma_data["spend"] / gamma_gamma_data["txn_count"]
+    )
+    gamma_gamma_data = gamma_gamma_data.reset_index()[
+        ["customer_id", "txn_count", "monetary_value"]
+    ]
+    gamma_gamma_data = gamma_gamma_data.rename(columns={"txn_count": "frequency"})
 
     return bg_nbd_data, gamma_gamma_data
 

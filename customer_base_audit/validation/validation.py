@@ -20,6 +20,9 @@ from typing import Callable, List, Tuple
 import numpy as np
 import pandas as pd
 
+# Small epsilon for floating point comparisons to avoid division by zero
+_EPSILON = 1e-10
+
 
 @dataclass(frozen=True)
 class ValidationMetrics:
@@ -36,7 +39,10 @@ class ValidationMetrics:
     arpe:
         Aggregate Revenue Percent Error - percentage error at aggregate level (%)
     r_squared:
-        R² coefficient of determination - proportion of variance explained
+        R² coefficient of determination - proportion of variance explained.
+        Can be negative when the model performs worse than predicting the mean.
+        Range: (-∞, 1.0], where 1.0 is perfect prediction, 0.0 equals the mean baseline,
+        and negative values indicate the model is worse than the mean.
     sample_size:
         Number of samples used in validation
 
@@ -46,6 +52,7 @@ class ValidationMetrics:
     - MAPE < 20%: Individual customer predictions are accurate
     - ARPE < 10%: Aggregate revenue predictions are accurate
     - R² > 0.5: Model explains >50% of CLV variance
+    - R² < 0: Model performs worse than predicting the mean (needs improvement)
     """
 
     mae: Decimal
@@ -56,7 +63,12 @@ class ValidationMetrics:
     sample_size: int
 
     def __post_init__(self) -> None:
-        """Validate metrics are in reasonable ranges."""
+        """Validate metrics are in reasonable ranges.
+
+        Note: R² is not validated because it can be negative when the model
+        performs worse than a horizontal line at the mean. A negative R²
+        indicates the model is not useful for prediction.
+        """
         if self.sample_size < 1:
             raise ValueError(f"sample_size must be >= 1, got {self.sample_size}")
         if self.mae < 0:
@@ -167,7 +179,7 @@ def calculate_clv_metrics(actual: pd.Series, predicted: pd.Series) -> Validation
 
     Computes standard regression metrics for CLV model validation:
     - MAE: Mean Absolute Error
-    - MAPE: Mean Absolute Percentage Error
+    - MAPE: Mean Absolute Percentage Error (excludes zero actual values)
     - RMSE: Root Mean Squared Error
     - ARPE: Aggregate Revenue Percent Error
     - R²: Coefficient of determination
@@ -188,6 +200,14 @@ def calculate_clv_metrics(actual: pd.Series, predicted: pd.Series) -> Validation
     ------
     ValueError:
         If actual and predicted have different lengths or contain invalid values
+
+    Notes
+    -----
+    MAPE Calculation:
+        MAPE excludes customers with zero actual CLV to avoid division by zero.
+        This means the effective sample size for MAPE may be smaller than the
+        reported sample_size. If all actual values are zero, MAPE is set to 0.0.
+        This can bias the metric if zeros are systematic (e.g., churned customers).
 
     Examples
     --------
@@ -229,15 +249,16 @@ def calculate_clv_metrics(actual: pd.Series, predicted: pd.Series) -> Validation
     mae = Decimal(str(np.mean(absolute_errors)))
 
     # Calculate MAPE: mean(|actual - predicted| / |actual|) * 100
-    # Handle zero actual values by filtering them out for MAPE calculation
-    nonzero_mask = actual_values != 0
+    # Handle near-zero actual values by filtering them out for MAPE calculation
+    # Use epsilon to avoid both division by exact zero and near-zero values
+    nonzero_mask = np.abs(actual_values) > _EPSILON
     if np.sum(nonzero_mask) > 0:
         percentage_errors = (
             absolute_errors[nonzero_mask] / np.abs(actual_values[nonzero_mask])
         ) * 100
         mape = Decimal(str(np.mean(percentage_errors)))
     else:
-        # All actual values are zero - MAPE undefined, use a sentinel value
+        # All actual values are (near-)zero - MAPE undefined, use a sentinel value
         mape = Decimal("0.0")
 
     # Calculate RMSE: sqrt(mean((actual - predicted)^2))
@@ -247,10 +268,10 @@ def calculate_clv_metrics(actual: pd.Series, predicted: pd.Series) -> Validation
     # Calculate ARPE: |sum(actual) - sum(predicted)| / sum(actual) * 100
     total_actual = np.sum(actual_values)
     total_predicted = np.sum(predicted_values)
-    if total_actual != 0:
+    if abs(total_actual) > _EPSILON:
         arpe = Decimal(str(abs(total_actual - total_predicted) / total_actual * 100))
     else:
-        # Total actual is zero - ARPE undefined
+        # Total actual is (near-)zero - ARPE undefined
         arpe = Decimal("0.0")
 
     # Calculate R²: 1 - (SS_res / SS_tot)
@@ -260,7 +281,7 @@ def calculate_clv_metrics(actual: pd.Series, predicted: pd.Series) -> Validation
     mean_actual = np.mean(actual_values)
     ss_tot = np.sum((actual_values - mean_actual) ** 2)
 
-    if ss_tot != 0:
+    if abs(ss_tot) > _EPSILON:
         r_squared = Decimal(str(1 - (ss_res / ss_tot)))
     else:
         # All actual values are the same - R² undefined (model explains nothing)
@@ -405,9 +426,10 @@ def cross_validate_clv(
             continue
 
         # Run model pipeline to get predictions
-        # Pipeline should use train_txns for fitting and obs_txns for feature calculation
+        # Pipeline receives observation transactions to calculate RFM features
+        # The pipeline internally determines which data to use for training
         try:
-            predictions = model_pipeline(train_txns, train_end_date)
+            predictions = model_pipeline(obs_txns, train_end_date)
         except Exception as e:
             raise RuntimeError(
                 f"model_pipeline failed for fold {fold_idx + 1}/{n_folds}: {e}"
@@ -422,13 +444,14 @@ def cross_validate_clv(
             raise ValueError(f"model_pipeline output missing '{clv_col}' column")
 
         # Calculate actual CLV from test period
-        actual_clv = (
-            test_txns.groupby(customer_id_col)
-            .agg(
-                {"amount": "sum"} if "amount" in test_txns.columns else {clv_col: "sum"}
+        # Test transactions must have 'amount' column for actual revenue calculation
+        if "amount" not in test_txns.columns:
+            raise ValueError(
+                "test_txns must have 'amount' column for actual CLV calculation. "
+                f"Found columns: {list(test_txns.columns)}"
             )
-            .squeeze()
-        )
+
+        actual_clv = test_txns.groupby(customer_id_col)["amount"].sum()
 
         # Align predictions with actual CLV (inner join on customer_id)
         comparison = predictions[[customer_id_col, clv_col]].merge(
