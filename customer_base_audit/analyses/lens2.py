@@ -17,6 +17,7 @@ non-consecutive periods may indicate temporary inactivity.
 
 from __future__ import annotations
 
+import logging
 from collections import Counter
 from dataclasses import dataclass
 from decimal import Decimal, ROUND_HALF_UP
@@ -25,11 +26,14 @@ from typing import Sequence
 from customer_base_audit.analyses.lens1 import Lens1Metrics, analyze_single_period
 from customer_base_audit.foundation.rfm import RFMMetrics
 
+logger = logging.getLogger(__name__)
+
 # Module-level constants
 RATE_SUM_TOLERANCE = Decimal("0.1")  # Tolerance for retention + churn = 100%
 PERCENTAGE_PRECISION = Decimal(
     "0.01"
 )  # Standard precision for all percentages (2 decimal places)
+EXTREME_CHANGE_THRESHOLD = Decimal("1000")  # 1000% = 10x change threshold for warnings
 
 
 @dataclass(frozen=True)
@@ -324,6 +328,21 @@ def analyze_period_comparison(
             )
     else:
         avg_order_value_change_pct = Decimal("0.00")
+
+    # Warn on extreme changes (data quality check)
+    if abs(revenue_change_pct) > EXTREME_CHANGE_THRESHOLD:
+        logger.warning(
+            f"Extreme revenue change detected: {revenue_change_pct}%. "
+            "This indicates a potential data quality issue or major business event. "
+            "Verify period1 and period2 data is correct."
+        )
+
+    if abs(avg_order_value_change_pct) > EXTREME_CHANGE_THRESHOLD:
+        logger.warning(
+            f"Extreme AOV change detected: {avg_order_value_change_pct}%. "
+            "This indicates a potential data quality issue or major pricing change. "
+            "Verify period1 and period2 data is correct."
+        )
 
     return Lens2Metrics(
         period1_metrics=lens1_period1,
