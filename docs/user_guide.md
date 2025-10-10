@@ -248,7 +248,7 @@ transactions = generate_transactions(
 
 **Parameters:**
 - Recall month: June (month 6)
-- Promo uplift: 0.3 (70% drop in orders)
+- Activity multiplier: 0.3 (70% drop in orders - 30% of normal volume)
 - Churn: 15% monthly (elevated after recall)
 - Use for: Testing anomaly detection, revenue drop handling, crisis recovery
 
@@ -362,19 +362,26 @@ print(f"Custom scenario generated {len(transactions)} transactions")
 |-----------|------|-------------|---------|
 | `promo_month` | int or None | Month (1-12) with modified activity | None |
 | `promo_uplift` | float | Multiplier for promo month (>1 = spike, <1 = drop) | 1.5 |
-| `launch_date` | date or None | Product launch date (gradual ramp-up after) | None |
+| `launch_date` | date or None | Product launch date (gradual 5% per month ramp-up, capping at +75%) | None |
 | `churn_hazard` | float | Monthly churn probability (0.0-1.0) | 0.08 |
-| `base_orders_per_month` | float | Average orders per active customer | 1.2 |
-| `mean_unit_price` | float | Average item price | $30.00 |
-| `price_variability` | float | Price variance coefficient (0.0-1.0) | 0.4 |
-| `quantity_mean` | float | Average quantity per order line | 1.3 |
-| `seed` | int or None | RNG seed for reproducibility | None |
+| `base_orders_per_month` | float | Average orders per active customer (must be >= 0.0) | 1.2 |
+| `mean_unit_price` | float | Average item price (must be > 0.0) | $30.00 |
+| `price_variability` | float | Price variance coefficient (0.0 < value <= 1.0) | 0.4 |
+| `quantity_mean` | float | Average quantity per order line (must be > 0.0) | 1.3 |
+| `seed` | int or None | RNG seed for reproducibility (applies to transaction generation) | None |
 
 **Validation Rules:**
 - `promo_month` must be 1-12 or None
 - `promo_uplift` must be > 0.0 (use < 1.0 for drops like product recalls)
 - `churn_hazard` must be 0.0-1.0
 - All monetary/quantity values must be positive
+- `price_variability` must be in range (0.0, 1.0]
+- Violations raise `ValueError` with descriptive error message
+
+**Seed Behavior:**
+- `ScenarioConfig.seed` controls transaction generation RNG
+- `generate_customers(seed=X)` controls customer acquisition dates independently
+- Use matching seeds for both to ensure full reproducibility
 
 ### Data Validation
 
@@ -452,6 +459,11 @@ print(f"✓ {result.message}" if result.ok else f"✗ {result.message}")
 - Minimum months with transactions (default: 1)
 - No transactions before customer acquisition dates
 - Adequate temporal spread for time-series analysis
+
+**Return behavior:**
+- Returns `ValidationResult(ok=True, message="...")` on success
+- Returns `ValidationResult(ok=False, message="...")` on failure (does NOT raise exceptions)
+- Check `result.ok` to determine pass/fail status
 
 **Use this when:** Validating data marts, testing cohort assignment
 
@@ -560,10 +572,13 @@ for name, scenario in scenarios.items():
 
     print(f"{name:20} | {len(txns):6,} txns | {final_month_customers:4} active in Dec")
 
-# Expected output (approximate):
-# Baseline              | 12,000 txns |  280 active in Dec
-# High Churn            |  8,000 txns |  150 active in Dec
-# Stable                | 18,000 txns |  420 active in Dec
+# Expected output (with seed=42, 500 customers):
+# Baseline              | ~12,000 txns | ~280 active in Dec
+# High Churn            | ~8,000 txns  | ~150 active in Dec
+# Stable                | ~18,000 txns | ~420 active in Dec
+#
+# Note: Outputs are deterministic with fixed seeds but will vary with different
+# customer counts or date ranges. Run this example to see exact values for your setup.
 ```
 
 ### Performance and Scale
@@ -574,11 +589,13 @@ for name, scenario in scenarios.items():
 - 100,000 customers × 12 months: 10-30 seconds
 
 **Memory Usage:**
-- ~1-2 MB per 1,000 transactions
-- Generator is memory-efficient (O(n) where n = transaction count)
+- Memory-efficient generator (O(n) space where n = transaction count)
+- Transactions stored as lightweight dataclass instances
+- Typical usage: 10,000 transactions consume ~5-10 MB
 
 **Validation Performance:**
-- All validators are O(n) or O(n log n) complexity
+- Most validators are O(n) complexity: spend distribution, duplicates, temporal coverage
+- `check_cohort_decay_pattern` is O(n log n) due to sorting retention data by period
 - 100,000 transactions validate in < 1 second
 
 ### Best Practices
@@ -593,6 +610,7 @@ for name, scenario in scenarios.items():
 **DON'T:**
 - ❌ Assume synthetic data perfectly matches your production patterns
 - ❌ Use synthetic data to make real business decisions
+- ❌ Use synthetic data for compliance/audit requirements (not real customer data)
 - ❌ Skip validation checks (always run validators)
 - ❌ Use random seeds in CI (breaks reproducibility)
 - ❌ Generate excessive data (>100k customers) without need
