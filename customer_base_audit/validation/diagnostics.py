@@ -16,6 +16,9 @@ from pathlib import Path
 from typing import Dict, Optional
 
 import arviz as az
+import matplotlib
+
+matplotlib.use("Agg")  # Non-interactive backend for headless environments
 import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
@@ -28,13 +31,19 @@ class ConvergenceDiagnostics:
     Attributes
     ----------
     converged:
-        True if all parameters passed convergence checks
+        True if all parameters passed convergence checks (R-hat and ESS)
     max_r_hat:
         Maximum R-hat value across all parameters
     failed_parameters:
         Dict of {parameter_name: r_hat} for parameters that failed convergence
     r_hat_threshold:
-        Threshold used for convergence check
+        Threshold used for convergence check (default: 1.1)
+    min_ess_bulk:
+        Minimum bulk effective sample size across all parameters
+    min_ess_tail:
+        Minimum tail effective sample size across all parameters
+    ess_threshold:
+        Minimum acceptable ESS value (default: 400)
     summary:
         Full ArviZ summary statistics DataFrame
     """
@@ -43,6 +52,9 @@ class ConvergenceDiagnostics:
     max_r_hat: float
     failed_parameters: Dict[str, float]
     r_hat_threshold: float
+    min_ess_bulk: float
+    min_ess_tail: float
+    ess_threshold: float
     summary: pd.DataFrame
 
 
@@ -75,13 +87,18 @@ class PosteriorPredictiveStats:
 
 
 def check_mcmc_convergence(
-    idata: az.InferenceData, r_hat_threshold: float = 1.1
+    idata: az.InferenceData,
+    r_hat_threshold: float = 1.1,
+    ess_threshold: float = 400.0,
 ) -> ConvergenceDiagnostics:
-    """Check MCMC convergence using R-hat statistics.
+    """Check MCMC convergence using R-hat and effective sample size statistics.
 
     The R-hat (Gelman-Rubin) statistic measures convergence by comparing
     within-chain and between-chain variance. Values close to 1.0 indicate
     convergence, while values > 1.1 suggest chains have not converged.
+
+    Effective sample size (ESS) measures the number of independent samples
+    in the chains. Low ESS indicates high autocorrelation.
 
     Parameters
     ----------
@@ -89,11 +106,25 @@ def check_mcmc_convergence(
         ArviZ InferenceData object from fitted PyMC model
     r_hat_threshold:
         Maximum acceptable R-hat value (default: 1.1)
+    ess_threshold:
+        Minimum acceptable ESS value (default: 400)
 
     Returns
     -------
     ConvergenceDiagnostics
-        Convergence diagnostic results including max R-hat and failed parameters
+        Convergence diagnostic results including max R-hat, min ESS, and failed parameters
+
+    Notes
+    -----
+    Interpretation guidelines:
+    - R-hat < 1.01: Excellent convergence
+    - R-hat 1.01-1.05: Good convergence
+    - R-hat 1.05-1.1: Acceptable convergence
+    - R-hat > 1.1: Poor convergence, increase draws/chains
+
+    - ESS > 400: Sufficient for most applications
+    - ESS 100-400: Marginal, consider more draws
+    - ESS < 100: Insufficient, increase draws significantly
 
     Examples
     --------
@@ -116,6 +147,8 @@ def check_mcmc_convergence(
     True
     >>> diagnostics.max_r_hat < 1.1
     True
+    >>> diagnostics.min_ess_bulk > 400
+    True
     """
     # Generate summary statistics with ArviZ
     summary = az.summary(idata)
@@ -127,21 +160,66 @@ def check_mcmc_convergence(
             "Ensure model was fitted with MCMC (not MAP)."
         )
 
-    # Find maximum R-hat value
-    max_r_hat = summary["r_hat"].max()
+    # Find maximum R-hat value, handling NaN values from single-chain MCMC
+    r_hat_values = summary["r_hat"].dropna()
+    if len(r_hat_values) == 0:
+        # All R-hat values are NaN (e.g., single chain)
+        max_r_hat = float("inf")
+        failed_r_hat = summary.index.tolist()  # All parameters failed
+    else:
+        max_r_hat = float(r_hat_values.max())
+        # Identify parameters that failed R-hat convergence (including NaN as failures)
+        failed_r_hat = summary[
+            (summary["r_hat"] > r_hat_threshold) | (summary["r_hat"].isna())
+        ].index.tolist()
 
-    # Identify parameters that failed convergence
-    failed = summary[summary["r_hat"] > r_hat_threshold]
-    failed_parameters = failed["r_hat"].to_dict()
+    # Check effective sample sizes if available
+    min_ess_bulk = float("inf")
+    min_ess_tail = float("inf")
+    failed_ess = []
 
-    # Overall convergence status
-    converged = len(failed_parameters) == 0
+    if "ess_bulk" in summary.columns:
+        ess_bulk_values = summary["ess_bulk"].dropna()
+        if len(ess_bulk_values) > 0:
+            min_ess_bulk = float(ess_bulk_values.min())
+            failed_ess.extend(
+                summary[
+                    (summary["ess_bulk"] < ess_threshold) | (summary["ess_bulk"].isna())
+                ].index.tolist()
+            )
+
+    if "ess_tail" in summary.columns:
+        ess_tail_values = summary["ess_tail"].dropna()
+        if len(ess_tail_values) > 0:
+            min_ess_tail = float(ess_tail_values.min())
+            failed_ess.extend(
+                summary[
+                    (summary["ess_tail"] < ess_threshold) | (summary["ess_tail"].isna())
+                ].index.tolist()
+            )
+
+    # Combine all failed parameters
+    all_failed = set(failed_r_hat + failed_ess)
+
+    # Create failed_parameters dict with R-hat values
+    failed_parameters = {}
+    for param in all_failed:
+        r_hat_val = summary.loc[param, "r_hat"]
+        failed_parameters[param] = (
+            float(r_hat_val) if not pd.isna(r_hat_val) else float("nan")
+        )
+
+    # Overall convergence status: passed R-hat AND ESS checks
+    converged = len(all_failed) == 0
 
     return ConvergenceDiagnostics(
         converged=converged,
-        max_r_hat=float(max_r_hat),
+        max_r_hat=max_r_hat,
         failed_parameters=failed_parameters,
         r_hat_threshold=r_hat_threshold,
+        min_ess_bulk=min_ess_bulk,
+        min_ess_tail=min_ess_tail,
+        ess_threshold=ess_threshold,
         summary=summary,
     )
 
@@ -160,13 +238,18 @@ def posterior_predictive_check(
     observed_data:
         Series of observed values (e.g., actual purchase frequencies)
     posterior_samples:
-        Array of posterior predictive samples, shape (n_samples, n_observations)
-        or (n_observations,) for point predictions
+        Array of posterior predictive samples from model.sample_posterior_predictive(),
+        shape (n_samples, n_observations) or (n_observations,) for point predictions
 
     Returns
     -------
     PosteriorPredictiveStats
         Statistics comparing observed vs predicted distributions
+
+    Warnings
+    --------
+    This function expects samples from model.sample_posterior_predictive(),
+    not simulated/fake data. Using simulated data will not validate model fit.
 
     Examples
     --------
@@ -174,7 +257,9 @@ def posterior_predictive_check(
     >>> import pandas as pd
     >>> # Simulate observed data
     >>> observed = pd.Series([2, 5, 1, 3, 4])
-    >>> # Simulate posterior predictive samples (e.g., from model)
+    >>> # Get posterior predictive samples from fitted model
+    >>> # predicted = model.sample_posterior_predictive()  # Real usage
+    >>> # For demo: simulate what model might produce
     >>> predicted = np.random.normal(3, 1, size=(1000, 5))
     >>> # Run posterior predictive check
     >>> from customer_base_audit.validation.diagnostics import posterior_predictive_check
@@ -184,6 +269,10 @@ def posterior_predictive_check(
     >>> stats.coverage_95  # Fraction within 95% CI
     0.8
     """
+    # Validate inputs
+    if len(observed_data) == 0:
+        raise ValueError("observed_data cannot be empty")
+
     observed_values = observed_data.values
 
     # Handle both 1D and 2D posterior samples
@@ -191,14 +280,21 @@ def posterior_predictive_check(
         # Point predictions - convert to 2D with single sample
         posterior_samples = posterior_samples.reshape(1, -1)
 
-    # Calculate observed statistics
-    observed_mean = float(np.mean(observed_values))
-    observed_std = float(np.std(observed_values))
+    # Validate dimensions match
+    if posterior_samples.shape[-1] != len(observed_values):
+        raise ValueError(
+            f"Shape mismatch: posterior_samples has {posterior_samples.shape[-1]} observations "
+            f"but observed_data has {len(observed_values)}"
+        )
 
-    # Calculate posterior predictive statistics
+    # Calculate observed statistics (using unbiased estimator with ddof=1)
+    observed_mean = float(np.mean(observed_values))
+    observed_std = float(np.std(observed_values, ddof=1))
+
+    # Calculate posterior predictive statistics (using unbiased estimator)
     # Mean across samples for each observation, then mean across observations
     predicted_mean = float(np.mean(posterior_samples))
-    predicted_std = float(np.std(posterior_samples))
+    predicted_std = float(np.std(posterior_samples, ddof=1))
 
     # Calculate 95% credible interval coverage
     # For each observation, check if it falls within 95% CI of predictions
@@ -270,14 +366,16 @@ def plot_trace_diagnostics(
     output_file = Path(output_path)
     output_file.parent.mkdir(parents=True, exist_ok=True)
 
-    # Generate trace plot using ArviZ
-    fig, axes = plt.subplots(figsize=figsize)
-    az.plot_trace(idata, var_names=var_names, figsize=figsize)
+    # Generate trace plot using ArviZ (it creates its own figure)
+    try:
+        az.plot_trace(idata, var_names=var_names, figsize=figsize)
 
-    # Add title
-    plt.suptitle("MCMC Trace Diagnostics", fontsize=14, y=1.02)
+        # Add title
+        plt.suptitle("MCMC Trace Diagnostics", fontsize=14, y=1.02)
 
-    # Save plot
-    plt.tight_layout()
-    plt.savefig(output_path, dpi=150, bbox_inches="tight")
-    plt.close()
+        # Save plot
+        plt.tight_layout()
+        plt.savefig(output_path, dpi=150, bbox_inches="tight")
+    finally:
+        # Always close figure to prevent memory leaks
+        plt.close()

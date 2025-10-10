@@ -43,6 +43,9 @@ class TestCheckMCMCConvergence:
         assert result.max_r_hat < 1.1
         assert len(result.failed_parameters) == 0
         assert result.r_hat_threshold == 1.1
+        assert result.ess_threshold == 400.0
+        assert result.min_ess_bulk > 0
+        assert result.min_ess_tail > 0
         assert isinstance(result.summary, pd.DataFrame)
         assert "r_hat" in result.summary.columns
 
@@ -169,6 +172,22 @@ class TestPosteriorPredictiveCheck:
         # Standard deviations should be positive
         assert stats.observed_std > 0.0
         assert stats.predicted_std > 0.0
+
+    def test_ppc_empty_data_raises_error(self):
+        """Test PPC raises error for empty observed data."""
+        observed = pd.Series([])
+        posterior_samples = np.array([[1, 2, 3]])
+
+        with pytest.raises(ValueError, match="observed_data cannot be empty"):
+            posterior_predictive_check(observed, posterior_samples)
+
+    def test_ppc_shape_mismatch_raises_error(self):
+        """Test PPC raises error when dimensions don't match."""
+        observed = pd.Series([1.0, 2.0, 3.0])
+        posterior_samples = np.random.normal(0, 1, size=(1000, 5))  # 5 != 3
+
+        with pytest.raises(ValueError, match="Shape mismatch"):
+            posterior_predictive_check(observed, posterior_samples)
 
 
 class TestPlotTraceDiagnostics:
