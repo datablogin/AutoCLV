@@ -20,15 +20,25 @@ from dataclasses import dataclass
 from decimal import Decimal, ROUND_HALF_UP
 from typing import Optional
 
+import numpy as np
 import pandas as pd
 
 from customer_base_audit.models.bg_nbd import BGNBDModelWrapper
 from customer_base_audit.models.gamma_gamma import GammaGammaModelWrapper
 
+# Constants for time conversions and rounding
+DAYS_PER_MONTH = Decimal("365.25") / Decimal("12")  # More accurate than 30.5
+CURRENCY_DECIMALS = 2  # Round currency values to 2 decimal places
+PROBABILITY_DECIMALS = 3  # Round probabilities to 3 decimal places
+
 
 @dataclass(frozen=True)
 class CLVScore:
     """CLV prediction for a single customer.
+
+    This dataclass defines the schema for CLV predictions. While CLVCalculator.calculate_clv()
+    returns a DataFrame for performance, CLVScore documents the expected structure and can be
+    used to validate individual customer scores.
 
     Attributes
     ----------
@@ -46,6 +56,36 @@ class CLVScore:
         Lower bound of CLV confidence interval (optional, requires MCMC)
     confidence_interval_high:
         Upper bound of CLV confidence interval (optional, requires MCMC)
+
+    Examples
+    --------
+    Create a CLV score for validation or type safety:
+
+    >>> from decimal import Decimal
+    >>> score = CLVScore(
+    ...     customer_id="C123",
+    ...     predicted_purchases=Decimal("5.2"),
+    ...     predicted_avg_value=Decimal("45.50"),
+    ...     clv=Decimal("67.89"),
+    ...     prob_alive=Decimal("0.856")
+    ... )
+    >>> score.customer_id
+    'C123'
+    >>> score.clv
+    Decimal('67.89')
+
+    Convert a DataFrame row to CLVScore (useful for validation):
+
+    >>> import pandas as pd
+    >>> # Assuming clv_df is the result from calculator.calculate_clv()
+    >>> row = clv_df.iloc[0]
+    >>> score = CLVScore(
+    ...     customer_id=row['customer_id'],
+    ...     predicted_purchases=Decimal(str(row['predicted_purchases'])),
+    ...     predicted_avg_value=Decimal(str(row['predicted_avg_value'])),
+    ...     clv=Decimal(str(row['clv'])),
+    ...     prob_alive=Decimal(str(row['prob_alive']))
+    ... )
     """
 
     customer_id: str
@@ -265,6 +305,9 @@ class CLVCalculator:
         >>> clv_scores = calculator.calculate_clv(bg_nbd_data, gg_data)
         >>> top_customers = clv_scores.head(10)  # Top 10 by CLV
         """
+        # Validate inputs
+        self._validate_calculate_clv_inputs(bg_nbd_data, gamma_gamma_data)
+
         if include_confidence_intervals:
             raise NotImplementedError(
                 "Confidence interval calculation not yet implemented. "
@@ -272,8 +315,8 @@ class CLVCalculator:
             )
 
         # Convert time horizon to days for BG/NBD prediction
-        # Assuming 30.5 days per month on average
-        time_periods_days = self.time_horizon_months * 30.5
+        # Using 365.25/12 = 30.4375 days per month (accounts for leap years)
+        time_periods_days = float(self.time_horizon_months * DAYS_PER_MONTH)
 
         # Get BG/NBD predictions (purchases and prob_alive)
         purchase_predictions = self.bg_nbd_model.predict_purchases(
@@ -295,22 +338,34 @@ class CLVCalculator:
         # Left join with monetary predictions (one-time buyers will have NaN)
         result = result.merge(monetary_predictions, on="customer_id", how="left")
 
-        # Fill NaN monetary values with 0 (one-time buyers get CLV=0)
+        # Handle one-time buyers: Fill NaN monetary values with 0
+        # Business Logic: One-time buyers receive CLV=0 because:
+        # 1. Gamma-Gamma model requires frequency >= 2 to estimate spend
+        # 2. Without transaction history, we cannot reliably predict future value
+        # 3. Conservative approach: assign zero value until second purchase
+        # Alternative approaches (not implemented):
+        # - Use historical average across all customers (may overestimate)
+        # - Assign minimum CLV for acquisition cost recovery (domain-specific)
         result["predicted_monetary_value"] = result["predicted_monetary_value"].fillna(
             0.0
         )
 
-        # Calculate CLV using Decimal for precision
+        # Calculate CLV using vectorized operations for performance
         # CLV = purchases × avg_value × profit_margin × discount_factor
-        result["clv"] = result.apply(
-            lambda row: (
-                Decimal(str(row["predicted_purchases"]))
-                * Decimal(str(row["predicted_monetary_value"]))
-                * self.profit_margin
-                * self.discount_factor
-            ).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP),
-            axis=1,
+        # Convert to numpy for vectorization, then back to pandas
+        purchases = result["predicted_purchases"].values
+        monetary = result["predicted_monetary_value"].values
+
+        # Vectorized calculation using NumPy (much faster than apply)
+        clv_values = (
+            purchases
+            * monetary
+            * float(self.profit_margin)
+            * float(self.discount_factor)
         )
+
+        # Round to currency precision
+        result["clv"] = np.round(clv_values, CURRENCY_DECIMALS)
 
         # Rename columns to match CLVScore schema
         result = result.rename(
@@ -320,15 +375,15 @@ class CLVCalculator:
             }
         )
 
-        # Convert to appropriate types and round
+        # Convert to appropriate types and round using constants
         result["predicted_purchases"] = (
-            result["predicted_purchases"].astype(float).round(2)
+            result["predicted_purchases"].astype(float).round(CURRENCY_DECIMALS)
         )
         result["predicted_avg_value"] = (
-            result["predicted_avg_value"].astype(float).round(2)
+            result["predicted_avg_value"].astype(float).round(CURRENCY_DECIMALS)
         )
-        result["prob_alive"] = result["prob_alive"].astype(float).round(3)
-        result["clv"] = result["clv"].astype(float).round(2)
+        result["prob_alive"] = result["prob_alive"].astype(float).round(PROBABILITY_DECIMALS)
+        # clv already rounded above
 
         # Select final columns
         columns = [
@@ -344,3 +399,60 @@ class CLVCalculator:
         result = result.sort_values("clv", ascending=False).reset_index(drop=True)
 
         return result
+
+    def _validate_calculate_clv_inputs(
+        self, bg_nbd_data: pd.DataFrame, gamma_gamma_data: pd.DataFrame
+    ) -> None:
+        """Validate inputs to calculate_clv().
+
+        Parameters
+        ----------
+        bg_nbd_data:
+            BG/NBD input data
+        gamma_gamma_data:
+            Gamma-Gamma input data
+
+        Raises
+        ------
+        ValueError:
+            If required columns are missing or data types are invalid
+        """
+        # Validate BG/NBD data
+        required_bg_nbd_cols = {"customer_id", "frequency", "recency", "T"}
+        if not required_bg_nbd_cols.issubset(bg_nbd_data.columns):
+            missing = required_bg_nbd_cols - set(bg_nbd_data.columns)
+            raise ValueError(
+                f"bg_nbd_data missing required columns: {missing}. "
+                f"Expected columns: {required_bg_nbd_cols}"
+            )
+
+        # Validate Gamma-Gamma data
+        required_gg_cols = {"customer_id", "frequency", "monetary_value"}
+        if not required_gg_cols.issubset(gamma_gamma_data.columns):
+            missing = required_gg_cols - set(gamma_gamma_data.columns)
+            raise ValueError(
+                f"gamma_gamma_data missing required columns: {missing}. "
+                f"Expected columns: {required_gg_cols}"
+            )
+
+        # Validate data types
+        if not pd.api.types.is_numeric_dtype(bg_nbd_data["frequency"]):
+            raise ValueError(
+                f"bg_nbd_data frequency must be numeric, got {bg_nbd_data['frequency'].dtype}"
+            )
+        if not pd.api.types.is_numeric_dtype(bg_nbd_data["recency"]):
+            raise ValueError(
+                f"bg_nbd_data recency must be numeric, got {bg_nbd_data['recency'].dtype}"
+            )
+        if not pd.api.types.is_numeric_dtype(bg_nbd_data["T"]):
+            raise ValueError(
+                f"bg_nbd_data T must be numeric, got {bg_nbd_data['T'].dtype}"
+            )
+        if not pd.api.types.is_numeric_dtype(gamma_gamma_data["frequency"]):
+            raise ValueError(
+                f"gamma_gamma_data frequency must be numeric, got {gamma_gamma_data['frequency'].dtype}"
+            )
+        if not pd.api.types.is_numeric_dtype(gamma_gamma_data["monetary_value"]):
+            raise ValueError(
+                f"gamma_gamma_data monetary_value must be numeric, got {gamma_gamma_data['monetary_value'].dtype}"
+            )

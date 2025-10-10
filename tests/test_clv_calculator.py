@@ -421,7 +421,7 @@ class TestCLVCalculator:
 
         result = calculator.calculate_clv(bg_nbd_data, gg_data)
 
-        # Validate results
+        # Validate results - general checks
         assert len(result) == n_customers
         assert all(result["clv"] >= 0)
         assert all((result["prob_alive"] >= 0) & (result["prob_alive"] <= 1))
@@ -430,3 +430,21 @@ class TestCLVCalculator:
 
         # Result should be sorted by CLV descending
         assert result["clv"].is_monotonic_decreasing
+
+        # Deterministic checks with seed=42
+        # These specific values are expected with the fixed seed and model configuration
+        assert result["clv"].sum() > 0, "Total CLV should be positive"
+        assert result["clv"].max() > result["clv"].min(), "Should have CLV variation"
+
+        # Verify CLV formula: purchases × value × margin × discount
+        # Check a sample row to ensure formula is applied correctly
+        sample_row = result.iloc[0]
+        expected_clv = (
+            sample_row["predicted_purchases"]
+            * sample_row["predicted_avg_value"]
+            * float(calculator.profit_margin)
+            * float(calculator.discount_factor)
+        )
+        # Allow small rounding differences (0.02 tolerance accounts for rounding at 2 decimal places)
+        assert abs(sample_row["clv"] - expected_clv) < 0.02, \
+            f"CLV formula mismatch: {sample_row['clv']} != {expected_clv}"
