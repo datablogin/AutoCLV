@@ -25,6 +25,17 @@ from customer_base_audit.foundation.rfm import RFMMetrics, RFMScore
 # custom precision if needed.
 PERCENTAGE_PRECISION = Decimal("0.01")
 
+# Default Pareto analysis percentiles
+# The Pareto principle suggests ~80% of revenue comes from ~20% of customers
+# These are the standard percentiles used in customer base audits
+DEFAULT_PARETO_PERCENTILES = (10, 20)
+PARETO_TOP_10_PCT = DEFAULT_PARETO_PERCENTILES[0]
+PARETO_TOP_20_PCT = DEFAULT_PARETO_PERCENTILES[1]
+
+# Minimum customer count for revenue concentration calculations
+# Even for very small percentiles, we need at least 1 customer
+MIN_CUSTOMERS_IN_SEGMENT = 1
+
 
 @dataclass(frozen=True)
 class Lens1Metrics:
@@ -156,10 +167,10 @@ def analyze_single_period(
 
     # Revenue concentration
     revenue_concentration = calculate_revenue_concentration(
-        rfm_metrics, percentiles=[10, 20]
+        rfm_metrics, percentiles=DEFAULT_PARETO_PERCENTILES
     )
-    top_10pct_revenue_contribution = revenue_concentration[10]
-    top_20pct_revenue_contribution = revenue_concentration[20]
+    top_10pct_revenue_contribution = revenue_concentration[PARETO_TOP_10_PCT]
+    top_20pct_revenue_contribution = revenue_concentration[PARETO_TOP_20_PCT]
 
     # Order statistics
     total_orders = sum(m.frequency for m in rfm_metrics)
@@ -201,7 +212,7 @@ def analyze_single_period(
 
 def calculate_revenue_concentration(
     rfm_metrics: Sequence[RFMMetrics],
-    percentiles: Sequence[int] = (10, 20, 50),
+    percentiles: Sequence[int] = DEFAULT_PARETO_PERCENTILES,
 ) -> dict[int, Decimal]:
     """Calculate what percentage of revenue comes from top N% of customers.
 
@@ -224,6 +235,11 @@ def calculate_revenue_concentration(
         means top 10% of customers drive 45.20% of revenue,
         and top 20% drive 62.80% of revenue.
 
+    Raises
+    ------
+    ValueError
+        If any percentile is not in the range 1-100
+
     Examples
     --------
     >>> from decimal import Decimal
@@ -238,6 +254,11 @@ def calculate_revenue_concentration(
     >>> float(concentration[33])  # Top 33% (1 customer) has 70% of revenue
     70.0
     """
+    # Validate percentiles parameter
+    for p in percentiles:
+        if not 1 <= p <= 100:
+            raise ValueError(f"Percentiles must be in range 1-100, got: {p}")
+
     if not rfm_metrics:
         return {p: Decimal("0") for p in percentiles}
 
@@ -251,9 +272,11 @@ def calculate_revenue_concentration(
     concentration: dict[int, Decimal] = {}
     for percentile in percentiles:
         # Calculate number of customers in top N%
-        # Use max(1, ...) to ensure at least 1 customer is included
+        # Use MIN_CUSTOMERS_IN_SEGMENT to ensure at least 1 customer is included
         # (e.g., 0.5% of 100 customers = 0.5 -> rounds to 0, but we need >= 1)
-        top_n_count = max(1, int(len(sorted_metrics) * percentile / 100))
+        top_n_count = max(
+            MIN_CUSTOMERS_IN_SEGMENT, int(len(sorted_metrics) * percentile / 100)
+        )
 
         # Sum revenue from top N% customers
         top_n_revenue = sum(m.total_spend for m in sorted_metrics[:top_n_count])

@@ -17,6 +17,7 @@ non-consecutive periods may indicate temporary inactivity.
 
 from __future__ import annotations
 
+import logging
 from collections import Counter
 from dataclasses import dataclass
 from decimal import Decimal, ROUND_HALF_UP
@@ -25,11 +26,19 @@ from typing import Sequence
 from customer_base_audit.analyses.lens1 import Lens1Metrics, analyze_single_period
 from customer_base_audit.foundation.rfm import RFMMetrics
 
+logger = logging.getLogger(__name__)
+
 # Module-level constants
 RATE_SUM_TOLERANCE = Decimal("0.1")  # Tolerance for retention + churn = 100%
 PERCENTAGE_PRECISION = Decimal(
     "0.01"
 )  # Standard precision for all percentages (2 decimal places)
+EXTREME_CHANGE_THRESHOLD = Decimal(
+    "500"
+)  # 500% = 6x change threshold for data quality warnings
+# Chosen conservatively to catch major anomalies (e.g., 6x revenue increase) while
+# avoiding false positives from normal business growth. Triggers only when period1
+# had non-zero values to avoid warnings on zero -> non-zero transitions.
 
 
 @dataclass(frozen=True)
@@ -324,6 +333,29 @@ def analyze_period_comparison(
             )
     else:
         avg_order_value_change_pct = Decimal("0.00")
+
+    # Warn on extreme changes (data quality check)
+    # Only warn if period1 had non-zero revenue (zero -> non-zero is expected to be large)
+    if (
+        lens1_period1.total_revenue > 0
+        and abs(revenue_change_pct) > EXTREME_CHANGE_THRESHOLD
+    ):
+        logger.warning(
+            f"Extreme revenue change detected: {revenue_change_pct}%. "
+            "This indicates a potential data quality issue or major business event. "
+            "Verify period1 and period2 data is correct."
+        )
+
+    # Only warn if period1 had non-zero orders (zero -> non-zero is expected to be large)
+    if (
+        period1_total_orders > 0
+        and abs(avg_order_value_change_pct) > EXTREME_CHANGE_THRESHOLD
+    ):
+        logger.warning(
+            f"Extreme AOV change detected: {avg_order_value_change_pct}%. "
+            "This indicates a potential data quality issue or major pricing change. "
+            "Verify period1 and period2 data is correct."
+        )
 
     return Lens2Metrics(
         period1_metrics=lens1_period1,
