@@ -29,6 +29,8 @@ PERCENTAGE_PRECISION = Decimal("0.01")
 # The Pareto principle suggests ~80% of revenue comes from ~20% of customers
 # These are the standard percentiles used in customer base audits
 DEFAULT_PARETO_PERCENTILES = (10, 20)
+PARETO_TOP_10_PCT = DEFAULT_PARETO_PERCENTILES[0]
+PARETO_TOP_20_PCT = DEFAULT_PARETO_PERCENTILES[1]
 
 # Minimum customer count for revenue concentration calculations
 # Even for very small percentiles, we need at least 1 customer
@@ -167,12 +169,8 @@ def analyze_single_period(
     revenue_concentration = calculate_revenue_concentration(
         rfm_metrics, percentiles=DEFAULT_PARETO_PERCENTILES
     )
-    top_10pct_revenue_contribution = revenue_concentration[
-        DEFAULT_PARETO_PERCENTILES[0]
-    ]
-    top_20pct_revenue_contribution = revenue_concentration[
-        DEFAULT_PARETO_PERCENTILES[1]
-    ]
+    top_10pct_revenue_contribution = revenue_concentration[PARETO_TOP_10_PCT]
+    top_20pct_revenue_contribution = revenue_concentration[PARETO_TOP_20_PCT]
 
     # Order statistics
     total_orders = sum(m.frequency for m in rfm_metrics)
@@ -237,6 +235,11 @@ def calculate_revenue_concentration(
         means top 10% of customers drive 45.20% of revenue,
         and top 20% drive 62.80% of revenue.
 
+    Raises
+    ------
+    ValueError
+        If any percentile is not in the range 1-100
+
     Examples
     --------
     >>> from decimal import Decimal
@@ -251,6 +254,11 @@ def calculate_revenue_concentration(
     >>> float(concentration[33])  # Top 33% (1 customer) has 70% of revenue
     70.0
     """
+    # Validate percentiles parameter
+    for p in percentiles:
+        if not 1 <= p <= 100:
+            raise ValueError(f"Percentiles must be in range 1-100, got: {p}")
+
     if not rfm_metrics:
         return {p: Decimal("0") for p in percentiles}
 

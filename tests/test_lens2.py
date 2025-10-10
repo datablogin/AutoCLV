@@ -632,3 +632,105 @@ class TestAnalyzePeriodComparison:
         assert lens2.retention_rate == Decimal("50.00")
         assert len(lens2.migration.retained) == 5000
         assert len(lens2.migration.new) == 5000
+
+    def test_extreme_revenue_change_triggers_warning(self, caplog):
+        """Revenue change > 500% with non-zero period1 should log warning."""
+        import logging
+
+        period1 = [
+            self.create_rfm("C1", 10, Decimal("1000"), datetime(2023, 6, 30)),
+        ]
+        period2 = [
+            # 6x increase = 500% change (triggers warning)
+            self.create_rfm("C1", 10, Decimal("7000"), datetime(2023, 12, 31)),
+        ]
+
+        with caplog.at_level(logging.WARNING):
+            lens2 = analyze_period_comparison(period1, period2)
+
+        # Verify warning was logged
+        assert any(
+            "Extreme revenue change detected" in record.message
+            for record in caplog.records
+        )
+        assert lens2.revenue_change_pct == Decimal("600.0")  # (7000-1000)/1000*100
+
+    def test_extreme_revenue_change_from_zero_no_warning(self, caplog):
+        """Revenue change from zero should NOT trigger warning."""
+        import logging
+
+        period1 = [
+            self.create_rfm("C1", 1, Decimal("0"), datetime(2023, 6, 30)),
+        ]
+        period2 = [
+            self.create_rfm("C1", 10, Decimal("10000"), datetime(2023, 12, 31)),
+        ]
+
+        with caplog.at_level(logging.WARNING):
+            lens2 = analyze_period_comparison(period1, period2)
+
+        # Verify NO warning was logged (zero -> non-zero is expected)
+        assert not any(
+            "Extreme revenue change detected" in record.message
+            for record in caplog.records
+        )
+        assert lens2.revenue_change_pct == Decimal("100.0")  # By convention
+
+    def test_extreme_aov_change_triggers_warning(self, caplog):
+        """AOV change > 500% with non-zero period1 should log warning."""
+        import logging
+
+        period1 = [
+            self.create_rfm(
+                "C1", 10, Decimal("1000"), datetime(2023, 6, 30)
+            ),  # AOV = 100
+        ]
+        period2 = [
+            # AOV = 700, which is 6x increase = 600% change (triggers warning)
+            self.create_rfm("C1", 10, Decimal("7000"), datetime(2023, 12, 31)),
+        ]
+
+        with caplog.at_level(logging.WARNING):
+            lens2 = analyze_period_comparison(period1, period2)
+
+        # Verify warning was logged
+        assert any(
+            "Extreme AOV change detected" in record.message for record in caplog.records
+        )
+        assert lens2.avg_order_value_change_pct == Decimal("600.0")
+
+    def test_extreme_aov_change_from_zero_no_warning(self, caplog):
+        """AOV change from zero orders should NOT trigger warning."""
+        import logging
+
+        period1: list[RFMMetrics] = []  # No orders
+        period2 = [
+            self.create_rfm("C1", 10, Decimal("10000"), datetime(2023, 12, 31)),
+        ]
+
+        with caplog.at_level(logging.WARNING):
+            lens2 = analyze_period_comparison(period1, period2)
+
+        # Verify NO warning was logged (zero -> non-zero is expected)
+        assert not any(
+            "Extreme AOV change detected" in record.message for record in caplog.records
+        )
+
+    def test_moderate_change_no_warning(self, caplog):
+        """Changes < 500% should not trigger warnings."""
+        import logging
+
+        period1 = [
+            self.create_rfm("C1", 10, Decimal("1000"), datetime(2023, 6, 30)),
+        ]
+        period2 = [
+            # 4x increase = 300% change (below threshold)
+            self.create_rfm("C1", 10, Decimal("4000"), datetime(2023, 12, 31)),
+        ]
+
+        with caplog.at_level(logging.WARNING):
+            lens2 = analyze_period_comparison(period1, period2)
+
+        # Verify NO warning was logged
+        assert not any("Extreme" in record.message for record in caplog.records)
+        assert lens2.revenue_change_pct == Decimal("300.0")
