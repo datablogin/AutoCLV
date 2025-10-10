@@ -141,20 +141,22 @@ def main():
     print("\n🔍 Step 4: Checking BG/NBD MCMC convergence...")
     bg_nbd_diagnostics = check_mcmc_convergence(bg_nbd_wrapper.model.idata)
 
-    print(f"\nBG/NBD Convergence Results:")
+    print("\nBG/NBD Convergence Results:")
     print(f"  Converged: {'✓ Yes' if bg_nbd_diagnostics.converged else '✗ No'}")
     print(f"  Max R-hat: {bg_nbd_diagnostics.max_r_hat:.4f}")
     print(f"  R-hat threshold: {bg_nbd_diagnostics.r_hat_threshold}")
 
     if not bg_nbd_diagnostics.converged:
-        print(f"\n  ⚠️ Failed parameters:")
+        print("\n  ⚠️ Failed parameters:")
         for param, r_hat in bg_nbd_diagnostics.failed_parameters.items():
             print(f"    {param}: R-hat = {r_hat:.4f}")
     else:
-        print(f"  ✓ All parameters converged (R-hat < {bg_nbd_diagnostics.r_hat_threshold})")
+        print(
+            f"  ✓ All parameters converged (R-hat < {bg_nbd_diagnostics.r_hat_threshold})"
+        )
 
     # Show summary statistics
-    print(f"\n  Summary Statistics (first 5 parameters):")
+    print("\n  Summary Statistics (first 5 parameters):")
     print(bg_nbd_diagnostics.summary.head())
 
     # Step 5: Generate BG/NBD trace plots
@@ -185,17 +187,19 @@ def main():
     print("\n🔍 Step 7: Checking Gamma-Gamma MCMC convergence...")
     gg_diagnostics = check_mcmc_convergence(gg_wrapper.model.idata)
 
-    print(f"\nGamma-Gamma Convergence Results:")
+    print("\nGamma-Gamma Convergence Results:")
     print(f"  Converged: {'✓ Yes' if gg_diagnostics.converged else '✗ No'}")
     print(f"  Max R-hat: {gg_diagnostics.max_r_hat:.4f}")
     print(f"  R-hat threshold: {gg_diagnostics.r_hat_threshold}")
 
     if not gg_diagnostics.converged:
-        print(f"\n  ⚠️ Failed parameters:")
+        print("\n  ⚠️ Failed parameters:")
         for param, r_hat in gg_diagnostics.failed_parameters.items():
             print(f"    {param}: R-hat = {r_hat:.4f}")
     else:
-        print(f"  ✓ All parameters converged (R-hat < {gg_diagnostics.r_hat_threshold})")
+        print(
+            f"  ✓ All parameters converged (R-hat < {gg_diagnostics.r_hat_threshold})"
+        )
 
     # Step 8: Generate Gamma-Gamma trace plots
     print("\n📈 Step 8: Generating Gamma-Gamma trace plots...")
@@ -226,14 +230,14 @@ def main():
     posterior_samples = np.tile(observed_freq, (n_samples, 1)) + np.random.normal(
         0, 0.5, size=(n_samples, len(observed_freq))
     )
-    posterior_samples = np.maximum(0, posterior_samples)  # Frequencies can't be negative
+    posterior_samples = np.maximum(
+        0, posterior_samples
+    )  # Frequencies can't be negative
 
     # Run PPC
-    ppc_stats = posterior_predictive_check(
-        pd.Series(observed_freq), posterior_samples
-    )
+    ppc_stats = posterior_predictive_check(pd.Series(observed_freq), posterior_samples)
 
-    print(f"\nPosterior Predictive Check Results:")
+    print("\nPosterior Predictive Check Results:")
     print(f"  Observed mean frequency: {ppc_stats.observed_mean:.2f}")
     print(f"  Predicted mean frequency: {ppc_stats.predicted_mean:.2f}")
     print(f"  Observed std: {ppc_stats.observed_std:.2f}")
@@ -242,42 +246,42 @@ def main():
     print(f"  95% CI coverage: {ppc_stats.coverage_95:.1%}")
 
     # Interpretation
-    print(f"\n  Interpretation:")
+    print("\n  Interpretation:")
     if abs(ppc_stats.observed_mean - ppc_stats.predicted_mean) < 1.0:
-        print(f"    ✓ Predictions match observed data well (mean difference < 1.0)")
+        print("    ✓ Predictions match observed data well (mean difference < 1.0)")
     else:
-        print(f"    ⚠️ Predictions may be biased (mean difference ≥ 1.0)")
+        print("    ⚠️ Predictions may be biased (mean difference ≥ 1.0)")
 
     if ppc_stats.median_abs_error < 2.0:
-        print(f"    ✓ Low prediction error (MAE < 2.0)")
+        print("    ✓ Low prediction error (MAE < 2.0)")
     else:
-        print(f"    ⚠️ Higher prediction error (MAE ≥ 2.0)")
+        print("    ⚠️ Higher prediction error (MAE ≥ 2.0)")
 
     if ppc_stats.coverage_95 > 0.90:
-        print(f"    ✓ Good calibration (95% CI coverage > 90%)")
+        print("    ✓ Good calibration (95% CI coverage > 90%)")
     else:
-        print(f"    ⚠️ Model may be overconfident (coverage < 90%)")
+        print("    ⚠️ Model may be overconfident (coverage < 90%)")
 
     # Step 10: Summary
     print("\n" + "=" * 80)
     print("Summary")
     print("=" * 80)
 
-    print(f"\n📊 Model Quality:")
+    print("\n📊 Model Quality:")
     print(f"  BG/NBD converged: {'✓ Yes' if bg_nbd_diagnostics.converged else '✗ No'}")
     print(f"  BG/NBD max R-hat: {bg_nbd_diagnostics.max_r_hat:.4f}")
     print(f"  Gamma-Gamma converged: {'✓ Yes' if gg_diagnostics.converged else '✗ No'}")
     print(f"  Gamma-Gamma max R-hat: {gg_diagnostics.max_r_hat:.4f}")
 
-    print(f"\n📁 Generated Files:")
+    print("\n📁 Generated Files:")
     print(f"  {bg_nbd_trace_path}")
     print(f"  {gg_trace_path}")
 
-    print(f"\n💡 Next Steps:")
-    print(f"  1. Visually inspect trace plots for convergence issues")
-    print(f"  2. If R-hat > 1.1, consider increasing draws/tune parameters")
-    print(f"  3. Use posterior_predictive_check() to validate model fit")
-    print(f"  4. Review diagnostic plots before using models in production")
+    print("\n💡 Next Steps:")
+    print("  1. Visually inspect trace plots for convergence issues")
+    print("  2. If R-hat > 1.1, consider increasing draws/tune parameters")
+    print("  3. Use posterior_predictive_check() to validate model fit")
+    print("  4. Review diagnostic plots before using models in production")
 
     print("\n" + "=" * 80)
     print("✅ Model Diagnostics Demo Complete!")
