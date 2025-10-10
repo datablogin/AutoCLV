@@ -715,6 +715,7 @@ class TestAnalyzePeriodComparison:
         assert not any(
             "Extreme AOV change detected" in record.message for record in caplog.records
         )
+        assert lens2.avg_order_value_change_pct == Decimal("0.00")
 
     def test_moderate_change_no_warning(self, caplog):
         """Changes < 500% should not trigger warnings."""
