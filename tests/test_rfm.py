@@ -321,7 +321,9 @@ class TestCalculateRFM:
         assert rfm_without_ts[0].recency_days == 19
 
         # Accuracy difference: 26 days (almost the entire month!)
-        accuracy_improvement = rfm_with_ts[0].recency_days - rfm_without_ts[0].recency_days
+        accuracy_improvement = (
+            rfm_with_ts[0].recency_days - rfm_without_ts[0].recency_days
+        )
         assert accuracy_improvement == 26
 
     def test_multiple_periods_uses_latest_transaction(self):
@@ -389,6 +391,28 @@ class TestCalculateRFM:
         expected_recency = (observation_end - datetime(2023, 3, 15)).days
         assert rfm[0].recency_days == expected_recency
         assert rfm[0].recency_days == 31
+
+    def test_future_dated_transaction_raises_error(self):
+        """Transaction after observation_end should raise ValueError."""
+        periods = [
+            PeriodAggregation(
+                customer_id="C1",
+                period_start=datetime(2023, 12, 1),
+                period_end=datetime(2024, 1, 1),
+                total_orders=1,
+                total_spend=100.0,
+                total_margin=30.0,
+                total_quantity=1,
+                last_transaction_ts=datetime(2024, 2, 1),  # After observation_end
+            )
+        ]
+        observation_end = datetime(2024, 1, 15)
+
+        with pytest.raises(
+            ValueError,
+            match="Transaction timestamp .* cannot be after observation_end",
+        ):
+            calculate_rfm(periods, observation_end)
 
 
 class TestCalculateRFMScores:

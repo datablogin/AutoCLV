@@ -57,6 +57,13 @@ class PeriodAggregation:
         This provides accurate recency calculation for RFM analysis.
         If None, RFM calculation will fall back to using period_end
         as a conservative approximation.
+
+    Notes
+    -----
+    **Timezone Assumptions**: All datetime fields (period_start, period_end,
+    last_transaction_ts) must use the same timezone (or all be timezone-naive).
+    For production use, recommend using UTC timestamps consistently across the
+    data pipeline. Mixing timezones will result in incorrect recency calculations.
     """
 
     customer_id: str

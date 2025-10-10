@@ -96,6 +96,12 @@ def calculate_rfm(
     - Without last_transaction_ts: recency calculated from Dec 31 (conservative,
       understates recency by 3 days)
 
+    **Timezone Assumptions**: All datetime values must use the same timezone
+    (or all be timezone-naive). For production use, UTC timestamps are recommended.
+
+    **Data Quality**: This function validates that transaction timestamps do not
+    occur after observation_end. Future-dated transactions raise a ValueError.
+
     Parameters
     ----------
     period_aggregations:
@@ -164,7 +170,17 @@ def calculate_rfm(
         # Track the most recent transaction timestamp (accurate recency)
         # Fall back to period_end if last_transaction_ts is not available
         if period.last_transaction_ts is not None:
-            if data["last_transaction_ts"] is None or period.last_transaction_ts > data["last_transaction_ts"]:
+            # Validate transaction timestamp is not in the future
+            if period.last_transaction_ts > observation_end:
+                raise ValueError(
+                    f"Transaction timestamp ({period.last_transaction_ts}) cannot be after "
+                    f"observation_end ({observation_end}) for customer {customer_id}"
+                )
+
+            if (
+                data["last_transaction_ts"] is None
+                or period.last_transaction_ts > data["last_transaction_ts"]
+            ):
                 data["last_transaction_ts"] = period.last_transaction_ts
 
         # Track the most recent period end (fallback for recency calculation)
