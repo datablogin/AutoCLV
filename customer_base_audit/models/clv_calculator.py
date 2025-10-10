@@ -17,7 +17,7 @@ Where:
 from __future__ import annotations
 
 from dataclasses import dataclass
-from decimal import Decimal, ROUND_HALF_UP
+from decimal import Decimal
 from typing import Optional
 
 import numpy as np
@@ -382,7 +382,9 @@ class CLVCalculator:
         result["predicted_avg_value"] = (
             result["predicted_avg_value"].astype(float).round(CURRENCY_DECIMALS)
         )
-        result["prob_alive"] = result["prob_alive"].astype(float).round(PROBABILITY_DECIMALS)
+        result["prob_alive"] = (
+            result["prob_alive"].astype(float).round(PROBABILITY_DECIMALS)
+        )
         # clv already rounded above
 
         # Select final columns

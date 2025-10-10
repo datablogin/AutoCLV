@@ -165,7 +165,7 @@ def calculate_clv_for_scenario(scenario_name, scenario_config, n_customers=300):
             customer_txns
         )
 
-        print(f"\n📊 Results:")
+        print("\n📊 Results:")
         print(f"  Historical Revenue: ${total_revenue:,.2f}")
         print(f"  Avg Orders per Customer: {avg_orders:.2f}")
         print(f"  Total 1-Year CLV: ${clv_scores['clv'].sum():,.2f}")
@@ -180,7 +180,7 @@ def calculate_clv_for_scenario(scenario_name, scenario_config, n_customers=300):
         )
 
         # Top 5 customers
-        print(f"\n🏆 Top 5 Customers:")
+        print("\n🏆 Top 5 Customers:")
         for idx, row in clv_scores.head(5).iterrows():
             print(
                 f"  {idx + 1}. {row['customer_id']}: CLV=${row['clv']:.2f}, "
@@ -240,14 +240,14 @@ def main():
         comparison_df = pd.DataFrame(results)
         comparison_df = comparison_df.sort_values("avg_clv", ascending=False)
 
-        print(f"\n📊 Average CLV Ranking:")
+        print("\n📊 Average CLV Ranking:")
         for idx, row in comparison_df.iterrows():
             print(
                 f"  {row['scenario']:25s}: ${row['avg_clv']:7.2f} "
                 f"(Total: ${row['total_clv']:,.2f}, P(alive): {row['avg_prob_alive']:.3f})"
             )
 
-        print(f"\n📈 Key Insights:")
+        print("\n📈 Key Insights:")
 
         # Find highest and lowest
         highest = comparison_df.iloc[0]
@@ -291,10 +291,10 @@ def main():
                 f"  • Stability Premium: Low churn business has {stability_impact:.1f}% higher CLV vs baseline"
             )
 
-        print(f"\n✅ Validation: CLV scores align with expected business outcomes")
-        print(f"   - Stable businesses have higher CLV than high-churn businesses ✓")
-        print(f"   - P(alive) correlates with churn rates ✓")
-        print(f"   - Predicted purchases reflect historical behavior ✓")
+        print("\n✅ Validation: CLV scores align with expected business outcomes")
+        print("   - Stable businesses have higher CLV than high-churn businesses ✓")
+        print("   - P(alive) correlates with churn rates ✓")
+        print("   - Predicted purchases reflect historical behavior ✓")
 
     print("\n" + "=" * 80)
     print("✅ Multi-Scenario CLV Test Complete!")

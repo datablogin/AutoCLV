@@ -446,5 +446,6 @@ class TestCLVCalculator:
             * float(calculator.discount_factor)
         )
         # Allow small rounding differences (0.02 tolerance accounts for rounding at 2 decimal places)
-        assert abs(sample_row["clv"] - expected_clv) < 0.02, \
+        assert abs(sample_row["clv"] - expected_clv) < 0.02, (
             f"CLV formula mismatch: {sample_row['clv']} != {expected_clv}"
+        )

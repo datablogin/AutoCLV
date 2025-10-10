@@ -137,7 +137,7 @@ def main():
 
     # Step 6: Analyze results
     print("\n📊 Step 6: CLV Analysis...")
-    print(f"\n💵 Overall Metrics:")
+    print("\n💵 Overall Metrics:")
     print(f"  Total 1-year CLV: ${clv_scores['clv'].sum():,.2f}")
     print(f"  Average CLV: ${clv_scores['clv'].mean():.2f}")
     print(f"  Median CLV: ${clv_scores['clv'].median():.2f}")
@@ -145,7 +145,7 @@ def main():
     print(f"  Min CLV: ${clv_scores['clv'].min():.2f}")
 
     # Average metrics
-    print(f"\n📈 Average Predictions:")
+    print("\n📈 Average Predictions:")
     print(
         f"  Avg predicted purchases (12mo): {clv_scores['predicted_purchases'].mean():.2f}"
     )
@@ -206,19 +206,19 @@ def main():
 
     # Zero CLV customers (one-time buyers)
     zero_clv = clv_scores[clv_scores["clv"] == 0]
-    print(f"\n  Zero CLV (One-time buyers):")
+    print("\n  Zero CLV (One-time buyers):")
     print(f"    Count: {len(zero_clv)} customers")
     print(f"    % of customer base: {(len(zero_clv) / len(clv_scores) * 100):.1f}%")
 
     # Step 7: Business insights
     print("\n💡 Step 7: Business Insights...")
-    print(f"\n  📊 Revenue Concentration:")
+    print("\n  📊 Revenue Concentration:")
     top_20_pct = clv_scores.head(int(len(clv_scores) * 0.2))
     print(
         f"    Top 20% of customers generate {(top_20_pct['clv'].sum() / clv_scores['clv'].sum() * 100):.1f}% of CLV"
     )
 
-    print(f"\n  🎯 Recommended Actions:")
+    print("\n  🎯 Recommended Actions:")
     if len(high_value) > 0:
         print(
             f"    • Prioritize retention for {len(high_value)} high-value customers (${high_value['clv'].sum():.2f} at risk)"
