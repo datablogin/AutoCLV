@@ -9,7 +9,6 @@ Run with: python examples/demo_new_features_synthetic_data.py
 """
 
 from datetime import date, datetime, timezone, timedelta
-from decimal import Decimal
 
 from customer_base_audit.synthetic import (
     generate_customers,
@@ -29,7 +28,7 @@ from customer_base_audit.foundation.cohorts import (
     assign_cohorts,
     normalize_to_utc,
 )
-from customer_base_audit.foundation.rfm import calculate_rfm, calculate_rfm_scores
+from customer_base_audit.foundation.rfm import calculate_rfm
 from customer_base_audit.analyses.lens1 import analyze_single_period
 from customer_base_audit.analyses.lens2 import analyze_period_comparison
 from customer_base_audit.analyses.lens3 import analyze_cohort_evolution
@@ -98,7 +97,7 @@ def demo_utc_normalization():
     pacific_time = datetime(2023, 1, 15, 7, 0, 0, tzinfo=timezone(timedelta(hours=-8)))
     utc_time = datetime(2023, 1, 15, 15, 0, 0, tzinfo=timezone.utc)
 
-    print(f"\nOriginal timestamps:")
+    print("\nOriginal timestamps:")
     print(f"  Eastern: {eastern_time}")
     print(f"  Pacific: {pacific_time}")
     print(f"  UTC:     {utc_time}")
@@ -108,7 +107,7 @@ def demo_utc_normalization():
     pacific_normalized = normalize_to_utc(pacific_time)
     utc_normalized = normalize_to_utc(utc_time)
 
-    print(f"\nNormalized to UTC:")
+    print("\nNormalized to UTC:")
     print(f"  Eastern → {eastern_normalized}")
     print(f"  Pacific → {pacific_normalized}")
     print(f"  UTC     → {utc_normalized}")
@@ -162,7 +161,9 @@ def demo_integration_with_scenarios():
             scenario=scenario_config,
         )
 
-        print(f"✓ Generated {len(customers)} customers, {len(transactions)} transactions")
+        print(
+            f"✓ Generated {len(customers)} customers, {len(transactions)} transactions"
+        )
 
         # Build data mart
         mart_builder = CustomerDataMartBuilder(
@@ -200,22 +201,30 @@ def demo_integration_with_scenarios():
             continue
 
         q1_rfm = calculate_rfm(
-            q1_periods, observation_end=datetime(2023, 3, 31, 23, 59, 59, tzinfo=timezone.utc)
+            q1_periods,
+            observation_end=datetime(2023, 3, 31, 23, 59, 59, tzinfo=timezone.utc),
         )
         q2_rfm = calculate_rfm(
-            q2_periods, observation_end=datetime(2023, 6, 30, 23, 59, 59, tzinfo=timezone.utc)
+            q2_periods,
+            observation_end=datetime(2023, 6, 30, 23, 59, 59, tzinfo=timezone.utc),
         )
 
-        print(f"✓ Calculated RFM: Q1={len(q1_rfm)} customers, Q2={len(q2_rfm)} customers")
+        print(
+            f"✓ Calculated RFM: Q1={len(q1_rfm)} customers, Q2={len(q2_rfm)} customers"
+        )
 
         # Run Lens 1
         lens1_q1 = analyze_single_period(q1_rfm)
         lens1_q2 = analyze_single_period(q2_rfm)
 
-        print(f"✓ Lens 1 (Q1): {lens1_q1.total_customers} customers, "
-              f"${lens1_q1.total_revenue:,.2f} revenue")
-        print(f"✓ Lens 1 (Q2): {lens1_q2.total_customers} customers, "
-              f"${lens1_q2.total_revenue:,.2f} revenue")
+        print(
+            f"✓ Lens 1 (Q1): {lens1_q1.total_customers} customers, "
+            f"${lens1_q1.total_revenue:,.2f} revenue"
+        )
+        print(
+            f"✓ Lens 1 (Q2): {lens1_q2.total_customers} customers, "
+            f"${lens1_q2.total_revenue:,.2f} revenue"
+        )
 
         # Run Lens 2
         lens2 = analyze_period_comparison(q1_rfm, q2_rfm)
@@ -245,7 +254,9 @@ def demo_integration_with_scenarios():
         customer_identifiers = [
             CustomerIdentifier(
                 c.customer_id,
-                datetime.combine(c.acquisition_date, datetime.min.time(), tzinfo=timezone.utc),
+                datetime.combine(
+                    c.acquisition_date, datetime.min.time(), tzinfo=timezone.utc
+                ),
                 "synthetic",
             )
             for c in customers

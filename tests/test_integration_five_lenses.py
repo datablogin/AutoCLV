@@ -4,7 +4,7 @@ This test verifies that the Five Lenses customer-base audit framework components
 work together correctly, from raw transaction data through all five lenses of analysis.
 """
 
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timezone
 from decimal import Decimal
 
 import pytest
@@ -244,11 +244,21 @@ def test_five_lenses_complete_pipeline():
 
     # Assign customers to cohorts based on first transaction (use UTC timezone)
     customers = [
-        CustomerIdentifier("C1", datetime(2023, 1, 15, tzinfo=timezone.utc), "transactions"),
-        CustomerIdentifier("C2", datetime(2023, 1, 25, tzinfo=timezone.utc), "transactions"),
-        CustomerIdentifier("C3", datetime(2023, 2, 5, tzinfo=timezone.utc), "transactions"),
-        CustomerIdentifier("C4", datetime(2023, 4, 20, tzinfo=timezone.utc), "transactions"),
-        CustomerIdentifier("C5", datetime(2023, 6, 1, tzinfo=timezone.utc), "transactions"),
+        CustomerIdentifier(
+            "C1", datetime(2023, 1, 15, tzinfo=timezone.utc), "transactions"
+        ),
+        CustomerIdentifier(
+            "C2", datetime(2023, 1, 25, tzinfo=timezone.utc), "transactions"
+        ),
+        CustomerIdentifier(
+            "C3", datetime(2023, 2, 5, tzinfo=timezone.utc), "transactions"
+        ),
+        CustomerIdentifier(
+            "C4", datetime(2023, 4, 20, tzinfo=timezone.utc), "transactions"
+        ),
+        CustomerIdentifier(
+            "C5", datetime(2023, 6, 1, tzinfo=timezone.utc), "transactions"
+        ),
     ]
 
     cohort_assignments = assign_cohorts(customers, [q1_cohort])
@@ -343,7 +353,8 @@ def test_five_lenses_pipeline_with_synthetic_data():
     jun_periods = [
         p
         for p in monthly_periods
-        if p.period_start >= datetime(2023, 6, 1, tzinfo=timezone.utc) and p.period_end <= jun_end
+        if p.period_start >= datetime(2023, 6, 1, tzinfo=timezone.utc)
+        and p.period_end <= jun_end
     ]
     jun_rfm = calculate_rfm(jun_periods, observation_end=jun_end)
 
