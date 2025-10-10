@@ -23,6 +23,7 @@ Quick Start
 
 from __future__ import annotations
 
+from collections import Counter
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from typing import Mapping, Any, Sequence, TypedDict
@@ -281,10 +282,11 @@ def assign_cohorts(
     >>> assign_cohorts(customers, [], require_full_coverage=True)  # doctest: +SKIP
     ValueError: 1 customers fall outside cohort ranges
     """
-    # Check for duplicate customer IDs
+    # Check for duplicate customer IDs (O(n) using Counter)
     customer_ids = [c.customer_id for c in customers]
-    if len(customer_ids) != len(set(customer_ids)):
-        duplicates = [cid for cid in set(customer_ids) if customer_ids.count(cid) > 1]
+    id_counts = Counter(customer_ids)
+    duplicates = [cid for cid, count in id_counts.items() if count > 1]
+    if duplicates:
         raise ValueError(
             f"Duplicate customer_id values detected: {duplicates[:5]}. "
             f"Each customer must appear exactly once."

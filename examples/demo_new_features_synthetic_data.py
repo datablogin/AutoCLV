@@ -58,18 +58,18 @@ def demo_cohort_metadata_typed():
         "created_at": "2023-01-01T00:00:00Z",
     }
 
-    # Create cohort definitions with typed metadata
+    # Create cohort definitions with typed metadata (use UTC for consistency)
     paid_cohort = CohortDefinition(
         cohort_id="2023-Q1-paid-search",
-        start_date=datetime(2023, 1, 1),
-        end_date=datetime(2023, 4, 1),
+        start_date=datetime(2023, 1, 1, tzinfo=timezone.utc),
+        end_date=datetime(2023, 4, 1, tzinfo=timezone.utc),
         metadata=paid_search_metadata,
     )
 
     organic_cohort = CohortDefinition(
         cohort_id="2023-Q1-organic",
-        start_date=datetime(2023, 1, 1),
-        end_date=datetime(2023, 4, 1),
+        start_date=datetime(2023, 1, 1, tzinfo=timezone.utc),
+        end_date=datetime(2023, 4, 1, tzinfo=timezone.utc),
         metadata=organic_metadata,
     )
 
@@ -199,8 +199,12 @@ def demo_integration_with_scenarios():
             print("  ⚠ Insufficient data for this scenario, skipping...")
             continue
 
-        q1_rfm = calculate_rfm(q1_periods, observation_end=datetime(2023, 3, 31, 23, 59, 59))
-        q2_rfm = calculate_rfm(q2_periods, observation_end=datetime(2023, 6, 30, 23, 59, 59))
+        q1_rfm = calculate_rfm(
+            q1_periods, observation_end=datetime(2023, 3, 31, 23, 59, 59, tzinfo=timezone.utc)
+        )
+        q2_rfm = calculate_rfm(
+            q2_periods, observation_end=datetime(2023, 6, 30, 23, 59, 59, tzinfo=timezone.utc)
+        )
 
         print(f"✓ Calculated RFM: Q1={len(q1_rfm)} customers, Q2={len(q2_rfm)} customers")
 
@@ -232,16 +236,16 @@ def demo_integration_with_scenarios():
 
         q1_cohort = CohortDefinition(
             cohort_id=f"2023-Q1-{scenario_name.lower().replace(' ', '-')}",
-            start_date=datetime(2023, 1, 1),
-            end_date=datetime(2023, 4, 1),
+            start_date=datetime(2023, 1, 1, tzinfo=timezone.utc),
+            end_date=datetime(2023, 4, 1, tzinfo=timezone.utc),
             metadata=cohort_metadata,
         )
 
-        # Assign customers to cohort
+        # Assign customers to cohort (use UTC timezone for consistency)
         customer_identifiers = [
             CustomerIdentifier(
                 c.customer_id,
-                datetime.combine(c.acquisition_date, datetime.min.time()),
+                datetime.combine(c.acquisition_date, datetime.min.time(), tzinfo=timezone.utc),
                 "synthetic",
             )
             for c in customers

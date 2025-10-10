@@ -4,7 +4,7 @@ This test verifies that the Five Lenses customer-base audit framework components
 work together correctly, from raw transaction data through all five lenses of analysis.
 """
 
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from decimal import Decimal
 
 import pytest
@@ -52,21 +52,21 @@ def test_five_lenses_complete_pipeline():
         {
             "order_id": "O1",
             "customer_id": "C1",
-            "event_ts": datetime(2023, 1, 15, 10, 0, 0),
+            "event_ts": datetime(2023, 1, 15, 10, 0, 0, tzinfo=timezone.utc),
             "unit_price": 100.0,
             "quantity": 2,
         },
         {
             "order_id": "O2",
             "customer_id": "C1",
-            "event_ts": datetime(2023, 2, 20, 14, 30, 0),
+            "event_ts": datetime(2023, 2, 20, 14, 30, 0, tzinfo=timezone.utc),
             "unit_price": 150.0,
             "quantity": 1,
         },
         {
             "order_id": "O3",
             "customer_id": "C1",
-            "event_ts": datetime(2023, 4, 10, 9, 15, 0),
+            "event_ts": datetime(2023, 4, 10, 9, 15, 0, tzinfo=timezone.utc),
             "unit_price": 120.0,
             "quantity": 3,
         },
@@ -74,7 +74,7 @@ def test_five_lenses_complete_pipeline():
         {
             "order_id": "O4",
             "customer_id": "C2",
-            "event_ts": datetime(2023, 1, 25, 16, 45, 0),
+            "event_ts": datetime(2023, 1, 25, 16, 45, 0, tzinfo=timezone.utc),
             "unit_price": 50.0,
             "quantity": 1,
         },
@@ -82,14 +82,14 @@ def test_five_lenses_complete_pipeline():
         {
             "order_id": "O5",
             "customer_id": "C3",
-            "event_ts": datetime(2023, 2, 5, 11, 20, 0),
+            "event_ts": datetime(2023, 2, 5, 11, 20, 0, tzinfo=timezone.utc),
             "unit_price": 80.0,
             "quantity": 2,
         },
         {
             "order_id": "O6",
             "customer_id": "C3",
-            "event_ts": datetime(2023, 5, 12, 13, 0, 0),
+            "event_ts": datetime(2023, 5, 12, 13, 0, 0, tzinfo=timezone.utc),
             "unit_price": 90.0,
             "quantity": 1,
         },
@@ -97,7 +97,7 @@ def test_five_lenses_complete_pipeline():
         {
             "order_id": "O7",
             "customer_id": "C4",
-            "event_ts": datetime(2023, 4, 20, 15, 30, 0),
+            "event_ts": datetime(2023, 4, 20, 15, 30, 0, tzinfo=timezone.utc),
             "unit_price": 200.0,
             "quantity": 1,
         },
@@ -105,14 +105,14 @@ def test_five_lenses_complete_pipeline():
         {
             "order_id": "O8",
             "customer_id": "C5",
-            "event_ts": datetime(2023, 6, 1, 10, 0, 0),
+            "event_ts": datetime(2023, 6, 1, 10, 0, 0, tzinfo=timezone.utc),
             "unit_price": 300.0,
             "quantity": 2,
         },
         {
             "order_id": "O9",
             "customer_id": "C5",
-            "event_ts": datetime(2023, 6, 15, 14, 0, 0),
+            "event_ts": datetime(2023, 6, 15, 14, 0, 0, tzinfo=timezone.utc),
             "unit_price": 250.0,
             "quantity": 1,
         },
@@ -138,15 +138,15 @@ def test_five_lenses_complete_pipeline():
     # ============================================================================
 
     # Q1 2023: Jan 1 - Mar 31 (period_end is exclusive, so Apr 1)
-    q1_end = datetime(2023, 4, 1)
+    q1_end = datetime(2023, 4, 1, tzinfo=timezone.utc)
     q1_periods = [p for p in quarterly_periods if p.period_end == q1_end]
-    q1_observation_end = datetime(2023, 3, 31, 23, 59, 59)
+    q1_observation_end = datetime(2023, 3, 31, 23, 59, 59, tzinfo=timezone.utc)
     q1_rfm = calculate_rfm(q1_periods, observation_end=q1_observation_end)
 
     # Q2 2023: Apr 1 - Jun 30 (period_end is exclusive, so Jul 1)
-    q2_end = datetime(2023, 7, 1)
+    q2_end = datetime(2023, 7, 1, tzinfo=timezone.utc)
     q2_periods = [p for p in quarterly_periods if p.period_end == q2_end]
-    q2_observation_end = datetime(2023, 6, 30, 23, 59, 59)
+    q2_observation_end = datetime(2023, 6, 30, 23, 59, 59, tzinfo=timezone.utc)
     q2_rfm = calculate_rfm(q2_periods, observation_end=q2_observation_end)
 
     # Verify RFM calculations
@@ -156,6 +156,17 @@ def test_five_lenses_complete_pipeline():
     # Calculate RFM scores for segmentation
     q1_scores = calculate_rfm_scores(q1_rfm)
     q2_scores = calculate_rfm_scores(q2_rfm)
+
+    # Verify RFM score ranges (important for CLV segmentation accuracy)
+    for score in q1_scores:
+        assert 1 <= score.r_score <= 5, f"Invalid recency score: {score.r_score}"
+        assert 1 <= score.f_score <= 5, f"Invalid frequency score: {score.f_score}"
+        assert 1 <= score.m_score <= 5, f"Invalid monetary score: {score.m_score}"
+
+    for score in q2_scores:
+        assert 1 <= score.r_score <= 5, f"Invalid recency score: {score.r_score}"
+        assert 1 <= score.f_score <= 5, f"Invalid frequency score: {score.f_score}"
+        assert 1 <= score.m_score <= 5, f"Invalid monetary score: {score.m_score}"
 
     # ============================================================================
     # Step 4: Lens 1 - Single Period Analysis
@@ -193,6 +204,10 @@ def test_five_lenses_complete_pipeline():
         period2_metrics=lens1_q2,
     )
 
+    # Verify Lens 1 metrics are correctly propagated to Lens 2
+    assert lens2.period1_metrics == lens1_q1
+    assert lens2.period2_metrics == lens1_q2
+
     # Verify migration patterns
     assert len(lens2.migration.retained) == 2  # C1, C3
     assert len(lens2.migration.churned) == 1  # C2
@@ -222,18 +237,18 @@ def test_five_lenses_complete_pipeline():
 
     q1_cohort = CohortDefinition(
         cohort_id="2023-Q1",
-        start_date=datetime(2023, 1, 1),
-        end_date=datetime(2023, 4, 1),
+        start_date=datetime(2023, 1, 1, tzinfo=timezone.utc),
+        end_date=datetime(2023, 4, 1, tzinfo=timezone.utc),
         metadata=cohort_metadata,
     )
 
-    # Assign customers to cohorts based on first transaction
+    # Assign customers to cohorts based on first transaction (use UTC timezone)
     customers = [
-        CustomerIdentifier("C1", datetime(2023, 1, 15), "transactions"),
-        CustomerIdentifier("C2", datetime(2023, 1, 25), "transactions"),
-        CustomerIdentifier("C3", datetime(2023, 2, 5), "transactions"),
-        CustomerIdentifier("C4", datetime(2023, 4, 20), "transactions"),
-        CustomerIdentifier("C5", datetime(2023, 6, 1), "transactions"),
+        CustomerIdentifier("C1", datetime(2023, 1, 15, tzinfo=timezone.utc), "transactions"),
+        CustomerIdentifier("C2", datetime(2023, 1, 25, tzinfo=timezone.utc), "transactions"),
+        CustomerIdentifier("C3", datetime(2023, 2, 5, tzinfo=timezone.utc), "transactions"),
+        CustomerIdentifier("C4", datetime(2023, 4, 20, tzinfo=timezone.utc), "transactions"),
+        CustomerIdentifier("C5", datetime(2023, 6, 1, tzinfo=timezone.utc), "transactions"),
     ]
 
     cohort_assignments = assign_cohorts(customers, [q1_cohort])
@@ -307,6 +322,7 @@ def test_five_lenses_pipeline_with_synthetic_data():
     config.num_customers = 100
     config.observation_start = datetime(2023, 1, 1)
     config.observation_end = datetime(2023, 6, 30)
+    config.seed = 42  # Explicit seed for deterministic tests
 
     customers, transactions = generate_customers_and_transactions(config)
 
@@ -319,15 +335,15 @@ def test_five_lenses_pipeline_with_synthetic_data():
     # Calculate RFM for first and last month
     monthly_periods = data_mart.periods[PeriodGranularity.MONTH]
 
-    jan_end = datetime(2023, 1, 31, 23, 59, 59)
+    jan_end = datetime(2023, 1, 31, 23, 59, 59, tzinfo=timezone.utc)
     jan_periods = [p for p in monthly_periods if p.period_end <= jan_end]
     jan_rfm = calculate_rfm(jan_periods, observation_end=jan_end)
 
-    jun_end = datetime(2023, 6, 30, 23, 59, 59)
+    jun_end = datetime(2023, 6, 30, 23, 59, 59, tzinfo=timezone.utc)
     jun_periods = [
         p
         for p in monthly_periods
-        if p.period_start >= datetime(2023, 6, 1) and p.period_end <= jun_end
+        if p.period_start >= datetime(2023, 6, 1, tzinfo=timezone.utc) and p.period_end <= jun_end
     ]
     jun_rfm = calculate_rfm(jun_periods, observation_end=jun_end)
 
@@ -360,8 +376,8 @@ def test_cohort_metadata_type_safety():
 
     cohort = CohortDefinition(
         cohort_id="test-cohort",
-        start_date=datetime(2023, 1, 1),
-        end_date=datetime(2023, 2, 1),
+        start_date=datetime(2023, 1, 1, tzinfo=timezone.utc),
+        end_date=datetime(2023, 2, 1, tzinfo=timezone.utc),
         metadata=metadata,
     )
 
@@ -376,8 +392,8 @@ def test_cohort_metadata_type_safety():
 
     cohort_custom = CohortDefinition(
         cohort_id="test-cohort-2",
-        start_date=datetime(2023, 1, 1),
-        end_date=datetime(2023, 2, 1),
+        start_date=datetime(2023, 1, 1, tzinfo=timezone.utc),
+        end_date=datetime(2023, 2, 1, tzinfo=timezone.utc),
         metadata=custom_metadata,
     )
 
