@@ -11,10 +11,14 @@ and the Five Lenses framework from "The Customer-Base Audit".
 
 from __future__ import annotations
 
+import itertools
+import multiprocessing
+import os
+import warnings
 from dataclasses import dataclass
 from datetime import datetime
 from decimal import Decimal, ROUND_HALF_UP
-from typing import Sequence
+from typing import Optional, Sequence
 
 import pandas as pd  # Used for quantile-based RFM scoring (qcut)
 
@@ -78,9 +82,105 @@ class RFMMetrics:
             )
 
 
+def _chunk_dict(d: dict, n_chunks: int) -> list[dict]:
+    """Chunk a dictionary into roughly equal-sized pieces for parallel processing.
+
+    Uses an iterator-based approach to avoid creating intermediate lists,
+    minimizing memory overhead.
+
+    Parameters
+    ----------
+    d:
+        Dictionary to chunk
+    n_chunks:
+        Number of chunks to create
+
+    Returns
+    -------
+    list[dict]
+        List of dictionaries, each containing a subset of the original dict's items
+    """
+    items = iter(d.items())
+    chunk_size = max(1, len(d) // n_chunks)
+
+    chunks = []
+    for _ in range(n_chunks):
+        chunk = dict(itertools.islice(items, chunk_size))
+        if chunk:  # Only add non-empty chunks
+            chunks.append(chunk)
+
+    return chunks
+
+
+def _calculate_rfm_for_customers(
+    customer_data_chunk: dict[str, dict], observation_end: datetime
+) -> list[RFMMetrics]:
+    """Helper function to calculate RFM metrics for a chunk of customers.
+
+    This function is designed to be called by multiprocessing workers.
+    It processes a subset of customers independently.
+
+    Parameters
+    ----------
+    customer_data_chunk:
+        Dictionary mapping customer_id to aggregated customer data
+        (last_transaction_ts, last_period_end, first_period_start, total_orders, total_spend)
+    observation_end:
+        End date for recency calculation
+
+    Returns
+    -------
+    list[RFMMetrics]
+        RFM metrics for customers in this chunk (unsorted)
+    """
+    rfm_metrics: list[RFMMetrics] = []
+
+    for customer_id, data in customer_data_chunk.items():
+        # Recency: days from last transaction to observation_end
+        # Use actual last_transaction_ts if available, otherwise fall back to period_end
+        if data["last_transaction_ts"] is not None:
+            recency_reference = data["last_transaction_ts"]
+        else:
+            # Backward compatibility: use period_end approximation
+            recency_reference = data["last_period_end"]
+
+        recency_delta = observation_end - recency_reference
+        recency_days = recency_delta.days
+
+        # Frequency: total number of orders
+        frequency = data["total_orders"]
+
+        # Total spend
+        total_spend = data["total_spend"].quantize(
+            Decimal("0.01"), rounding=ROUND_HALF_UP
+        )
+
+        # Monetary: average transaction value
+        monetary = (total_spend / frequency).quantize(
+            Decimal("0.01"), rounding=ROUND_HALF_UP
+        )
+
+        rfm_metrics.append(
+            RFMMetrics(
+                customer_id=customer_id,
+                recency_days=recency_days,
+                frequency=frequency,
+                monetary=monetary,
+                observation_start=data["first_period_start"],
+                observation_end=observation_end,
+                total_spend=total_spend,
+            )
+        )
+
+    return rfm_metrics
+
+
 def calculate_rfm(
     period_aggregations: Sequence[PeriodAggregation],
     observation_end: datetime,
+    parallel: bool = True,
+    parallel_threshold: int = 10_000_000,
+    n_workers: Optional[int] = None,
 ) -> list[RFMMetrics]:
     """Calculate RFM metrics from period aggregations.
 
@@ -102,6 +202,12 @@ def calculate_rfm(
     **Data Quality**: This function validates that transaction timestamps do not
     occur after observation_end. Future-dated transactions raise a ValueError.
 
+    **Parallel Processing**: For large datasets (>10M customers by default), this
+    function automatically enables parallel processing using multiprocessing to
+    improve performance. The parallelization is done at the customer level, so
+    each worker processes a subset of customers independently. You can control this
+    behavior using the parallel, parallel_threshold, and n_workers parameters.
+
     Parameters
     ----------
     period_aggregations:
@@ -110,6 +216,16 @@ def calculate_rfm(
     observation_end:
         End date of observation period. Recency is calculated as days
         from the end of the last active period to this date.
+    parallel:
+        Enable parallel processing (default: True). When enabled, uses
+        multiprocessing for datasets exceeding parallel_threshold.
+    parallel_threshold:
+        Number of customers above which to enable parallel processing
+        (default: 10,000,000). Lower values enable parallelization for
+        smaller datasets; higher values delay it for larger datasets.
+    n_workers:
+        Number of worker processes for parallel processing. If None
+        (default), uses CPU count. Ignored if parallel=False.
 
     Returns
     -------
@@ -118,6 +234,8 @@ def calculate_rfm(
 
     Examples
     --------
+    Basic usage (serial processing for small datasets):
+
     >>> from datetime import datetime
     >>> from customer_base_audit.foundation.data_mart import PeriodAggregation
     >>> periods = [
@@ -148,6 +266,17 @@ def calculate_rfm(
     5
     >>> rfm[0].total_spend
     Decimal('250.00')
+
+    Force parallel processing for smaller datasets:
+
+    >>> # Process 100k customers in parallel with 4 workers
+    >>> rfm = calculate_rfm(periods, obs_end, parallel=True,
+    ...                      parallel_threshold=100_000, n_workers=4)
+
+    Disable parallel processing entirely:
+
+    >>> # Always use serial processing (useful for debugging)
+    >>> rfm = calculate_rfm(periods, obs_end, parallel=False)
     """
     if not period_aggregations:
         return []
@@ -194,44 +323,61 @@ def calculate_rfm(
         data["total_orders"] += period.total_orders
         data["total_spend"] += Decimal(str(period.total_spend))
 
+    # Determine if we should use parallel processing
+    num_customers = len(customer_data)
+    use_parallel = parallel and num_customers >= parallel_threshold
+
+    # Platform compatibility check: disable parallel on Windows or systems without fork
+    # Windows uses 'spawn' which has higher overhead and pickling constraints
+    if use_parallel and (os.name == "nt" or not hasattr(os, "fork")):
+        use_parallel = False
+        warnings.warn(
+            "Parallel processing disabled on Windows or systems without fork support. "
+            "Using serial processing instead.",
+            UserWarning,
+            stacklevel=2,
+        )
+
+    # Validate n_workers parameter
+    if n_workers is not None and n_workers < 1:
+        raise ValueError(f"n_workers must be >= 1, got {n_workers}")
+
     # Calculate RFM metrics for each customer
-    rfm_metrics: list[RFMMetrics] = []
-    for customer_id, data in customer_data.items():
-        # Recency: days from last transaction to observation_end
-        # Use actual last_transaction_ts if available, otherwise fall back to period_end
-        if data["last_transaction_ts"] is not None:
-            recency_reference = data["last_transaction_ts"]
+    if use_parallel:
+        # Parallel processing for large datasets
+        # Determine number of workers
+        if n_workers is None:
+            workers = os.cpu_count() or 1
         else:
-            # Backward compatibility: use period_end approximation
-            recency_reference = data["last_period_end"]
+            workers = n_workers
 
-        recency_delta = observation_end - recency_reference
-        recency_days = recency_delta.days
+        try:
+            # Memory-efficient chunking without intermediate lists
+            customer_chunks = _chunk_dict(customer_data, workers)
+            chunks = [(chunk, observation_end) for chunk in customer_chunks]
 
-        # Frequency: total number of orders
-        frequency = data["total_orders"]
+            # Process chunks in parallel
+            with multiprocessing.Pool(processes=workers) as pool:
+                chunk_results = pool.starmap(_calculate_rfm_for_customers, chunks)
 
-        # Total spend
-        total_spend = data["total_spend"].quantize(
-            Decimal("0.01"), rounding=ROUND_HALF_UP
-        )
+            # Merge results from all workers
+            rfm_metrics: list[RFMMetrics] = []
+            for chunk_result in chunk_results:
+                rfm_metrics.extend(chunk_result)
 
-        # Monetary: average transaction value
-        monetary = (total_spend / frequency).quantize(
-            Decimal("0.01"), rounding=ROUND_HALF_UP
-        )
-
-        rfm_metrics.append(
-            RFMMetrics(
-                customer_id=customer_id,
-                recency_days=recency_days,
-                frequency=frequency,
-                monetary=monetary,
-                observation_start=data["first_period_start"],
-                observation_end=observation_end,
-                total_spend=total_spend,
+        except Exception as e:
+            # Fall back to serial processing on any multiprocessing error
+            warnings.warn(
+                f"Parallel processing failed ({type(e).__name__}: {e}), "
+                f"falling back to serial processing. "
+                f"Set parallel=False to suppress this warning.",
+                UserWarning,
+                stacklevel=2,
             )
-        )
+            rfm_metrics = _calculate_rfm_for_customers(customer_data, observation_end)
+    else:
+        # Serial processing for small datasets (original implementation)
+        rfm_metrics = _calculate_rfm_for_customers(customer_data, observation_end)
 
     # Sort by customer_id for consistency
     rfm_metrics.sort(key=lambda m: m.customer_id)

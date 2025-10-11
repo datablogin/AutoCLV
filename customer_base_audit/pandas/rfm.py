@@ -1,6 +1,6 @@
 """Pandas DataFrame adapters for RFM calculations."""
 
-from typing import List, Sequence
+from typing import List, Optional, Sequence
 from datetime import datetime
 import pandas as pd  # type: ignore
 
@@ -224,6 +224,9 @@ def calculate_rfm_df(
     total_spend_col: str = "total_spend",
     total_margin_col: str = "total_margin",
     total_quantity_col: str = "total_quantity",
+    parallel: bool = True,
+    parallel_threshold: int = 10_000_000,
+    n_workers: Optional[int] = None,
 ) -> pd.DataFrame:
     """Calculate RFM metrics from a pandas DataFrame.
 
@@ -233,6 +236,9 @@ def calculate_rfm_df(
         periods_df: DataFrame with period aggregations
         observation_end: End date for recency calculation
         *_col: Column name mappings for flexibility
+        parallel: Enable parallel processing (default: True)
+        parallel_threshold: Customer count threshold for parallel processing (default: 10M)
+        n_workers: Number of worker processes (default: CPU count)
 
     Returns:
         DataFrame with RFM metrics
@@ -241,6 +247,11 @@ def calculate_rfm_df(
         >>> periods_df = pd.read_parquet('periods.parquet')
         >>> rfm_df = calculate_rfm_df(periods_df, datetime(2023, 12, 31))
         >>> high_value = rfm_df[rfm_df['monetary'] > 100]
+
+    Example with parallel processing:
+        >>> # Force parallel for 100k+ customers with 8 workers
+        >>> rfm_df = calculate_rfm_df(periods_df, datetime(2023, 12, 31),
+        ...                           parallel=True, parallel_threshold=100_000, n_workers=8)
     """
     # Convert DataFrame → List[PeriodAggregation]
     periods = dataframe_to_period_aggregations(
@@ -254,8 +265,14 @@ def calculate_rfm_df(
         total_quantity_col=total_quantity_col,
     )
 
-    # Calculate RFM using core API
-    rfm_metrics = calculate_rfm(periods, observation_end)
+    # Calculate RFM using core API with parallel processing support
+    rfm_metrics = calculate_rfm(
+        periods,
+        observation_end,
+        parallel=parallel,
+        parallel_threshold=parallel_threshold,
+        n_workers=n_workers,
+    )
 
     # Convert List[RFMMetrics] → DataFrame
     return rfm_to_dataframe(rfm_metrics)
