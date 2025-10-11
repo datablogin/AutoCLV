@@ -58,14 +58,20 @@ Calculate RFM metrics from period aggregations.
 **Returns:**
 - `list[RFMMetrics]`: RFM metrics for each customer
 
+**Raises:**
+- `ValueError`: If `period_aggregations` is empty
+- `ValueError`: If `observation_end` is before the earliest transaction date
+- `TypeError`: If datetime objects have mismatched timezones
+
 **Example:**
 ```python
 from datetime import datetime
 from customer_base_audit.foundation.rfm import calculate_rfm
-from customer_base_audit.foundation.data_mart import build_data_mart, PeriodGranularity
+from customer_base_audit.foundation.data_mart import CustomerDataMartBuilder, PeriodGranularity
 
 # Build data mart from transactions
-mart = build_data_mart(customers, transactions, snapshot_date=datetime(2024, 12, 31))
+builder = CustomerDataMartBuilder([PeriodGranularity.MONTH])
+mart = builder.build([t.__dict__ for t in transactions])
 
 # Calculate RFM metrics
 rfm_metrics = calculate_rfm(
@@ -180,6 +186,11 @@ Build a customer data mart from transaction dictionaries.
 
 **Returns:**
 - `CustomerDataMart`: Contains orders and period aggregations
+
+**Raises:**
+- `ValueError`: If `transactions` is empty
+- `KeyError`: If required fields (`customer_id`, `event_ts`, `unit_price`) are missing
+- `TypeError`: If datetime objects have mismatched timezones
 
 **Example:**
 ```python
@@ -1070,14 +1081,13 @@ txns = generate_transactions(customers, date(2024,1,1), date(2024,12,31), BASELI
 
 ## Additional Resources
 
-- **User Guide**: `docs/user_guide.md` - Comprehensive tutorials and examples
+- **User Guide**: `docs/user_guide.md` - Comprehensive tutorials and best practices
+- **Synthetic Data Guide**: `docs/TESTING_WITH_SYNTHETIC_DATA.md` - Generate realistic test data
 - **Example Notebooks**: `examples/` directory
   - `01_texas_clv_walkthrough.ipynb` - Complete CLV workflow
   - `02_custom_cohorts.ipynb` - Advanced cohort analysis
   - `03_model_comparison.ipynb` - Comparing CLV approaches
   - `04_monitoring_drift.ipynb` - Model monitoring and drift detection
-- **Model Validation Guide**: `docs/model_validation_guide.md` (coming soon)
-- **Monitoring Guide**: `docs/monitoring_guide.md` (coming soon)
 
 ---
 
