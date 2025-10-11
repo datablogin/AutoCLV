@@ -11,8 +11,10 @@ and the Five Lenses framework from "The Customer-Base Audit".
 
 from __future__ import annotations
 
+import itertools
 import multiprocessing
 import os
+import warnings
 from dataclasses import dataclass
 from datetime import datetime
 from decimal import Decimal, ROUND_HALF_UP
@@ -78,6 +80,36 @@ class RFMMetrics:
             raise ValueError(
                 f"Monetary ({self.monetary}) != total_spend / frequency ({expected_monetary}) (customer_id={self.customer_id})"
             )
+
+
+def _chunk_dict(d: dict, n_chunks: int) -> list[dict]:
+    """Chunk a dictionary into roughly equal-sized pieces for parallel processing.
+
+    Uses an iterator-based approach to avoid creating intermediate lists,
+    minimizing memory overhead.
+
+    Parameters
+    ----------
+    d:
+        Dictionary to chunk
+    n_chunks:
+        Number of chunks to create
+
+    Returns
+    -------
+    list[dict]
+        List of dictionaries, each containing a subset of the original dict's items
+    """
+    items = iter(d.items())
+    chunk_size = max(1, len(d) // n_chunks)
+
+    chunks = []
+    for _ in range(n_chunks):
+        chunk = dict(itertools.islice(items, chunk_size))
+        if chunk:  # Only add non-empty chunks
+            chunks.append(chunk)
+
+    return chunks
 
 
 def _calculate_rfm_for_customers(
@@ -295,6 +327,21 @@ def calculate_rfm(
     num_customers = len(customer_data)
     use_parallel = parallel and num_customers >= parallel_threshold
 
+    # Platform compatibility check: disable parallel on Windows or systems without fork
+    # Windows uses 'spawn' which has higher overhead and pickling constraints
+    if use_parallel and (os.name == "nt" or not hasattr(os, "fork")):
+        use_parallel = False
+        warnings.warn(
+            "Parallel processing disabled on Windows or systems without fork support. "
+            "Using serial processing instead.",
+            UserWarning,
+            stacklevel=2,
+        )
+
+    # Validate n_workers parameter
+    if n_workers is not None and n_workers < 1:
+        raise ValueError(f"n_workers must be >= 1, got {n_workers}")
+
     # Calculate RFM metrics for each customer
     if use_parallel:
         # Parallel processing for large datasets
@@ -302,24 +349,32 @@ def calculate_rfm(
         if n_workers is None:
             workers = os.cpu_count() or 1
         else:
-            workers = max(1, n_workers)
+            workers = n_workers
 
-        # Chunk customer data for parallel processing
-        customer_items = list(customer_data.items())
-        chunk_size = max(1, num_customers // workers)
-        chunks = []
-        for i in range(0, num_customers, chunk_size):
-            chunk_dict = dict(customer_items[i : i + chunk_size])
-            chunks.append((chunk_dict, observation_end))
+        try:
+            # Memory-efficient chunking without intermediate lists
+            customer_chunks = _chunk_dict(customer_data, workers)
+            chunks = [(chunk, observation_end) for chunk in customer_chunks]
 
-        # Process chunks in parallel
-        with multiprocessing.Pool(processes=workers) as pool:
-            chunk_results = pool.starmap(_calculate_rfm_for_customers, chunks)
+            # Process chunks in parallel
+            with multiprocessing.Pool(processes=workers) as pool:
+                chunk_results = pool.starmap(_calculate_rfm_for_customers, chunks)
 
-        # Merge results from all workers
-        rfm_metrics: list[RFMMetrics] = []
-        for chunk_result in chunk_results:
-            rfm_metrics.extend(chunk_result)
+            # Merge results from all workers
+            rfm_metrics: list[RFMMetrics] = []
+            for chunk_result in chunk_results:
+                rfm_metrics.extend(chunk_result)
+
+        except Exception as e:
+            # Fall back to serial processing on any multiprocessing error
+            warnings.warn(
+                f"Parallel processing failed ({type(e).__name__}: {e}), "
+                f"falling back to serial processing. "
+                f"Set parallel=False to suppress this warning.",
+                UserWarning,
+                stacklevel=2,
+            )
+            rfm_metrics = _calculate_rfm_for_customers(customer_data, observation_end)
     else:
         # Serial processing for small datasets (original implementation)
         rfm_metrics = _calculate_rfm_for_customers(customer_data, observation_end)

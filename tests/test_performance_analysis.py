@@ -22,8 +22,6 @@ from customer_base_audit.synthetic import (
     generate_customers,
     generate_transactions,
     BASELINE_SCENARIO,
-    HIGH_CHURN_SCENARIO,
-    STABLE_BUSINESS_SCENARIO,
 )
 
 
@@ -92,9 +90,9 @@ class TestRFMStatisticalCorrectness:
             # Verify monetary calculation
             for rfm in jan_rfm:
                 expected_monetary = rfm.total_spend / rfm.frequency
-                assert abs(rfm.monetary - expected_monetary) < Decimal(
-                    "0.01"
-                ), f"Customer {rfm.customer_id}: monetary {rfm.monetary} != {expected_monetary}"
+                assert abs(rfm.monetary - expected_monetary) < Decimal("0.01"), (
+                    f"Customer {rfm.customer_id}: monetary {rfm.monetary} != {expected_monetary}"
+                )
 
     def test_rfm_frequency_matches_order_count(self):
         """Verify frequency equals total orders."""
@@ -139,9 +137,9 @@ class TestRFMStatisticalCorrectness:
             # Verify frequency matches
             for rfm in q1_rfm:
                 expected_frequency = customer_orders[rfm.customer_id]
-                assert (
-                    rfm.frequency == expected_frequency
-                ), f"Customer {rfm.customer_id}: frequency {rfm.frequency} != {expected_frequency}"
+                assert rfm.frequency == expected_frequency, (
+                    f"Customer {rfm.customer_id}: frequency {rfm.frequency} != {expected_frequency}"
+                )
 
     def test_rfm_scores_distribution(self):
         """Verify RFM scores follow expected quintile distribution."""
@@ -236,12 +234,12 @@ class TestLens1StatisticalCorrectness:
                 Decimal(one_time_buyers) / Decimal(len(q1_rfm)) * 100
             ).quantize(Decimal("0.01"))
 
-            assert (
-                lens1.one_time_buyers == one_time_buyers
-            ), f"One-time buyer count mismatch"
-            assert (
-                lens1.one_time_buyer_pct == expected_pct
-            ), f"One-time buyer % mismatch: {lens1.one_time_buyer_pct} != {expected_pct}"
+            assert lens1.one_time_buyers == one_time_buyers, (
+                "One-time buyer count mismatch"
+            )
+            assert lens1.one_time_buyer_pct == expected_pct, (
+                f"One-time buyer % mismatch: {lens1.one_time_buyer_pct} != {expected_pct}"
+            )
 
     def test_lens1_revenue_sums_correctly(self):
         """Verify total revenue matches sum of customer spend."""
@@ -280,9 +278,9 @@ class TestLens1StatisticalCorrectness:
             # Manual calculation
             expected_revenue = sum(rfm.total_spend for rfm in q1_rfm)
 
-            assert (
-                lens1.total_revenue == expected_revenue
-            ), f"Revenue mismatch: {lens1.total_revenue} != {expected_revenue}"
+            assert lens1.total_revenue == expected_revenue, (
+                f"Revenue mismatch: {lens1.total_revenue} != {expected_revenue}"
+            )
 
     def test_lens1_revenue_concentration_pareto(self):
         """Verify revenue concentration follows Pareto principle."""
@@ -322,9 +320,9 @@ class TestLens1StatisticalCorrectness:
             # With synthetic data, might be less extreme
             top_20_contribution = lens1.top_20pct_revenue_contribution
 
-            assert (
-                top_20_contribution > Decimal("50")
-            ), f"Top 20% drives only {top_20_contribution}% of revenue (expected > 50%)"
+            assert top_20_contribution > Decimal("50"), (
+                f"Top 20% drives only {top_20_contribution}% of revenue (expected > 50%)"
+            )
 
 
 @pytest.mark.slow
@@ -378,9 +376,9 @@ class TestLens2StatisticalCorrectness:
 
             # Retention + churn should equal 100% (with rounding tolerance)
             total = lens2.retention_rate + lens2.churn_rate
-            assert (
-                Decimal("99.9") <= total <= Decimal("100.1")
-            ), f"Retention ({lens2.retention_rate}) + Churn ({lens2.churn_rate}) = {total} != 100"
+            assert Decimal("99.9") <= total <= Decimal("100.1"), (
+                f"Retention ({lens2.retention_rate}) + Churn ({lens2.churn_rate}) = {total} != 100"
+            )
 
     def test_lens2_customer_migration_reconciliation(self):
         """Verify customer migration counts reconcile."""
@@ -432,18 +430,16 @@ class TestLens2StatisticalCorrectness:
             migration_period1 = len(lens2.migration.retained) + len(
                 lens2.migration.churned
             )
-            assert (
-                period1_count == migration_period1
-            ), f"Period 1 count mismatch: {period1_count} != {migration_period1}"
+            assert period1_count == migration_period1, (
+                f"Period 1 count mismatch: {period1_count} != {migration_period1}"
+            )
 
             # Period 2 customers = retained + new
             period2_count = len(q2_rfm)
-            migration_period2 = len(lens2.migration.retained) + len(
-                lens2.migration.new
+            migration_period2 = len(lens2.migration.retained) + len(lens2.migration.new)
+            assert period2_count == migration_period2, (
+                f"Period 2 count mismatch: {period2_count} != {migration_period2}"
             )
-            assert (
-                period2_count == migration_period2
-            ), f"Period 2 count mismatch: {period2_count} != {migration_period2}"
 
 
 @pytest.mark.slow
@@ -482,7 +478,7 @@ class TestPerformanceBenchmarks:
 
         start_time = time.time()
         if jan_periods:
-            jan_rfm = calculate_rfm(
+            calculate_rfm(
                 jan_periods,
                 observation_end=datetime(2023, 1, 31, 23, 59, 59, tzinfo=timezone.utc),
             )
@@ -492,12 +488,12 @@ class TestPerformanceBenchmarks:
         print(f"1,000 customers - RFM calculation: {rfm_time:.2f}s")
 
         # Performance assertions
-        assert (
-            build_time < 5.0
-        ), f"Data mart build too slow: {build_time:.2f}s (expected < 5s)"
-        assert (
-            rfm_time < 1.0
-        ), f"RFM calculation too slow: {rfm_time:.2f}s (expected < 1s)"
+        assert build_time < 5.0, (
+            f"Data mart build too slow: {build_time:.2f}s (expected < 5s)"
+        )
+        assert rfm_time < 1.0, (
+            f"RFM calculation too slow: {rfm_time:.2f}s (expected < 1s)"
+        )
 
     def test_lens1_performance_1000_customers(self):
         """Benchmark Lens 1 analysis with 1,000 customers."""
@@ -533,14 +529,14 @@ class TestPerformanceBenchmarks:
             )
 
             start_time = time.time()
-            lens1 = analyze_single_period(q1_rfm)
+            analyze_single_period(q1_rfm)
             lens1_time = time.time() - start_time
 
             print(f"\n1,000 customers - Lens 1 analysis: {lens1_time:.2f}s")
 
-            assert (
-                lens1_time < 2.0
-            ), f"Lens 1 analysis too slow: {lens1_time:.2f}s (expected < 2s)"
+            assert lens1_time < 2.0, (
+                f"Lens 1 analysis too slow: {lens1_time:.2f}s (expected < 2s)"
+            )
 
     def test_lens2_performance_1000_customers(self):
         """Benchmark Lens 2 comparison with 1,000 customers."""
@@ -586,14 +582,14 @@ class TestPerformanceBenchmarks:
             )
 
             start_time = time.time()
-            lens2 = analyze_period_comparison(q1_rfm, q2_rfm)
+            analyze_period_comparison(q1_rfm, q2_rfm)
             lens2_time = time.time() - start_time
 
             print(f"\n1,000 customers - Lens 2 comparison: {lens2_time:.2f}s")
 
-            assert (
-                lens2_time < 2.0
-            ), f"Lens 2 comparison too slow: {lens2_time:.2f}s (expected < 2s)"
+            assert lens2_time < 2.0, (
+                f"Lens 2 comparison too slow: {lens2_time:.2f}s (expected < 2s)"
+            )
 
     @pytest.mark.parametrize("n_customers", [100, 500, 1000, 5000])
     def test_scalability_analysis(self, n_customers):
@@ -639,7 +635,7 @@ class TestPerformanceBenchmarks:
         # Time Lens 1 analysis
         start_time = time.time()
         if q1_periods:
-            lens1 = analyze_single_period(q1_rfm)
+            analyze_single_period(q1_rfm)
         lens1_time = time.time() - start_time
 
         print(
@@ -649,9 +645,9 @@ class TestPerformanceBenchmarks:
         # Verify roughly linear scaling
         # For 10x increase in customers, should be < 15x increase in time
         if n_customers == 5000:
-            assert (
-                build_time < 30.0
-            ), f"Data mart build doesn't scale: {build_time:.2f}s for {n_customers} customers"
-            assert (
-                rfm_time < 5.0
-            ), f"RFM doesn't scale: {rfm_time:.2f}s for {n_customers} customers"
+            assert build_time < 30.0, (
+                f"Data mart build doesn't scale: {build_time:.2f}s for {n_customers} customers"
+            )
+            assert rfm_time < 5.0, (
+                f"RFM doesn't scale: {rfm_time:.2f}s for {n_customers} customers"
+            )
