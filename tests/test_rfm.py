@@ -680,3 +680,154 @@ class TestRFMScore:
                 m_score=3,
                 rfm_score="555",  # Should be "543"
             )
+
+
+class TestParallelProcessing:
+    """Test parallel processing functionality in calculate_rfm."""
+
+    def create_test_periods(self, num_customers: int) -> list[PeriodAggregation]:
+        """Helper to create test period aggregations."""
+        periods = []
+        for i in range(num_customers):
+            periods.append(
+                PeriodAggregation(
+                    customer_id=f"C{i}",
+                    period_start=datetime(2023, 1, 1),
+                    period_end=datetime(2023, 12, 31),
+                    total_orders=5,
+                    total_spend=250.0,
+                    total_margin=75.0,
+                    total_quantity=10,
+                )
+            )
+        return periods
+
+    def test_parallel_produces_same_results_as_serial(self):
+        """Parallel processing produces identical results to serial processing."""
+        periods = self.create_test_periods(1000)
+        obs_end = datetime(2024, 1, 15)
+
+        # Calculate using serial processing
+        rfm_serial = calculate_rfm(periods, obs_end, parallel=False)
+
+        # Calculate using parallel processing (force by lowering threshold)
+        rfm_parallel = calculate_rfm(
+            periods, obs_end, parallel=True, parallel_threshold=100
+        )
+
+        # Results should be identical (same order due to sorting)
+        assert len(rfm_serial) == len(rfm_parallel)
+        for serial, parallel in zip(rfm_serial, rfm_parallel):
+            assert serial.customer_id == parallel.customer_id
+            assert serial.recency_days == parallel.recency_days
+            assert serial.frequency == parallel.frequency
+            assert serial.monetary == parallel.monetary
+            assert serial.total_spend == parallel.total_spend
+
+    def test_parallel_flag_disabled(self):
+        """When parallel=False, always uses serial processing."""
+        periods = self.create_test_periods(1000)  # Would normally trigger parallel
+        obs_end = datetime(2024, 1, 15)
+
+        # Should use serial despite being above a low threshold
+        rfm = calculate_rfm(
+            periods, obs_end, parallel=False, parallel_threshold=100
+        )
+
+        assert len(rfm) == 1000
+        assert rfm[0].customer_id == "C0"
+        assert rfm[-1].customer_id == "C999"
+
+    def test_parallel_threshold_respected(self):
+        """Parallel processing only enabled when customer count >= threshold."""
+        periods_small = self.create_test_periods(100)
+        periods_large = self.create_test_periods(200)
+        obs_end = datetime(2024, 1, 15)
+
+        # Below threshold: should use serial
+        rfm_small = calculate_rfm(
+            periods_small, obs_end, parallel=True, parallel_threshold=150
+        )
+        assert len(rfm_small) == 100
+
+        # At/above threshold: should use parallel
+        rfm_large = calculate_rfm(
+            periods_large, obs_end, parallel=True, parallel_threshold=150
+        )
+        assert len(rfm_large) == 200
+
+        # Results should be sorted either way
+        assert rfm_small[0].customer_id == "C0"
+        assert rfm_large[0].customer_id == "C0"
+
+    def test_custom_n_workers(self):
+        """Custom n_workers parameter is respected."""
+        periods = self.create_test_periods(1000)
+        obs_end = datetime(2024, 1, 15)
+
+        # Test with 2 workers
+        rfm_2_workers = calculate_rfm(
+            periods, obs_end, parallel=True, parallel_threshold=100, n_workers=2
+        )
+
+        # Test with 4 workers
+        rfm_4_workers = calculate_rfm(
+            periods, obs_end, parallel=True, parallel_threshold=100, n_workers=4
+        )
+
+        # Results should be identical regardless of worker count
+        assert len(rfm_2_workers) == len(rfm_4_workers) == 1000
+        for rfm2, rfm4 in zip(rfm_2_workers, rfm_4_workers):
+            assert rfm2.customer_id == rfm4.customer_id
+            assert rfm2.recency_days == rfm4.recency_days
+
+    def test_empty_input_with_parallel_enabled(self):
+        """Empty input returns empty list even with parallel enabled."""
+        rfm = calculate_rfm(
+            [], datetime(2024, 1, 15), parallel=True, parallel_threshold=0
+        )
+        assert rfm == []
+
+    def test_single_customer_with_parallel_enabled(self):
+        """Single customer works correctly with parallel processing."""
+        periods = self.create_test_periods(1)
+        obs_end = datetime(2024, 1, 15)
+
+        rfm = calculate_rfm(
+            periods, obs_end, parallel=True, parallel_threshold=1, n_workers=4
+        )
+
+        assert len(rfm) == 1
+        assert rfm[0].customer_id == "C0"
+        assert rfm[0].frequency == 5
+
+    @pytest.mark.slow
+    def test_parallel_performance_benefit(self):
+        """Parallel processing provides performance benefit for large datasets."""
+        import time
+
+        # Create dataset with 100k customers
+        periods = self.create_test_periods(100_000)
+        obs_end = datetime(2024, 1, 15)
+
+        # Measure serial time
+        start_serial = time.time()
+        rfm_serial = calculate_rfm(periods, obs_end, parallel=False)
+        time_serial = time.time() - start_serial
+
+        # Measure parallel time (with 4 workers)
+        start_parallel = time.time()
+        rfm_parallel = calculate_rfm(
+            periods, obs_end, parallel=True, parallel_threshold=10_000, n_workers=4
+        )
+        time_parallel = time.time() - start_parallel
+
+        # Verify results are identical
+        assert len(rfm_serial) == len(rfm_parallel) == 100_000
+
+        # Parallel should be faster (allow some variance for overhead)
+        # We expect ~2-3x speedup with 4 workers, but use conservative 1.2x threshold
+        speedup = time_serial / time_parallel
+        assert (
+            speedup > 1.2
+        ), f"Parallel processing not faster: {time_serial:.2f}s vs {time_parallel:.2f}s (speedup: {speedup:.2f}x)"
