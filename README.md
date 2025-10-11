@@ -100,6 +100,56 @@ print(len(mart.orders))                # e.g., number of aggregated orders
 print({g: len(v) for g, v in mart.periods.items()})  # period aggregates
 ```
 
+## Pandas Integration (Track A)
+
+For users who prefer DataFrame workflows, the `customer_base_audit.pandas` module provides convenience adapters for all Track A components (RFM, Lens 1, Lens 2).
+
+### Quick Start
+```python
+import pandas as pd
+from datetime import datetime
+from customer_base_audit.pandas import calculate_rfm_df, analyze_single_period_df
+
+# Load period data
+periods_df = pd.read_csv('customer_periods.csv')
+
+# Calculate RFM metrics (one line!)
+rfm_df = calculate_rfm_df(periods_df, observation_end=datetime(2023, 12, 31))
+
+# Analyze single period
+lens1_df = analyze_single_period_df(rfm_df)
+
+# Export for Tableau/PowerBI
+rfm_df.to_csv('rfm_scores.csv', index=False)
+lens1_df.to_csv('lens1_metrics.csv', index=False)
+```
+
+### Period Comparison
+```python
+from customer_base_audit.pandas import analyze_period_comparison_df
+
+# Calculate RFM for two periods
+q1_rfm = calculate_rfm_df(q1_periods_df, datetime(2023, 3, 31))
+q2_rfm = calculate_rfm_df(q2_periods_df, datetime(2023, 6, 30))
+
+# Compare periods
+comparison = analyze_period_comparison_df(q1_rfm, q2_rfm)
+
+# Access results as DataFrames
+print(f"Retention: {comparison['metrics']['retention_rate'].iloc[0]}%")
+
+# Analyze churned customers
+churned = comparison['migration'][comparison['migration']['status'] == 'churned']
+churned_rfm = q1_rfm[q1_rfm['customer_id'].isin(churned['customer_id'])]
+print(f"Avg churned customer value: ${churned_rfm['monetary'].mean():.2f}")
+```
+
+**Benefits:**
+- ✅ One-line DataFrame conversions
+- ✅ Native pandas workflows in Jupyter notebooks
+- ✅ Easy export to BI tools (Tableau, PowerBI, etc.)
+- ✅ 100% backward compatible with existing dataclass API
+
 Notes
 - Generators are deterministic for a given `seed` and Python version.
 - `ScenarioConfig` enforces safe parameter ranges; invalid values raise `ValueError`.
