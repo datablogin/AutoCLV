@@ -137,3 +137,30 @@ class TestAnalyzePeriodComparisonDF:
 
         assert dfs["metrics"].iloc[0]["retention_rate"] == 50.0  # 1 of 2 retained
         assert len(dfs["migration"]) == 3  # C1, C2, C3
+
+    def test_empty_period_comparison(self):
+        """Empty period comparison returns correct structure with zero values."""
+        empty_rfm = rfm_to_dataframe([])
+
+        dfs = analyze_period_comparison_df(empty_rfm, empty_rfm)
+
+        # Verify structure is correct
+        assert set(dfs.keys()) == {
+            "metrics",
+            "migration",
+            "period1_summary",
+            "period2_summary",
+        }
+
+        # Metrics should have single row with zero values
+        assert len(dfs["metrics"]) == 1
+        assert dfs["metrics"].iloc[0]["retention_rate"] == 0.0
+        assert dfs["metrics"].iloc[0]["customer_count_change"] == 0
+
+        # Migration should be empty with correct columns
+        assert dfs["migration"].empty
+        assert list(dfs["migration"].columns) == ["customer_id", "status"]
+
+        # Period summaries should have zero customers
+        assert dfs["period1_summary"].iloc[0]["total_customers"] == 0
+        assert dfs["period2_summary"].iloc[0]["total_customers"] == 0

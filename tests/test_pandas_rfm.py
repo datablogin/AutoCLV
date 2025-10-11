@@ -147,6 +147,42 @@ class TestDataFrameToRFM:
 
         assert result == []
 
+    def test_nan_values_raise_error(self):
+        """DataFrame with NaN values raises ValueError."""
+        import numpy as np
+
+        df = pd.DataFrame(
+            {
+                "customer_id": ["C1"],
+                "recency_days": [10],
+                "frequency": [np.nan],  # NaN value
+                "monetary": [50.0],
+                "total_spend": [250.0],
+                "observation_start": [datetime(2023, 1, 1)],
+                "observation_end": [datetime(2023, 12, 31)],
+            }
+        )
+
+        with pytest.raises(ValueError, match="Null/NaN values found"):
+            dataframe_to_rfm(df)
+
+    def test_null_values_raise_error(self):
+        """DataFrame with null values raises ValueError."""
+        df = pd.DataFrame(
+            {
+                "customer_id": ["C1"],
+                "recency_days": [10],
+                "frequency": [5],
+                "monetary": [None],  # Null value
+                "total_spend": [250.0],
+                "observation_start": [datetime(2023, 1, 1)],
+                "observation_end": [datetime(2023, 12, 31)],
+            }
+        )
+
+        with pytest.raises(ValueError, match="Null/NaN values found"):
+            dataframe_to_rfm(df)
+
 
 class TestCalculateRFMDF:
     """Test calculate_rfm_df convenience function."""
@@ -179,6 +215,36 @@ class TestCalculateRFMDF:
         assert "customer_id" in rfm_df.columns
         assert "frequency" in rfm_df.columns
         assert "monetary" in rfm_df.columns
+
+    def test_custom_column_names(self):
+        """Custom column name mapping works correctly."""
+        periods_df = pd.DataFrame(
+            {
+                "client_id": ["C1", "C2"],
+                "start_date": [datetime(2023, 1, 1), datetime(2023, 1, 1)],
+                "end_date": [datetime(2023, 2, 1), datetime(2023, 2, 1)],
+                "order_count": [2, 3],
+                "revenue": [100.0, 200.0],
+                "profit": [30.0, 60.0],
+                "item_count": [5, 8],
+            }
+        )
+
+        rfm_df = calculate_rfm_df(
+            periods_df,
+            datetime(2023, 4, 15),
+            customer_id_col="client_id",
+            period_start_col="start_date",
+            period_end_col="end_date",
+            total_orders_col="order_count",
+            total_spend_col="revenue",
+            total_margin_col="profit",
+            total_quantity_col="item_count",
+        )
+
+        assert len(rfm_df) == 2
+        assert "customer_id" in rfm_df.columns
+        assert set(rfm_df["customer_id"]) == {"C1", "C2"}
 
     @pytest.mark.slow
     def test_performance_10k_customers(self):

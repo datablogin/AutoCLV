@@ -62,14 +62,25 @@ def dataframe_to_rfm(rfm_df: pd.DataFrame) -> List[RFMMetrics]:
         rfm_df: DataFrame with RFM columns
 
     Returns:
-        List of validated RFMMetrics objects
+        List of validated RFMMetrics objects with schema:
+        - customer_id: str
+        - recency_days: int
+        - frequency: int
+        - monetary: float (converted to Decimal)
+        - total_spend: float (converted to Decimal)
+        - observation_start: datetime64[ns] (converted to datetime)
+        - observation_end: datetime64[ns] (converted to datetime)
 
     Raises:
-        ValueError: If DataFrame missing required columns or has invalid data
+        ValueError: If DataFrame missing required columns, has null values, or invalid data
 
     Example:
         >>> rfm_metrics = dataframe_to_rfm(rfm_df)
         >>> lens1 = analyze_single_period(rfm_metrics)
+
+    Note:
+        Output is sorted by customer_id (lexicographic order). For numeric IDs,
+        "C2" < "C10" in the sort order.
     """
     required_cols = [
         "customer_id",
@@ -88,19 +99,30 @@ def dataframe_to_rfm(rfm_df: pd.DataFrame) -> List[RFMMetrics]:
     if rfm_df.empty:
         return []
 
+    # Validate for null/NaN values
+    null_cols = rfm_df[required_cols].isnull().any()
+    if null_cols.any():
+        null_col_names = null_cols[null_cols].index.tolist()
+        raise ValueError(
+            f"Null/NaN values found in columns: {null_col_names}. "
+            "RFM calculations require complete data."
+        )
+
     rfm_metrics = []
-    for _, row in rfm_df.iterrows():
+    for record in rfm_df.to_dict("records"):
         rfm_metrics.append(
             RFMMetrics(
-                customer_id=str(row["customer_id"]),
-                recency_days=int(row["recency_days"]),
-                frequency=int(row["frequency"]),
-                monetary=float_to_decimal(row["monetary"]),
+                customer_id=str(record["customer_id"]),
+                recency_days=int(record["recency_days"]),
+                frequency=int(record["frequency"]),
+                monetary=float_to_decimal(record["monetary"]),
                 observation_start=pd.to_datetime(
-                    row["observation_start"]
+                    record["observation_start"]
                 ).to_pydatetime(),
-                observation_end=pd.to_datetime(row["observation_end"]).to_pydatetime(),
-                total_spend=float_to_decimal(row["total_spend"]),
+                observation_end=pd.to_datetime(
+                    record["observation_end"]
+                ).to_pydatetime(),
+                total_spend=float_to_decimal(record["total_spend"]),
             )
         )
 
@@ -124,15 +146,29 @@ def dataframe_to_period_aggregations(
         *_col: Column name mappings for flexibility
 
     Returns:
-        List of PeriodAggregation objects
+        List of PeriodAggregation objects with mapped schema:
+        - customer_id: str (from customer_id_col)
+        - period_start: datetime64[ns] (from period_start_col, converted to datetime)
+        - period_end: datetime64[ns] (from period_end_col, converted to datetime)
+        - total_orders: int (from total_orders_col)
+        - total_spend: float (from total_spend_col)
+        - total_margin: float (from total_margin_col)
+        - total_quantity: int (from total_quantity_col)
 
     Raises:
-        ValueError: If DataFrame missing required columns
+        ValueError: If DataFrame missing required columns, has null values, or invalid data
 
     Example:
         >>> periods_df = pd.read_csv('customer_periods.csv')
         >>> periods = dataframe_to_period_aggregations(periods_df)
         >>> rfm = calculate_rfm(periods, datetime(2023, 12, 31))
+
+    Example with custom column names:
+        >>> periods = dataframe_to_period_aggregations(
+        ...     df,
+        ...     customer_id_col='client_id',
+        ...     total_spend_col='revenue'
+        ... )
     """
     required_mapping = {
         "customer_id": customer_id_col,
@@ -151,17 +187,27 @@ def dataframe_to_period_aggregations(
     if periods_df.empty:
         return []
 
+    # Validate for null/NaN values
+    required_cols = list(required_mapping.values())
+    null_cols = periods_df[required_cols].isnull().any()
+    if null_cols.any():
+        null_col_names = null_cols[null_cols].index.tolist()
+        raise ValueError(
+            f"Null/NaN values found in columns: {null_col_names}. "
+            "Period aggregations require complete data."
+        )
+
     periods = []
-    for _, row in periods_df.iterrows():
+    for record in periods_df.to_dict("records"):
         periods.append(
             PeriodAggregation(
-                customer_id=str(row[customer_id_col]),
-                period_start=pd.to_datetime(row[period_start_col]).to_pydatetime(),
-                period_end=pd.to_datetime(row[period_end_col]).to_pydatetime(),
-                total_orders=int(row[total_orders_col]),
-                total_spend=float(row[total_spend_col]),
-                total_margin=float(row[total_margin_col]),
-                total_quantity=int(row[total_quantity_col]),
+                customer_id=str(record[customer_id_col]),
+                period_start=pd.to_datetime(record[period_start_col]).to_pydatetime(),
+                period_end=pd.to_datetime(record[period_end_col]).to_pydatetime(),
+                total_orders=int(record[total_orders_col]),
+                total_spend=float(record[total_spend_col]),
+                total_margin=float(record[total_margin_col]),
+                total_quantity=int(record[total_quantity_col]),
             )
         )
 
