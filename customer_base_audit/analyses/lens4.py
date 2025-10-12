@@ -353,6 +353,187 @@ def calculate_cohort_decomposition(
     )
 
 
+def calculate_time_to_second_purchase(
+    cohort_id: str,
+    cohort_size: int,
+    customer_periods: dict[str, list[PeriodAggregation]],
+) -> TimeToSecondPurchase:
+    """Calculate time to second purchase distribution for a cohort.
+
+    Parameters
+    ----------
+    cohort_id:
+        Cohort identifier
+    cohort_size:
+        Total number of customers in cohort
+    customer_periods:
+        Dict mapping customer_id to their sorted periods (for this cohort only)
+
+    Returns
+    -------
+    TimeToSecondPurchase:
+        Time to second purchase analysis
+
+    Notes
+    -----
+    Approximation: We use period boundaries to estimate time to second purchase.
+    Actual days = (second_period.period_start - first_period.period_start).days
+    This is less precise than using exact transaction timestamps, but works with
+    the data mart architecture.
+    """
+    customers_with_repeat = 0
+    days_to_second: list[int] = []
+
+    for customer_id, periods in customer_periods.items():
+        if len(periods) >= 2:
+            customers_with_repeat += 1
+            first_period_start = periods[0].period_start
+            second_period_start = periods[1].period_start
+            days = (second_period_start - first_period_start).days
+            days_to_second.append(days)
+
+    # Calculate repeat rate
+    if cohort_size > 0:
+        repeat_rate = (
+            Decimal(str(customers_with_repeat)) / Decimal(str(cohort_size)) * 100
+        ).quantize(PERCENTAGE_PRECISION, rounding=ROUND_HALF_UP)
+    else:
+        repeat_rate = Decimal("0.00")
+
+    # Calculate median and mean
+    if days_to_second:
+        days_sorted = sorted(days_to_second)
+        n = len(days_sorted)
+        if n % 2 == 0:
+            median_days = Decimal(
+                str((days_sorted[n // 2 - 1] + days_sorted[n // 2]) / 2)
+            ).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
+        else:
+            median_days = Decimal(str(days_sorted[n // 2])).quantize(
+                Decimal("0.01"), rounding=ROUND_HALF_UP
+            )
+
+        mean_days = (Decimal(str(sum(days_to_second))) / Decimal(str(n))).quantize(
+            Decimal("0.01"), rounding=ROUND_HALF_UP
+        )
+    else:
+        median_days = Decimal("0.00")
+        mean_days = Decimal("0.00")
+
+    # Calculate cumulative repeat by period
+    cumulative_repeat_by_period: dict[int, Decimal] = {}
+    max_periods = (
+        max(len(periods) for periods in customer_periods.values())
+        if customer_periods
+        else 0
+    )
+
+    for period_num in range(max_periods):
+        customers_repeated_by_period = sum(
+            1 for periods in customer_periods.values() if len(periods) > period_num + 1
+        )
+        if cohort_size > 0:
+            cumulative_pct = (
+                Decimal(str(customers_repeated_by_period))
+                / Decimal(str(cohort_size))
+                * 100
+            ).quantize(PERCENTAGE_PRECISION, rounding=ROUND_HALF_UP)
+        else:
+            cumulative_pct = Decimal("0.00")
+        cumulative_repeat_by_period[period_num] = cumulative_pct
+
+    return TimeToSecondPurchase(
+        cohort_id=cohort_id,
+        customers_with_repeat=customers_with_repeat,
+        repeat_rate=repeat_rate,
+        median_days=median_days,
+        mean_days=mean_days,
+        cumulative_repeat_by_period=cumulative_repeat_by_period,
+    )
+
+
+def compare_cohort_pair(
+    cohort_a_decomp: CohortDecomposition,
+    cohort_b_decomp: CohortDecomposition,
+) -> CohortComparison:
+    """Compare two cohorts at equivalent lifecycle stage.
+
+    Parameters
+    ----------
+    cohort_a_decomp:
+        Decomposition for cohort A at period N
+    cohort_b_decomp:
+        Decomposition for cohort B at period N (same period_number)
+
+    Returns
+    -------
+    CohortComparison:
+        Pairwise comparison metrics
+
+    Raises
+    ------
+    ValueError:
+        If cohorts are at different period numbers
+    """
+    if cohort_a_decomp.period_number != cohort_b_decomp.period_number:
+        raise ValueError(
+            f"Cannot compare cohorts at different periods: "
+            f"{cohort_a_decomp.period_number} != {cohort_b_decomp.period_number}"
+        )
+
+    period_number = cohort_a_decomp.period_number
+
+    # Calculate deltas
+    pct_active_delta = cohort_b_decomp.pct_active - cohort_a_decomp.pct_active
+    aof_delta = cohort_b_decomp.aof - cohort_a_decomp.aof
+    aov_delta = cohort_b_decomp.aov - cohort_a_decomp.aov
+
+    # Revenue per customer
+    revenue_per_customer_a = (
+        cohort_a_decomp.total_revenue / Decimal(str(cohort_a_decomp.cohort_size))
+        if cohort_a_decomp.cohort_size > 0
+        else Decimal("0.00")
+    )
+    revenue_per_customer_b = (
+        cohort_b_decomp.total_revenue / Decimal(str(cohort_b_decomp.cohort_size))
+        if cohort_b_decomp.cohort_size > 0
+        else Decimal("0.00")
+    )
+    revenue_delta = revenue_per_customer_b - revenue_per_customer_a
+
+    # Calculate percentage changes
+    def calc_pct_change(old: Decimal, new: Decimal) -> Decimal:
+        if old > Decimal("0"):
+            return ((new - old) / old * 100).quantize(
+                PERCENTAGE_PRECISION, rounding=ROUND_HALF_UP
+            )
+        elif new > Decimal("0"):
+            return Decimal("100.00")  # Went from 0 to positive
+        else:
+            return Decimal("0.00")  # Both are 0
+
+    pct_active_change_pct = calc_pct_change(
+        cohort_a_decomp.pct_active, cohort_b_decomp.pct_active
+    )
+    aof_change_pct = calc_pct_change(cohort_a_decomp.aof, cohort_b_decomp.aof)
+    aov_change_pct = calc_pct_change(cohort_a_decomp.aov, cohort_b_decomp.aov)
+    revenue_change_pct = calc_pct_change(revenue_per_customer_a, revenue_per_customer_b)
+
+    return CohortComparison(
+        cohort_a_id=cohort_a_decomp.cohort_id,
+        cohort_b_id=cohort_b_decomp.cohort_id,
+        period_number=period_number,
+        pct_active_delta=pct_active_delta,
+        aof_delta=aof_delta,
+        aov_delta=aov_delta,
+        revenue_delta=revenue_delta,
+        pct_active_change_pct=pct_active_change_pct,
+        aof_change_pct=aof_change_pct,
+        aov_change_pct=aov_change_pct,
+        revenue_change_pct=revenue_change_pct,
+    )
+
+
 def compare_cohorts(
     period_aggregations: Sequence[PeriodAggregation],
     cohort_assignments: dict[str, str],  # customer_id -> cohort_id
@@ -448,12 +629,6 @@ def compare_cohorts(
             f"alignment_type must be 'left-aligned' or 'time-aligned', got '{alignment_type}'"
         )
 
-    # Phase 1: Only left-aligned is implemented
-    if alignment_type == "time-aligned":
-        raise NotImplementedError(
-            "Time-aligned comparison not yet implemented (Phase 2)"
-        )
-
     # Handle empty inputs gracefully
     if not period_aggregations or not cohort_assignments:
         return Lens4Metrics(
@@ -482,21 +657,35 @@ def compare_cohorts(
     for customer_id, cohort_id in cohort_assignments.items():
         cohort_sizes[cohort_id] = cohort_sizes.get(cohort_id, 0) + 1
 
-    # Calculate decompositions per cohort-period (left-aligned)
-    # Left-aligned: period 0 = acquisition period, 1 = next period, etc.
+    # Calculate decompositions per cohort-period
     cohort_decompositions: list[CohortDecomposition] = []
     cohort_period_data: dict[tuple[str, int], list[PeriodAggregation]] = {}
 
-    # Group periods by cohort and relative period number
-    for customer_id, cohort_id in cohort_assignments.items():
-        customer_periods = periods_by_customer.get(customer_id, [])
-        if not customer_periods:
-            continue
+    if alignment_type == "left-aligned":
+        # Left-aligned: period 0 = acquisition period, 1 = next period, etc.
+        # Group periods by cohort and relative period number
+        for customer_id, cohort_id in cohort_assignments.items():
+            customer_periods = periods_by_customer.get(customer_id, [])
+            if not customer_periods:
+                continue
 
-        # First period is period 0 (acquisition)
-        for period_idx, period in enumerate(customer_periods):
-            key = (cohort_id, period_idx)
-            cohort_period_data.setdefault(key, []).append(period)
+            # First period is period 0 (acquisition)
+            for period_idx, period in enumerate(customer_periods):
+                key = (cohort_id, period_idx)
+                cohort_period_data.setdefault(key, []).append(period)
+    else:  # time-aligned
+        # Time-aligned: period 0 = first calendar period globally, 1 = second, etc.
+        # Determine all unique period starts
+        all_period_starts = sorted(set(p.period_start for p in period_aggregations))
+        period_start_to_idx = {ps: idx for idx, ps in enumerate(all_period_starts)}
+
+        # Group periods by cohort and absolute period index
+        for customer_id, cohort_id in cohort_assignments.items():
+            customer_periods = periods_by_customer.get(customer_id, [])
+            for period in customer_periods:
+                period_idx = period_start_to_idx[period.period_start]
+                key = (cohort_id, period_idx)
+                cohort_period_data.setdefault(key, []).append(period)
 
     # Calculate decomposition for each cohort-period
     for (cohort_id, period_num), periods in sorted(cohort_period_data.items()):
@@ -510,13 +699,44 @@ def compare_cohorts(
         )
         cohort_decompositions.append(decomp)
 
-    # Placeholder for time-to-second-purchase and cohort comparisons (Phase 2)
-    time_to_second_purchase: list[TimeToSecondPurchase] = []
-    cohort_comparisons: list[CohortComparison] = []
+    # Calculate time to second purchase for each cohort
+    time_to_second_purchase_list: list[TimeToSecondPurchase] = []
+    for cohort_id, cohort_size in sorted(cohort_sizes.items()):
+        # Get customer periods for this cohort
+        cohort_customer_periods: dict[str, list[PeriodAggregation]] = {}
+        for customer_id, cid in cohort_assignments.items():
+            if cid == cohort_id:
+                customer_periods = periods_by_customer.get(customer_id, [])
+                if customer_periods:
+                    cohort_customer_periods[customer_id] = customer_periods
+
+        ttsp = calculate_time_to_second_purchase(
+            cohort_id=cohort_id,
+            cohort_size=cohort_size,
+            customer_periods=cohort_customer_periods,
+        )
+        time_to_second_purchase_list.append(ttsp)
+
+    # Calculate pairwise comparisons between cohorts at same periods
+    cohort_comparisons_list: list[CohortComparison] = []
+    if alignment_type == "left-aligned":
+        # Group decompositions by period_number
+        decomps_by_period: dict[int, list[CohortDecomposition]] = {}
+        for decomp in cohort_decompositions:
+            decomps_by_period.setdefault(decomp.period_number, []).append(decomp)
+
+        # For each period, compare all cohort pairs
+        for period_num, decomps in sorted(decomps_by_period.items()):
+            if len(decomps) < 2:
+                continue
+            # Compare consecutive cohorts (assumes cohorts are chronologically sorted)
+            for i in range(len(decomps) - 1):
+                comparison = compare_cohort_pair(decomps[i], decomps[i + 1])
+                cohort_comparisons_list.append(comparison)
 
     return Lens4Metrics(
         cohort_decompositions=cohort_decompositions,
-        time_to_second_purchase=time_to_second_purchase,
-        cohort_comparisons=cohort_comparisons,
+        time_to_second_purchase=time_to_second_purchase_list,
+        cohort_comparisons=cohort_comparisons_list,
         alignment_type=alignment_type,
     )
