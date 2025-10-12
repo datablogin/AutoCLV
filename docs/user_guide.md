@@ -1099,13 +1099,15 @@ Period 3:
 **Important Note on Cumulative Activation Rate:**
 The `cumulative_activation_rate` tracks the percentage of the cohort that has made **at least one purchase since acquisition** (ever-active customers). This metric is **monotonically non-decreasing** - it will never go down because once a customer has made a purchase, they are counted in all future periods.
 
-This is **different from period-specific retention**, which measures what percentage of customers are **active in each specific period** (and can decrease). Period-specific retention would show: 100% → 80% → 72.9% → 68.2% in this example, reflecting the declining number of active customers per period.
+In this example, cumulative activation is 100% in Period 0 because all customers made their acquisition purchase in that period - Period 0 represents the acquisition period itself where the cohort was first identified.
+
+This is **different from period-specific retention**, which measures what percentage of customers are **active in each specific period** (and can decrease). Period-specific retention would show: 100% → 80% → 72.9% → 68.2% in this example, reflecting the declining number of active customers per period. For period-specific retention analysis, see **Lens 2: Period-to-Period Comparison**, which tracks active customers across consecutive periods.
 
 **Interpretation:** This cohort shows the typical pattern where cumulative activation reaches 100% in Period 0 (all customers made their acquisition purchase) and stays at 100% for subsequent periods. The declining active customer count (85 → 68 → 62 → 58) indicates churn, but customers who purchased in any period remain in the cumulative activation count.
 
-#### Common Cohort Patterns
+#### Common Cohort Patterns (Active Customer Trends)
 
-**Note:** These patterns refer to the number of **active customers per period**, not the cumulative activation rate (which stays at 100% once all customers have made their first purchase).
+**Important:** The patterns below refer to **period-specific active customer counts**, not cumulative activation rate. Cumulative activation stays at 100% once all customers have made their first purchase, so these patterns focus on how many customers remain active in each period.
 
 1. **High Period 0 active customers, steep Period 1 drop**
    - One-time buyer problem
@@ -1142,13 +1144,18 @@ for cohort_name in cohort_names:
         cohort_customer_ids=cohort_customer_ids
     )
 
-    # Compare Period 1 cumulative activation across cohorts
+    # Compare Period 1 metrics across cohorts
     period1 = lens3.periods[1] if len(lens3.periods) > 1 else None
     if period1:
-        print(f"{cohort_name} Period 1 cumulative activation: {period1.cumulative_activation_rate:.1%}")
+        print(f"{cohort_name} Period 1 - Active: {period1.active_customers}, "
+              f"Revenue/Customer: ${period1.avg_revenue_per_customer:.2f}")
 ```
 
-This helps identify if customer engagement patterns are changing across cohorts acquired at different times.
+**Note on Cohort Comparison:**
+When comparing cohorts, focus on **active customer counts** and **revenue per customer** rather than cumulative activation rate. Cumulative activation rate (being monotonically non-decreasing) is less useful for detecting engagement changes across cohorts. Instead, compare:
+- Active customer counts in each period (shows retention differences)
+- Average revenue per customer (shows monetization differences)
+- Total cohort revenue (shows overall cohort value)
 
 #### See Also
 
