@@ -37,6 +37,25 @@ class CohortDecomposition:
 
     Revenue = cohort_size × pct_active × aof × aov × margin
 
+    IMPORTANT: Revenue Reconciliation
+    ---------------------------------
+    The decomposed `revenue` field will typically NOT equal `total_revenue` due to
+    customer heterogeneity. This is expected and mathematically correct.
+
+    - **total_revenue**: Actual revenue from transactions (use for reporting)
+    - **revenue**: Decomposed revenue using cohort averages (use for trend analysis)
+
+    Example: If cohort has 2 customers:
+    - Customer A: 1 order × $10 = $10
+    - Customer B: 10 orders × $1000 = $10,000
+    - total_revenue = $10,010 (actual)
+    - revenue = 2 × 100% active × 5.5 AOF × $505 AOV = $5,555 (decomposed)
+
+    Discrepancy: 45% difference due to heterogeneity.
+    Expect 10-30% discrepancy in real-world data.
+
+    See tests/test_lens4.py::test_revenue_reconciliation_with_heterogeneous_customers
+
     Attributes
     ----------
     cohort_id:
@@ -55,19 +74,14 @@ class CohortDecomposition:
     aof:
         Average Order Frequency (orders per active customer)
     total_revenue:
-        Total revenue from cohort in this period
+        Total revenue from cohort in this period (ACTUAL revenue - use for reporting)
     aov:
         Average Order Value (revenue per order)
     margin:
         Average profit margin percentage (0-100), defaults to 100 for revenue-only
     revenue:
         Calculated revenue: cohort_size × (pct_active/100) × aof × aov × (margin/100)
-
-        Note: This averaging-based decomposition will typically NOT equal total_revenue
-        due to customer heterogeneity (some customers order 1x at $10, others 10x at
-        $1000). The decomposition uses cohort-level averages (AOF, AOV) which smooth
-        over individual variations. Expect 10-30% discrepancy in real-world data.
-        Use total_revenue for actual amounts; use revenue for trend analysis.
+        (DECOMPOSED revenue - use for trend analysis and identifying drivers)
     """
 
     cohort_id: str
@@ -374,6 +388,17 @@ def calculate_time_to_second_purchase(
     TimeToSecondPurchase:
         Time to second purchase analysis
 
+    Warnings
+    --------
+    This function uses period boundaries to approximate time to second purchase,
+    not actual transaction timestamps. For monthly periods, expect ±15 day
+    accuracy on average. For weekly periods, expect ±3.5 day accuracy.
+
+    Example: If a customer purchases on Jan 31 (period 1) and Feb 1 (period 2),
+    this function reports 31 days when actual time was 1 day.
+
+    For precise timing analysis, use transaction-level data with exact timestamps.
+
     Notes
     -----
     Approximation: We use period boundaries to estimate time to second purchase.
@@ -381,6 +406,20 @@ def calculate_time_to_second_purchase(
     This is less precise than using exact transaction timestamps, but works with
     the data mart architecture.
     """
+    # Log warning about approximation accuracy
+    if customer_periods:
+        # Estimate period length from first customer's first two periods
+        sample_customer = next(iter(customer_periods.values()))
+        if len(sample_customer) >= 2:
+            period_length_days = (
+                sample_customer[1].period_start - sample_customer[0].period_start
+            ).days
+            logger.warning(
+                f"Time-to-second-purchase for cohort {cohort_id} calculated using "
+                f"period boundaries. Expected accuracy: ±{period_length_days // 2} days. "
+                f"Use transaction timestamps for precise timing analysis."
+            )
+
     customers_with_repeat = 0
     days_to_second: list[int] = []
 
@@ -503,6 +542,15 @@ def compare_cohort_pair(
 
     # Calculate percentage changes
     def calc_pct_change(old: Decimal, new: Decimal) -> Decimal:
+        """Calculate percentage change with edge case handling.
+
+        Edge cases:
+        - old > 0: Normal percentage change formula
+        - old == 0, new > 0: Returns 100% (cannot calculate true % change from 0)
+          Note: This means 0→0.01 and 0→1000 both show 100% change.
+          Consider using absolute deltas for trend analysis in these cases.
+        - old == 0, new == 0: Returns 0% (no change)
+        """
         if old > Decimal("0"):
             return ((new - old) / old * 100).quantize(
                 PERCENTAGE_PRECISION, rounding=ROUND_HALF_UP
@@ -567,7 +615,11 @@ def compare_cohorts(
     -------
     Lens4Metrics:
         Multi-cohort comparison results including revenue decomposition,
-        time to second purchase, and cohort-to-cohort comparisons
+        time to second purchase, and cohort-to-cohort comparisons.
+
+        Note: cohort_comparisons will be empty for time-aligned mode, as
+        comparing cohorts at different lifecycle stages is not meaningful.
+        Use left-aligned mode for cohort quality comparisons.
 
     Raises
     ------
@@ -657,6 +709,16 @@ def compare_cohorts(
     for customer_id, cohort_id in cohort_assignments.items():
         cohort_sizes[cohort_id] = cohort_sizes.get(cohort_id, 0) + 1
 
+    # Warn about small cohorts (unreliable statistics)
+    for cohort_id, cohort_size in cohort_sizes.items():
+        if cohort_size < MIN_COHORT_SIZE:
+            logger.warning(
+                f"Cohort {cohort_id} has only {cohort_size} customers "
+                f"(minimum {MIN_COHORT_SIZE} recommended for reliable statistics). "
+                f"Metrics may be unstable: median/mean calculations, percentage changes, "
+                f"and comparisons should be interpreted with caution."
+            )
+
     # Calculate decompositions per cohort-period
     cohort_decompositions: list[CohortDecomposition] = []
     cohort_period_data: dict[tuple[str, int], list[PeriodAggregation]] = {}
@@ -699,16 +761,21 @@ def compare_cohorts(
         )
         cohort_decompositions.append(decomp)
 
+    # Pre-group customers by cohort for efficient lookup
+    customers_by_cohort: dict[str, list[str]] = {}
+    for customer_id, cohort_id in cohort_assignments.items():
+        customers_by_cohort.setdefault(cohort_id, []).append(customer_id)
+
     # Calculate time to second purchase for each cohort
     time_to_second_purchase_list: list[TimeToSecondPurchase] = []
     for cohort_id, cohort_size in sorted(cohort_sizes.items()):
-        # Get customer periods for this cohort
-        cohort_customer_periods: dict[str, list[PeriodAggregation]] = {}
-        for customer_id, cid in cohort_assignments.items():
-            if cid == cohort_id:
-                customer_periods = periods_by_customer.get(customer_id, [])
-                if customer_periods:
-                    cohort_customer_periods[customer_id] = customer_periods
+        # Get customer periods for this cohort (optimized lookup)
+        customer_ids = customers_by_cohort.get(cohort_id, [])
+        cohort_customer_periods: dict[str, list[PeriodAggregation]] = {
+            cid: periods_by_customer.get(cid, [])
+            for cid in customer_ids
+            if periods_by_customer.get(cid)
+        }
 
         ttsp = calculate_time_to_second_purchase(
             cohort_id=cohort_id,
@@ -729,10 +796,22 @@ def compare_cohorts(
         for period_num, decomps in sorted(decomps_by_period.items()):
             if len(decomps) < 2:
                 continue
-            # Compare consecutive cohorts (assumes cohorts are chronologically sorted)
+            # Compare consecutive cohorts.
+            # NOTE: Comparisons assume cohort_ids are lexicographically sortable in
+            # chronological order (e.g., "2024-01", "2024-02", "2024-03").
+            # If your cohort_ids don't sort this way (e.g., "2024-Q1", "2024-Q2" with
+            # "Q10" < "Q2"), comparisons may be incorrect. Ensure cohort_id naming
+            # convention supports lexicographic sorting or pre-sort by acquisition date.
             for i in range(len(decomps) - 1):
                 comparison = compare_cohort_pair(decomps[i], decomps[i + 1])
                 cohort_comparisons_list.append(comparison)
+    else:  # time-aligned
+        logger.info(
+            "Cohort comparisons not supported for time-aligned mode. "
+            "Time-aligned mode shows cohorts at different lifecycle stages within "
+            "the same calendar period, making direct comparisons less meaningful. "
+            "Use left-aligned mode to compare cohorts at equivalent lifecycle stages."
+        )
 
     return Lens4Metrics(
         cohort_decompositions=cohort_decompositions,

@@ -1007,3 +1007,42 @@ class TestPhase2Integration:
         assert len(metrics.cohort_comparisons) > 0
         comparison = metrics.cohort_comparisons[0]
         assert comparison.period_number == 0  # Both at acquisition period
+
+    def test_compare_cohorts_time_aligned_no_comparisons(self):
+        """Verify time-aligned mode doesn't produce cohort comparisons."""
+        period_data = [
+            # Cohort A in Jan
+            PeriodAggregation(
+                "cust1",
+                datetime(2024, 1, 1),
+                datetime(2024, 2, 1),
+                2,
+                100.0,
+                20.0,
+                5,
+            ),
+            # Cohort B in Feb
+            PeriodAggregation(
+                "cust2",
+                datetime(2024, 2, 1),
+                datetime(2024, 3, 1),
+                3,
+                150.0,
+                30.0,
+                7,
+            ),
+        ]
+
+        cohort_assignments = {
+            "cust1": "2024-Q1",
+            "cust2": "2024-Q2",
+        }
+
+        metrics = compare_cohorts(
+            period_data, cohort_assignments, alignment_type="time-aligned"
+        )
+
+        # Time-aligned mode should not produce cohort comparisons
+        # because cohorts are at different lifecycle stages
+        assert len(metrics.cohort_comparisons) == 0
+        assert metrics.alignment_type == "time-aligned"
