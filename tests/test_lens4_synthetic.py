@@ -109,26 +109,34 @@ def main():
     # Show some decompositions
     print("\n  Sample Cohort Decompositions (first 5):")
     for decomp in metrics_left.cohort_decompositions[:5]:
-        print(f"    {decomp.cohort_id} Period {decomp.period_number}: "
-              f"{decomp.active_customers}/{decomp.cohort_size} active "
-              f"({decomp.pct_active}%), "
-              f"AOF={decomp.aof}, AOV=${decomp.aov}, "
-              f"Revenue=${decomp.total_revenue}")
+        print(
+            f"    {decomp.cohort_id} Period {decomp.period_number}: "
+            f"{decomp.active_customers}/{decomp.cohort_size} active "
+            f"({decomp.pct_active}%), "
+            f"AOF={decomp.aof}, AOV=${decomp.aov}, "
+            f"Revenue=${decomp.total_revenue}"
+        )
 
     # Show time to second purchase
     print("\n  Time to Second Purchase Analysis:")
     for ttsp in metrics_left.time_to_second_purchase:
-        print(f"    {ttsp.cohort_id}: "
-              f"{ttsp.customers_with_repeat} repeated ({ttsp.repeat_rate}%), "
-              f"Median={ttsp.median_days} days, Mean={ttsp.mean_days} days")
+        print(
+            f"    {ttsp.cohort_id}: "
+            f"{ttsp.customers_with_repeat} repeated ({ttsp.repeat_rate}%), "
+            f"Median={ttsp.median_days} days, Mean={ttsp.mean_days} days"
+        )
 
     # Show cohort comparisons
     print("\n  Cohort Comparisons (first 5):")
     for comp in metrics_left.cohort_comparisons[:5]:
-        print(f"    {comp.cohort_a_id} vs {comp.cohort_b_id} at Period {comp.period_number}:")
+        print(
+            f"    {comp.cohort_a_id} vs {comp.cohort_b_id} at Period {comp.period_number}:"
+        )
         print(f"      % Active: {comp.pct_active_change_pct}% change")
         print(f"      AOF: {comp.aof_change_pct}% change")
-        print(f"      Revenue/Customer: ${comp.revenue_delta} ({comp.revenue_change_pct}%)")
+        print(
+            f"      Revenue/Customer: ${comp.revenue_delta} ({comp.revenue_change_pct}%)"
+        )
 
     # Test TIME-ALIGNED comparison
     print("\n" + "=" * 80)
@@ -150,20 +158,28 @@ def main():
     # Show some decompositions
     print("\n  Sample Cohort Decompositions (first 5):")
     for decomp in metrics_time.cohort_decompositions[:5]:
-        print(f"    {decomp.cohort_id} Period {decomp.period_number}: "
-              f"{decomp.active_customers}/{decomp.cohort_size} active "
-              f"({decomp.pct_active}%), "
-              f"AOF={decomp.aof}, AOV=${decomp.aov}, "
-              f"Revenue=${decomp.total_revenue}")
+        print(
+            f"    {decomp.cohort_id} Period {decomp.period_number}: "
+            f"{decomp.active_customers}/{decomp.cohort_size} active "
+            f"({decomp.pct_active}%), "
+            f"AOF={decomp.aof}, AOV=${decomp.aov}, "
+            f"Revenue=${decomp.total_revenue}"
+        )
 
     # Verify difference between alignments
     print("\n" + "=" * 80)
     print("VERIFICATION: Left-aligned vs Time-aligned")
     print("=" * 80)
-    print(f"\nLeft-aligned has {len(metrics_left.cohort_decompositions)} decompositions")
+    print(
+        f"\nLeft-aligned has {len(metrics_left.cohort_decompositions)} decompositions"
+    )
     print(f"Time-aligned has {len(metrics_time.cohort_decompositions)} decompositions")
-    print("\nIn time-aligned mode, all cohorts are shown in each calendar period they're active.")
-    print("In left-aligned mode, cohorts are shown by their age (periods since acquisition).")
+    print(
+        "\nIn time-aligned mode, all cohorts are shown in each calendar period they're active."
+    )
+    print(
+        "In left-aligned mode, cohorts are shown by their age (periods since acquisition)."
+    )
 
     # Show period distribution
     left_periods = set(d.period_number for d in metrics_left.cohort_decompositions)
