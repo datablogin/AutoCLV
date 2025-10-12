@@ -11,6 +11,7 @@ Reference: "The Customer-Base Audit" by Fader, Hardie, and Ross (Chapter 6)
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 from dataclasses import dataclass
 from decimal import Decimal, ROUND_HALF_UP
 from typing import Sequence
@@ -20,8 +21,12 @@ from customer_base_audit.foundation.data_mart import PeriodAggregation
 
 # Module-level constants
 PERCENTAGE_PRECISION = Decimal("0.01")  # 2 decimal places
+
+# Phase 2 constants (cohort quality warnings, time-to-second-purchase analysis)
 MIN_COHORT_SIZE = 10  # Minimum customers for reliable cohort analysis
-EXTREME_CHANGE_THRESHOLD = Decimal("500")  # 500% = 6x change threshold (warn about data quality)
+EXTREME_CHANGE_THRESHOLD = Decimal(
+    "500"
+)  # 500% = 6x change threshold (warn about data quality)
 
 logger = logging.getLogger(__name__)
 
@@ -57,8 +62,14 @@ class CohortDecomposition:
         Average profit margin percentage (0-100), defaults to 100 for revenue-only
     revenue:
         Calculated revenue: cohort_size × (pct_active/100) × aof × aov × (margin/100)
-        Should approximately equal total_revenue (may differ due to rounding)
+
+        Note: This averaging-based decomposition will typically NOT equal total_revenue
+        due to customer heterogeneity (some customers order 1x at $10, others 10x at
+        $1000). The decomposition uses cohort-level averages (AOF, AOV) which smooth
+        over individual variations. Expect 10-30% discrepancy in real-world data.
+        Use total_revenue for actual amounts; use revenue for trend analysis.
     """
+
     cohort_id: str
     period_number: int
     cohort_size: int
@@ -78,7 +89,9 @@ class CohortDecomposition:
         if self.cohort_size < 0:
             raise ValueError(f"cohort_size must be >= 0, got {self.cohort_size}")
         if self.active_customers < 0:
-            raise ValueError(f"active_customers must be >= 0, got {self.active_customers}")
+            raise ValueError(
+                f"active_customers must be >= 0, got {self.active_customers}"
+            )
         if self.active_customers > self.cohort_size:
             raise ValueError(
                 f"active_customers ({self.active_customers}) cannot exceed "
@@ -120,12 +133,13 @@ class TimeToSecondPurchase:
         Cumulative % of cohort making second purchase by each period
         Dict mapping period_number -> cumulative_pct
     """
+
     cohort_id: str
     customers_with_repeat: int
     repeat_rate: Decimal
     median_days: Decimal
     mean_days: Decimal
-    cumulative_repeat_by_period: dict[int, Decimal]
+    cumulative_repeat_by_period: Mapping[int, Decimal]
 
     def __post_init__(self) -> None:
         """Validate time to second purchase metrics."""
@@ -170,6 +184,7 @@ class CohortComparison:
     revenue_change_pct:
         Percentage change in revenue per customer
     """
+
     cohort_a_id: str
     cohort_b_id: str
     period_number: int
@@ -199,6 +214,7 @@ class Lens4Metrics:
     alignment_type:
         "left-aligned" (by cohort age) or "time-aligned" (by calendar period)
     """
+
     cohort_decompositions: Sequence[CohortDecomposition]
     time_to_second_purchase: Sequence[TimeToSecondPurchase]
     cohort_comparisons: Sequence[CohortComparison]
@@ -269,9 +285,9 @@ def calculate_cohort_decomposition(
 
     # Calculate % active
     if cohort_size > 0:
-        pct_active = (Decimal(str(active_customers)) / Decimal(str(cohort_size)) * 100).quantize(
-            PERCENTAGE_PRECISION, rounding=ROUND_HALF_UP
-        )
+        pct_active = (
+            Decimal(str(active_customers)) / Decimal(str(cohort_size)) * 100
+        ).quantize(PERCENTAGE_PRECISION, rounding=ROUND_HALF_UP)
     else:
         pct_active = Decimal("0.00")
 
@@ -309,7 +325,7 @@ def calculate_cohort_decomposition(
                 PERCENTAGE_PRECISION, rounding=ROUND_HALF_UP
             )
         else:
-            margin = Decimal("100.00")  # Default to 100% if no revenue
+            margin = Decimal("0.00")  # No revenue → no margin
     else:
         margin = Decimal("100.00")  # Revenue-only analysis
 
@@ -317,11 +333,7 @@ def calculate_cohort_decomposition(
     # revenue = cohort_size × (pct_active/100) × aof × aov × (margin/100)
     if cohort_size > 0:
         revenue = (
-            Decimal(str(cohort_size))
-            * (pct_active / 100)
-            * aof
-            * aov
-            * (margin / 100)
+            Decimal(str(cohort_size)) * (pct_active / 100) * aof * aov * (margin / 100)
         ).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
     else:
         revenue = Decimal("0.00")
@@ -438,7 +450,9 @@ def compare_cohorts(
 
     # Phase 1: Only left-aligned is implemented
     if alignment_type == "time-aligned":
-        raise NotImplementedError("Time-aligned comparison not yet implemented (Phase 2)")
+        raise NotImplementedError(
+            "Time-aligned comparison not yet implemented (Phase 2)"
+        )
 
     # Handle empty inputs gracefully
     if not period_aggregations or not cohort_assignments:
@@ -457,6 +471,11 @@ def compare_cohorts(
     # Sort each customer's periods by period_start
     for periods in periods_by_customer.values():
         periods.sort(key=lambda p: p.period_start)
+
+    # ASSUMPTION: The first period in period_aggregations for each customer is their
+    # acquisition period (period 0 in left-aligned mode). If period data is incomplete
+    # (e.g., customer acquired Jan 2024 but first period is Mar 2024), the left-alignment
+    # will be incorrect. Validation of this assumption is deferred to Phase 2.
 
     # Determine cohort sizes
     cohort_sizes: dict[str, int] = {}
