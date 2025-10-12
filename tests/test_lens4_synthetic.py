@@ -1,7 +1,6 @@
 """Test Lens 4 Phase 2 features with synthetic data."""
 
-from datetime import datetime, timedelta
-from decimal import Decimal
+from datetime import datetime
 
 from customer_base_audit.synthetic import (
     BASELINE_SCENARIO,
@@ -102,7 +101,7 @@ def main():
         include_margin=False,
     )
 
-    print(f"\nResults:")
+    print("\nResults:")
     print(f"  - Cohort decompositions: {len(metrics_left.cohort_decompositions)}")
     print(f"  - Time to second purchase: {len(metrics_left.time_to_second_purchase)}")
     print(f"  - Cohort comparisons: {len(metrics_left.cohort_comparisons)}")
@@ -143,7 +142,7 @@ def main():
         include_margin=False,
     )
 
-    print(f"\nResults:")
+    print("\nResults:")
     print(f"  - Cohort decompositions: {len(metrics_time.cohort_decompositions)}")
     print(f"  - Time to second purchase: {len(metrics_time.time_to_second_purchase)}")
     print(f"  - Cohort comparisons: {len(metrics_time.cohort_comparisons)}")
