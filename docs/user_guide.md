@@ -605,46 +605,53 @@ Evolution by Period:
 
 Period 0:
   Active Customers: 85
-  Retention Rate: 100.00%
+  Cumulative Activation Rate: 100.00%
   Avg Orders per Active Customer: 1.24
   Avg Revenue per Active Customer: $1,452.35
   Total Cohort Revenue: $123,449.75
 
 Period 1:
   Active Customers: 68
-  Retention Rate: 80.00%
+  Cumulative Activation Rate: 100.00%
   Avg Orders per Active Customer: 2.15
   Avg Revenue per Active Customer: $1,823.47
   Total Cohort Revenue: $123,995.96
 
 Period 2:
   Active Customers: 62
-  Retention Rate: 72.94%
+  Cumulative Activation Rate: 100.00%
   Avg Orders per Active Customer: 1.89
   Avg Revenue per Active Customer: $1,654.28
   Total Cohort Revenue: $102,565.36
 
 Period 3:
   Active Customers: 58
-  Retention Rate: 68.24%
+  Cumulative Activation Rate: 100.00%
   Avg Orders per Active Customer: 1.76
   Avg Revenue per Active Customer: $1,598.12
   Total Cohort Revenue: $92,690.96
 ```
 
-**Interpretation:** This cohort shows strong retention with only 20% churn after Period 0, and active customers are increasing their order frequency and spend in Period 1. The gradual retention decay (100% → 80% → 73% → 68%) indicates healthy long-term engagement. Increasing revenue per active customer in Period 1 suggests successful upselling or product expansion.
+**Important Note on Cumulative Activation Rate:**
+The `cumulative_activation_rate` tracks the percentage of the cohort that has made **at least one purchase since acquisition** (ever-active customers). This metric is **monotonically non-decreasing** - it will never go down because once a customer has made a purchase, they are counted in all future periods.
+
+This is **different from period-specific retention**, which measures what percentage of customers are **active in each specific period** (and can decrease). Period-specific retention would show: 100% → 80% → 72.9% → 68.2% in this example, reflecting the declining number of active customers per period.
+
+**Interpretation:** This cohort shows the typical pattern where cumulative activation reaches 100% in Period 0 (all customers made their acquisition purchase) and stays at 100% for subsequent periods. The declining active customer count (85 → 68 → 62 → 58) indicates churn, but customers who purchased in any period remain in the cumulative activation count.
 
 #### Common Cohort Patterns
 
-1. **High Period 0 retention, steep Period 1 drop**
+**Note:** These patterns refer to the number of **active customers per period**, not the cumulative activation rate (which stays at 100% once all customers have made their first purchase).
+
+1. **High Period 0 active customers, steep Period 1 drop**
    - One-time buyer problem
    - Action: Improve post-purchase engagement and second purchase incentives
 
-2. **Gradual retention decay with stable revenue**
+2. **Gradual decline in active customers with stable revenue**
    - Healthy cohort maturation
    - Action: Focus on extending customer lifetime
 
-3. **Retention stable but declining revenue per customer**
+3. **Active customer count stable but declining revenue per customer**
    - Customer fatigue or decreasing engagement
    - Action: Introduce new products or refresh offering
 
@@ -671,13 +678,13 @@ for cohort_name in cohort_names:
         cohort_customer_ids=cohort_customer_ids
     )
 
-    # Compare Period 1 retention across cohorts
+    # Compare Period 1 cumulative activation across cohorts
     period1 = lens3.periods[1] if len(lens3.periods) > 1 else None
     if period1:
-        print(f"{cohort_name} Period 1 retention: {period1.retention_rate:.1%}")
+        print(f"{cohort_name} Period 1 cumulative activation: {period1.cumulative_activation_rate:.1%}")
 ```
 
-This helps identify if retention is improving or declining over time for newer cohorts.
+This helps identify if customer engagement patterns are changing across cohorts acquired at different times.
 
 #### See Also
 
