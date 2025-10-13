@@ -242,6 +242,11 @@ def determine_cohort_quality_trend(
       - If newest <= oldest * 0.9: "declining" (10% worse)
       - Otherwise: "stable"
 
+    Edge Cases:
+    - If oldest repeat_rate is 0:
+      - If newest repeat_rate > 0: "improving" (any positive rate is better than zero)
+      - If newest repeat_rate is also 0: "stable" (no change, both cohorts have 0% repeat rate)
+
     Parameters
     ----------
     cohort_metrics:
@@ -290,11 +295,79 @@ def determine_cohort_quality_trend(
         return "stable"
 
 
+def calculate_revenue_metrics(
+    cohort_revenue_contributions: Sequence[CohortRevenuePeriod],
+    newest_cohort_id: str,
+) -> tuple[Decimal, Decimal]:
+    """Calculate revenue predictability and acquisition dependence in one pass.
+
+    Optimized calculation that computes both metrics from a single iteration
+    over the cohort revenue contributions.
+
+    Formulas:
+        predictability = (total_revenue - newest_cohort_revenue) / total_revenue * 100
+        dependence = newest_cohort_revenue / total_revenue * 100
+
+    Parameters
+    ----------
+    cohort_revenue_contributions:
+        Revenue contributions from all cohorts across all periods
+    newest_cohort_id:
+        ID of the newest cohort (most recent acquisition period)
+
+    Returns
+    -------
+    tuple[Decimal, Decimal]:
+        (revenue_predictability_pct, acquisition_dependence_pct)
+
+    Examples
+    --------
+    >>> contributions = [
+    ...     CohortRevenuePeriod("2023-Q1", datetime(2024, 1, 1), Decimal("10000"), ...),
+    ...     CohortRevenuePeriod("2023-Q2", datetime(2024, 1, 1), Decimal("8000"), ...),
+    ...     CohortRevenuePeriod("2023-Q3", datetime(2024, 1, 1), Decimal("2000"), ...),
+    ... ]
+    >>> calculate_revenue_metrics(contributions, "2023-Q3")
+    (Decimal('90.00'), Decimal('10.00'))  # 90% predictable, 10% dependent
+    """
+    if not cohort_revenue_contributions:
+        return Decimal("0.00"), Decimal("0.00")
+
+    # Calculate revenues in one pass
+    total_revenue = Decimal("0")
+    newest_cohort_revenue = Decimal("0")
+
+    for crp in cohort_revenue_contributions:
+        total_revenue += crp.total_revenue
+        if crp.cohort_id == newest_cohort_id:
+            newest_cohort_revenue += crp.total_revenue
+
+    if total_revenue == 0:
+        return Decimal("0.00"), Decimal("0.00")
+
+    # Calculate predictability (revenue from established cohorts)
+    predictable_revenue = total_revenue - newest_cohort_revenue
+    predictability_pct = (
+        Decimal(predictable_revenue) / Decimal(total_revenue) * 100
+    ).quantize(PERCENTAGE_PRECISION, rounding=ROUND_HALF_UP)
+
+    # Calculate dependence (revenue from newest cohort)
+    dependence_pct = (
+        Decimal(newest_cohort_revenue) / Decimal(total_revenue) * 100
+    ).quantize(PERCENTAGE_PRECISION, rounding=ROUND_HALF_UP)
+
+    return predictability_pct, dependence_pct
+
+
 def calculate_revenue_predictability(
     cohort_revenue_contributions: Sequence[CohortRevenuePeriod],
     newest_cohort_id: str,
 ) -> Decimal:
     """Calculate what % of revenue is predictable from existing cohorts.
+
+    Note: This function is a convenience wrapper around calculate_revenue_metrics().
+    For better performance when calculating both metrics, use calculate_revenue_metrics()
+    directly to avoid duplicate iteration.
 
     Assumes newest cohort represents unpredictable acquisition-driven revenue.
     All other cohorts are considered predictable based on historical patterns.
@@ -324,29 +397,9 @@ def calculate_revenue_predictability(
     >>> calculate_revenue_predictability(contributions, "2023-Q3")
     Decimal('90.00')  # 18000/20000 = 90%
     """
-    if not cohort_revenue_contributions:
-        return Decimal("0.00")
-
-    # Calculate total revenue across all cohorts
-    total_revenue = sum(crp.total_revenue for crp in cohort_revenue_contributions)
-
-    if total_revenue == 0:
-        return Decimal("0.00")
-
-    # Calculate revenue from newest cohort
-    newest_cohort_revenue = sum(
-        crp.total_revenue
-        for crp in cohort_revenue_contributions
-        if crp.cohort_id == newest_cohort_id
+    predictability_pct, _ = calculate_revenue_metrics(
+        cohort_revenue_contributions, newest_cohort_id
     )
-
-    # Predictable revenue = everything except newest cohort
-    predictable_revenue = total_revenue - newest_cohort_revenue
-
-    predictability_pct = (
-        Decimal(predictable_revenue) / Decimal(total_revenue) * 100
-    ).quantize(PERCENTAGE_PRECISION, rounding=ROUND_HALF_UP)
-
     return predictability_pct
 
 
@@ -355,6 +408,10 @@ def calculate_acquisition_dependence(
     newest_cohort_id: str,
 ) -> Decimal:
     """Calculate what % of revenue depends on new customer acquisition.
+
+    Note: This function is a convenience wrapper around calculate_revenue_metrics().
+    For better performance when calculating both metrics, use calculate_revenue_metrics()
+    directly to avoid duplicate iteration.
 
     Higher dependence indicates the business relies heavily on acquiring new customers
     rather than retaining and growing existing ones.
@@ -384,26 +441,9 @@ def calculate_acquisition_dependence(
     >>> calculate_acquisition_dependence(contributions, "2023-Q3")
     Decimal('10.00')  # 2000/20000 = 10%
     """
-    if not cohort_revenue_contributions:
-        return Decimal("0.00")
-
-    # Calculate total revenue across all cohorts
-    total_revenue = sum(crp.total_revenue for crp in cohort_revenue_contributions)
-
-    if total_revenue == 0:
-        return Decimal("0.00")
-
-    # Calculate revenue from newest cohort
-    newest_cohort_revenue = sum(
-        crp.total_revenue
-        for crp in cohort_revenue_contributions
-        if crp.cohort_id == newest_cohort_id
+    _, dependence_pct = calculate_revenue_metrics(
+        cohort_revenue_contributions, newest_cohort_id
     )
-
-    dependence_pct = (
-        Decimal(newest_cohort_revenue) / Decimal(total_revenue) * 100
-    ).quantize(PERCENTAGE_PRECISION, rounding=ROUND_HALF_UP)
-
     return dependence_pct
 
 
@@ -488,6 +528,17 @@ def calculate_health_score(
     >>> calculate_health_score(Decimal("75.00"), "stable", Decimal("60.00"), Decimal("30.00"))
     (Decimal('67.50'), 'C')
     """
+    # Validate input percentages
+    _validate_percentage(overall_retention, "overall_retention")
+    _validate_percentage(revenue_predictability, "revenue_predictability")
+    _validate_percentage(acquisition_dependence, "acquisition_dependence")
+
+    if cohort_quality_trend not in ("improving", "stable", "declining"):
+        raise ValueError(
+            f"cohort_quality_trend must be 'improving', 'stable', or 'declining', "
+            f"got '{cohort_quality_trend}'"
+        )
+
     # Convert quality trend to numeric score
     if cohort_quality_trend == "improving":
         quality_score = Decimal("80")
@@ -819,13 +870,8 @@ def assess_customer_base_health(
         cohort_repeat_behavior[-1].cohort_id if cohort_repeat_behavior else ""
     )
 
-    # Calculate revenue predictability
-    revenue_predictability_pct = calculate_revenue_predictability(
-        cohort_revenue_contributions, newest_cohort_id
-    )
-
-    # Calculate acquisition dependence
-    acquisition_dependence_pct = calculate_acquisition_dependence(
+    # Calculate revenue predictability and acquisition dependence (optimized single pass)
+    revenue_predictability_pct, acquisition_dependence_pct = calculate_revenue_metrics(
         cohort_revenue_contributions, newest_cohort_id
     )
 
