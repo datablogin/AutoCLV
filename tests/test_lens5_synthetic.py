@@ -102,9 +102,13 @@ def main():
     )
 
     print("\nResults:")
-    print(f"  - Cohort revenue contributions (C3 data): {len(metrics.cohort_revenue_contributions)}")
+    print(
+        f"  - Cohort revenue contributions (C3 data): {len(metrics.cohort_revenue_contributions)}"
+    )
     print(f"  - Cohort repeat behavior: {len(metrics.cohort_repeat_behavior)}")
-    print(f"  - Analysis period: {metrics.analysis_start_date.date()} to {metrics.analysis_end_date.date()}")
+    print(
+        f"  - Analysis period: {metrics.analysis_start_date.date()} to {metrics.analysis_end_date.date()}"
+    )
 
     # Show health score
     print("\n" + "-" * 80)
@@ -151,17 +155,27 @@ def main():
     print("SUMMARY STATISTICS")
     print("=" * 80)
 
-    total_revenue = sum(crp.total_revenue for crp in metrics.cohort_revenue_contributions)
-    total_active = sum(crp.active_customers for crp in metrics.cohort_revenue_contributions)
+    total_revenue = sum(
+        crp.total_revenue for crp in metrics.cohort_revenue_contributions
+    )
+    total_active = sum(
+        crp.active_customers for crp in metrics.cohort_revenue_contributions
+    )
 
     print(f"  Total Revenue (analysis period): ${total_revenue}")
     print(f"  Total Active Customer-Periods: {total_active}")
     print(f"  Number of Cohorts: {len(metrics.cohort_repeat_behavior)}")
 
     # Repeat behavior summary
-    total_repeat_buyers = sum(crb.repeat_buyers for crb in metrics.cohort_repeat_behavior)
+    total_repeat_buyers = sum(
+        crb.repeat_buyers for crb in metrics.cohort_repeat_behavior
+    )
     total_one_time = sum(crb.one_time_buyers for crb in metrics.cohort_repeat_behavior)
-    overall_repeat_rate = (total_repeat_buyers / (total_repeat_buyers + total_one_time) * 100) if (total_repeat_buyers + total_one_time) > 0 else 0
+    overall_repeat_rate = (
+        (total_repeat_buyers / (total_repeat_buyers + total_one_time) * 100)
+        if (total_repeat_buyers + total_one_time) > 0
+        else 0
+    )
 
     print(f"\n  Overall Repeat Buyers: {total_repeat_buyers}")
     print(f"  Overall One-Time Buyers: {total_one_time}")
