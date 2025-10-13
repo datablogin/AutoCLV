@@ -519,4 +519,415 @@ class TestAssessCustomerBaseHealth:
         assert metrics.health_score.total_customers == 2
         assert metrics.health_score.total_active_customers == 2
         assert Decimal("0") <= metrics.health_score.health_score <= Decimal("100")
-        assert metrics.health_score.health_grade in ("A", "B", "C", "D", "F")
+
+
+class TestHelperFunctions:
+    """Test helper functions for health score calculation."""
+
+    def test_determine_cohort_quality_trend_improving(self):
+        """Test cohort quality trend detection - improving."""
+        from customer_base_audit.analyses.lens5 import (
+            CohortRepeatBehavior,
+            determine_cohort_quality_trend,
+        )
+
+        metrics = [
+            CohortRepeatBehavior(
+                "2023-Q1", 100, 40, 60, Decimal("60.00"), Decimal("3.0")
+            ),
+            CohortRepeatBehavior(
+                "2023-Q2", 100, 30, 70, Decimal("70.00"), Decimal("3.5")
+            ),
+        ]
+        trend = determine_cohort_quality_trend(metrics)
+        assert trend == "improving"
+
+    def test_determine_cohort_quality_trend_declining(self):
+        """Test cohort quality trend detection - declining."""
+        from customer_base_audit.analyses.lens5 import (
+            CohortRepeatBehavior,
+            determine_cohort_quality_trend,
+        )
+
+        metrics = [
+            CohortRepeatBehavior(
+                "2023-Q1", 100, 30, 70, Decimal("70.00"), Decimal("3.5")
+            ),
+            CohortRepeatBehavior(
+                "2023-Q2", 100, 40, 60, Decimal("60.00"), Decimal("3.0")
+            ),
+        ]
+        trend = determine_cohort_quality_trend(metrics)
+        assert trend == "declining"
+
+    def test_determine_cohort_quality_trend_stable(self):
+        """Test cohort quality trend detection - stable."""
+        from customer_base_audit.analyses.lens5 import (
+            CohortRepeatBehavior,
+            determine_cohort_quality_trend,
+        )
+
+        metrics = [
+            CohortRepeatBehavior(
+                "2023-Q1", 100, 35, 65, Decimal("65.00"), Decimal("3.2")
+            ),
+            CohortRepeatBehavior(
+                "2023-Q2", 100, 36, 64, Decimal("64.00"), Decimal("3.1")
+            ),
+        ]
+        trend = determine_cohort_quality_trend(metrics)
+        assert trend == "stable"
+
+    def test_determine_cohort_quality_trend_single_cohort(self):
+        """Test cohort quality trend detection - single cohort."""
+        from customer_base_audit.analyses.lens5 import (
+            CohortRepeatBehavior,
+            determine_cohort_quality_trend,
+        )
+
+        metrics = [
+            CohortRepeatBehavior(
+                "2023-Q1", 100, 35, 65, Decimal("65.00"), Decimal("3.2")
+            ),
+        ]
+        trend = determine_cohort_quality_trend(metrics)
+        assert trend == "stable"
+
+    def test_calculate_revenue_predictability(self):
+        """Test revenue predictability calculation."""
+        from customer_base_audit.analyses.lens5 import (
+            CohortRevenuePeriod,
+            calculate_revenue_predictability,
+        )
+
+        contributions = [
+            CohortRevenuePeriod(
+                "2023-Q1",
+                datetime(2024, 1, 1, tzinfo=timezone.utc),
+                Decimal("10000.00"),
+                Decimal("50.00"),
+                100,
+                Decimal("100.00"),
+            ),
+            CohortRevenuePeriod(
+                "2023-Q2",
+                datetime(2024, 1, 1, tzinfo=timezone.utc),
+                Decimal("8000.00"),
+                Decimal("40.00"),
+                80,
+                Decimal("100.00"),
+            ),
+            CohortRevenuePeriod(
+                "2023-Q3",
+                datetime(2024, 1, 1, tzinfo=timezone.utc),
+                Decimal("2000.00"),
+                Decimal("10.00"),
+                20,
+                Decimal("100.00"),
+            ),
+        ]
+        predictability = calculate_revenue_predictability(contributions, "2023-Q3")
+        # 18000 / 20000 = 90%
+        assert predictability == Decimal("90.00")
+
+    def test_calculate_acquisition_dependence(self):
+        """Test acquisition dependence calculation."""
+        from customer_base_audit.analyses.lens5 import (
+            CohortRevenuePeriod,
+            calculate_acquisition_dependence,
+        )
+
+        contributions = [
+            CohortRevenuePeriod(
+                "2023-Q1",
+                datetime(2024, 1, 1, tzinfo=timezone.utc),
+                Decimal("10000.00"),
+                Decimal("50.00"),
+                100,
+                Decimal("100.00"),
+            ),
+            CohortRevenuePeriod(
+                "2023-Q2",
+                datetime(2024, 1, 1, tzinfo=timezone.utc),
+                Decimal("8000.00"),
+                Decimal("40.00"),
+                80,
+                Decimal("100.00"),
+            ),
+            CohortRevenuePeriod(
+                "2023-Q3",
+                datetime(2024, 1, 1, tzinfo=timezone.utc),
+                Decimal("2000.00"),
+                Decimal("10.00"),
+                20,
+                Decimal("100.00"),
+            ),
+        ]
+        dependence = calculate_acquisition_dependence(contributions, "2023-Q3")
+        # 2000 / 20000 = 10%
+        assert dependence == Decimal("10.00")
+
+    def test_calculate_overall_retention_rate(self):
+        """Test overall retention rate calculation."""
+        from customer_base_audit.analyses.lens5 import (
+            calculate_overall_retention_rate,
+        )
+
+        periods = [
+            PeriodAggregation(
+                "C1",
+                datetime(2024, 1, 1, tzinfo=timezone.utc),
+                datetime(2024, 2, 1, tzinfo=timezone.utc),
+                2,
+                100.0,
+                20.0,
+                5,
+            ),
+            PeriodAggregation(
+                "C2",
+                datetime(2024, 1, 1, tzinfo=timezone.utc),
+                datetime(2024, 2, 1, tzinfo=timezone.utc),
+                3,
+                150.0,
+                30.0,
+                7,
+            ),
+            PeriodAggregation(
+                "C3",
+                datetime(2024, 1, 1, tzinfo=timezone.utc),
+                datetime(2024, 2, 1, tzinfo=timezone.utc),
+                1,
+                50.0,
+                10.0,
+                3,
+            ),
+        ]
+        cohort_assignments = {
+            "C1": "2024-Q1",
+            "C2": "2024-Q1",
+            "C3": "2024-Q1",
+            "C4": "2024-Q1",
+            "C5": "2024-Q1",
+        }  # 5 total, 3 active
+
+        retention = calculate_overall_retention_rate(periods, cohort_assignments)
+        # 3 / 5 = 60%
+        assert retention == Decimal("60.00")
+
+    def test_determine_cohort_quality_trend_zero_rates(self):
+        """Test cohort quality trend with zero repeat rates."""
+        from customer_base_audit.analyses.lens5 import (
+            CohortRepeatBehavior,
+            determine_cohort_quality_trend,
+        )
+
+        # Both cohorts have 0% repeat rate
+        metrics = [
+            CohortRepeatBehavior(
+                "2023-Q1", 100, 100, 0, Decimal("0.00"), Decimal("0.00")
+            ),
+            CohortRepeatBehavior(
+                "2023-Q2", 100, 100, 0, Decimal("0.00"), Decimal("0.00")
+            ),
+        ]
+        trend = determine_cohort_quality_trend(metrics)
+        assert trend == "stable"
+
+        # Old cohort has 0%, new cohort has positive rate
+        metrics = [
+            CohortRepeatBehavior(
+                "2023-Q1", 100, 100, 0, Decimal("0.00"), Decimal("0.00")
+            ),
+            CohortRepeatBehavior(
+                "2023-Q2", 100, 40, 60, Decimal("60.00"), Decimal("3.0")
+            ),
+        ]
+        trend = determine_cohort_quality_trend(metrics)
+        assert trend == "improving"
+
+    def test_calculate_revenue_predictability_newest_not_found(self):
+        """Test revenue predictability when newest cohort is not found."""
+        from customer_base_audit.analyses.lens5 import (
+            CohortRevenuePeriod,
+            calculate_revenue_predictability,
+        )
+
+        contributions = [
+            CohortRevenuePeriod(
+                "2023-Q1",
+                datetime(2024, 1, 1, tzinfo=timezone.utc),
+                Decimal("10000.00"),
+                Decimal("50.00"),
+                100,
+                Decimal("100.00"),
+            ),
+            CohortRevenuePeriod(
+                "2023-Q2",
+                datetime(2024, 1, 1, tzinfo=timezone.utc),
+                Decimal("10000.00"),
+                Decimal("50.00"),
+                100,
+                Decimal("100.00"),
+            ),
+        ]
+        # Newest cohort ID not in contributions
+        predictability = calculate_revenue_predictability(
+            contributions, "2023-Q3-NONEXISTENT"
+        )
+        # All revenue is predictable (none from nonexistent cohort)
+        assert predictability == Decimal("100.00")
+
+    def test_calculate_overall_retention_rate_empty_periods(self):
+        """Test overall retention rate with empty period aggregations."""
+        from customer_base_audit.analyses.lens5 import (
+            calculate_overall_retention_rate,
+        )
+
+        periods = []  # No periods
+        cohort_assignments = {
+            "C1": "2024-Q1",
+            "C2": "2024-Q1",
+            "C3": "2024-Q1",
+        }  # 3 total customers
+
+        retention = calculate_overall_retention_rate(periods, cohort_assignments)
+        # 0 / 3 = 0%
+        assert retention == Decimal("0.00")
+
+    def test_calculate_revenue_metrics_combined(self):
+        """Test the optimized combined revenue metrics function."""
+        from customer_base_audit.analyses.lens5 import (
+            CohortRevenuePeriod,
+            calculate_revenue_metrics,
+        )
+
+        contributions = [
+            CohortRevenuePeriod(
+                "2023-Q1",
+                datetime(2024, 1, 1, tzinfo=timezone.utc),
+                Decimal("10000.00"),
+                Decimal("50.00"),
+                100,
+                Decimal("100.00"),
+            ),
+            CohortRevenuePeriod(
+                "2023-Q2",
+                datetime(2024, 1, 1, tzinfo=timezone.utc),
+                Decimal("8000.00"),
+                Decimal("40.00"),
+                80,
+                Decimal("100.00"),
+            ),
+            CohortRevenuePeriod(
+                "2023-Q3",
+                datetime(2024, 1, 1, tzinfo=timezone.utc),
+                Decimal("2000.00"),
+                Decimal("10.00"),
+                20,
+                Decimal("100.00"),
+            ),
+        ]
+        predictability, dependence = calculate_revenue_metrics(contributions, "2023-Q3")
+        # 18000 / 20000 = 90% predictable, 2000 / 20000 = 10% dependent
+        assert predictability == Decimal("90.00")
+        assert dependence == Decimal("10.00")
+
+    def test_assess_customer_base_health_real_calculations(self):
+        """Integration test verifying real health score calculations replace placeholders."""
+        from customer_base_audit.analyses.lens5 import assess_customer_base_health
+
+        # Create a complete dataset with multiple cohorts
+        periods = [
+            # Cohort 2024-Q1 - High repeat rate
+            PeriodAggregation(
+                "C1",
+                datetime(2024, 1, 1, tzinfo=timezone.utc),
+                datetime(2024, 2, 1, tzinfo=timezone.utc),
+                5,
+                500.0,
+                100.0,
+                10,
+            ),
+            PeriodAggregation(
+                "C2",
+                datetime(2024, 1, 1, tzinfo=timezone.utc),
+                datetime(2024, 2, 1, tzinfo=timezone.utc),
+                4,
+                400.0,
+                80.0,
+                8,
+            ),
+            # Cohort 2024-Q2 - Medium repeat rate
+            PeriodAggregation(
+                "C3",
+                datetime(2024, 2, 1, tzinfo=timezone.utc),
+                datetime(2024, 3, 1, tzinfo=timezone.utc),
+                3,
+                300.0,
+                60.0,
+                6,
+            ),
+            PeriodAggregation(
+                "C4",
+                datetime(2024, 2, 1, tzinfo=timezone.utc),
+                datetime(2024, 3, 1, tzinfo=timezone.utc),
+                2,
+                200.0,
+                40.0,
+                4,
+            ),
+        ]
+        cohort_assignments = {
+            "C1": "2024-Q1",
+            "C2": "2024-Q1",
+            "C3": "2024-Q2",
+            "C4": "2024-Q2",
+            "C5": "2024-Q2",  # Inactive customer
+        }
+
+        metrics = assess_customer_base_health(
+            period_aggregations=periods,
+            cohort_assignments=cohort_assignments,
+            analysis_start_date=datetime(2024, 1, 1, tzinfo=timezone.utc),
+            analysis_end_date=datetime(2024, 12, 31, tzinfo=timezone.utc),
+        )
+
+        # Verify that real calculations are used (not placeholders)
+        health = metrics.health_score
+
+        # 1. Overall retention rate should be calculated
+        # 4 active customers out of 5 total = 80%
+        assert health.overall_retention_rate == Decimal("80.00")
+
+        # 2. Health score should NOT be the placeholder value of 65.00
+        assert health.health_score != Decimal("65.00")
+
+        # 3. Health score should be within valid range
+        assert Decimal("0.00") <= health.health_score <= Decimal("100.00")
+
+        # 4. Health grade should match the calculated score
+        if health.health_score >= Decimal("90.00"):
+            assert health.health_grade == "A"
+        elif health.health_score >= Decimal("80.00"):
+            assert health.health_grade == "B"
+        elif health.health_score >= Decimal("70.00"):
+            assert health.health_grade == "C"
+        elif health.health_score >= Decimal("60.00"):
+            assert health.health_grade == "D"
+        else:
+            assert health.health_grade == "F"
+
+        # 5. Cohort quality trend should be calculated (not hardcoded "stable")
+        assert health.cohort_quality_trend in ("improving", "stable", "declining")
+
+        # 6. Revenue predictability should be calculated
+        assert Decimal("0.00") <= health.revenue_predictability_pct <= Decimal("100.00")
+
+        # 7. Acquisition dependence should be calculated
+        assert Decimal("0.00") <= health.acquisition_dependence_pct <= Decimal("100.00")
+
+        # 8. Predictability + dependence should equal 100%
+        assert (
+            health.revenue_predictability_pct + health.acquisition_dependence_pct
+            == Decimal("100.00")
+        )

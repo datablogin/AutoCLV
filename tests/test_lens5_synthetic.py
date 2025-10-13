@@ -122,8 +122,6 @@ def main():
     print(f"  Revenue Predictability: {health.revenue_predictability_pct}%")
     print(f"  Acquisition Dependence: {health.acquisition_dependence_pct}%")
     print(f"  Health Score: {health.health_score} (Grade: {health.health_grade})")
-    print("\n  NOTE: Phase 3 uses placeholder values for health score.")
-    print("        Phase 4 will implement real calculation logic.")
 
     # Show cohort revenue contributions (C3 data) - first 10
     print("\n" + "-" * 80)
