@@ -495,7 +495,7 @@ Month 4: MAE = $75  ← Model degrading
 **Solutions:**
 - Retrain model on recent data
 - Use rolling windows (last 12 months only)
-- Implement automated monitoring (see [Monitoring Guide](monitoring_guide.md))
+- Implement automated monitoring (see [Monitoring Notebook](../examples/04_monitoring_drift.ipynb))
 
 ---
 
@@ -882,7 +882,6 @@ Don't rely on a single metric. Use a dashboard:
 ## Additional Resources
 
 - **API Reference:** [`docs/api_reference.md`](api_reference.md) - Validation module functions
-- **Monitoring Guide:** [`docs/monitoring_guide.md`](monitoring_guide.md) - Production monitoring
 - **Example Notebooks:**
   - [`examples/03_model_comparison.ipynb`](../examples/03_model_comparison.ipynb) - Compare MAP, MCMC, baseline
   - [`examples/04_monitoring_drift.ipynb`](../examples/04_monitoring_drift.ipynb) - Drift detection and retraining
