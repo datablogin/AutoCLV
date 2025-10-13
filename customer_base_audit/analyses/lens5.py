@@ -228,6 +228,227 @@ class CustomerBaseHealthScore:
             )
 
 
+def determine_cohort_quality_trend(
+    cohort_metrics: Sequence[CohortRepeatBehavior],
+) -> str:
+    """Determine if cohort quality is improving, stable, or declining.
+
+    Compares repeat rates of recent cohorts vs historical cohorts.
+
+    Logic:
+    - If only 1 cohort: "stable"
+    - If >= 2 cohorts: compare newest vs oldest repeat rates
+      - If newest >= oldest * 1.1: "improving" (10% better)
+      - If newest <= oldest * 0.9: "declining" (10% worse)
+      - Otherwise: "stable"
+
+    Parameters
+    ----------
+    cohort_metrics:
+        Repeat behavior for all cohorts, sorted by cohort_id (chronological)
+
+    Returns
+    -------
+    str:
+        "improving", "stable", or "declining"
+
+    Examples
+    --------
+    >>> metrics = [
+    ...     CohortRepeatBehavior("2023-Q1", 100, 40, 60, Decimal("60.00"), Decimal("3.0")),
+    ...     CohortRepeatBehavior("2023-Q2", 100, 35, 65, Decimal("65.00"), Decimal("3.2")),
+    ...     CohortRepeatBehavior("2023-Q3", 100, 30, 70, Decimal("70.00"), Decimal("3.5")),
+    ... ]
+    >>> determine_cohort_quality_trend(metrics)
+    'improving'
+    """
+    if len(cohort_metrics) < 2:
+        return "stable"
+
+    # Compare oldest vs newest
+    oldest = cohort_metrics[0]
+    newest = cohort_metrics[-1]
+
+    oldest_repeat_rate = oldest.repeat_rate
+    newest_repeat_rate = newest.repeat_rate
+
+    # Avoid division by zero
+    if oldest_repeat_rate == 0:
+        if newest_repeat_rate > 0:
+            return "improving"
+        else:
+            return "stable"
+
+    # Calculate ratio
+    ratio = newest_repeat_rate / oldest_repeat_rate
+
+    if ratio >= Decimal("1.1"):
+        return "improving"
+    elif ratio <= Decimal("0.9"):
+        return "declining"
+    else:
+        return "stable"
+
+
+def calculate_revenue_predictability(
+    cohort_revenue_contributions: Sequence[CohortRevenuePeriod],
+    newest_cohort_id: str,
+) -> Decimal:
+    """Calculate what % of revenue is predictable from existing cohorts.
+
+    Assumes newest cohort represents unpredictable acquisition-driven revenue.
+    All other cohorts are considered predictable based on historical patterns.
+
+    Formula:
+        predictability = (total_revenue - newest_cohort_revenue) / total_revenue * 100
+
+    Parameters
+    ----------
+    cohort_revenue_contributions:
+        Revenue contributions from all cohorts across all periods
+    newest_cohort_id:
+        ID of the newest cohort (most recent acquisition period)
+
+    Returns
+    -------
+    Decimal:
+        Predictability percentage (0-100)
+
+    Examples
+    --------
+    >>> contributions = [
+    ...     CohortRevenuePeriod("2023-Q1", datetime(2024, 1, 1), Decimal("10000"), ...),
+    ...     CohortRevenuePeriod("2023-Q2", datetime(2024, 1, 1), Decimal("8000"), ...),
+    ...     CohortRevenuePeriod("2023-Q3", datetime(2024, 1, 1), Decimal("2000"), ...),
+    ... ]
+    >>> calculate_revenue_predictability(contributions, "2023-Q3")
+    Decimal('90.00')  # 18000/20000 = 90%
+    """
+    if not cohort_revenue_contributions:
+        return Decimal("0.00")
+
+    # Calculate total revenue across all cohorts
+    total_revenue = sum(crp.total_revenue for crp in cohort_revenue_contributions)
+
+    if total_revenue == 0:
+        return Decimal("0.00")
+
+    # Calculate revenue from newest cohort
+    newest_cohort_revenue = sum(
+        crp.total_revenue
+        for crp in cohort_revenue_contributions
+        if crp.cohort_id == newest_cohort_id
+    )
+
+    # Predictable revenue = everything except newest cohort
+    predictable_revenue = total_revenue - newest_cohort_revenue
+
+    predictability_pct = (
+        Decimal(predictable_revenue) / Decimal(total_revenue) * 100
+    ).quantize(PERCENTAGE_PRECISION, rounding=ROUND_HALF_UP)
+
+    return predictability_pct
+
+
+def calculate_acquisition_dependence(
+    cohort_revenue_contributions: Sequence[CohortRevenuePeriod],
+    newest_cohort_id: str,
+) -> Decimal:
+    """Calculate what % of revenue depends on new customer acquisition.
+
+    Higher dependence indicates the business relies heavily on acquiring new customers
+    rather than retaining and growing existing ones.
+
+    Formula:
+        dependence = newest_cohort_revenue / total_revenue * 100
+
+    Parameters
+    ----------
+    cohort_revenue_contributions:
+        Revenue contributions from all cohorts across all periods
+    newest_cohort_id:
+        ID of the newest cohort (most recent acquisition period)
+
+    Returns
+    -------
+    Decimal:
+        Acquisition dependence percentage (0-100)
+
+    Examples
+    --------
+    >>> contributions = [
+    ...     CohortRevenuePeriod("2023-Q1", datetime(2024, 1, 1), Decimal("10000"), ...),
+    ...     CohortRevenuePeriod("2023-Q2", datetime(2024, 1, 1), Decimal("8000"), ...),
+    ...     CohortRevenuePeriod("2023-Q3", datetime(2024, 1, 1), Decimal("2000"), ...),
+    ... ]
+    >>> calculate_acquisition_dependence(contributions, "2023-Q3")
+    Decimal('10.00')  # 2000/20000 = 10%
+    """
+    if not cohort_revenue_contributions:
+        return Decimal("0.00")
+
+    # Calculate total revenue across all cohorts
+    total_revenue = sum(crp.total_revenue for crp in cohort_revenue_contributions)
+
+    if total_revenue == 0:
+        return Decimal("0.00")
+
+    # Calculate revenue from newest cohort
+    newest_cohort_revenue = sum(
+        crp.total_revenue
+        for crp in cohort_revenue_contributions
+        if crp.cohort_id == newest_cohort_id
+    )
+
+    dependence_pct = (
+        Decimal(newest_cohort_revenue) / Decimal(total_revenue) * 100
+    ).quantize(PERCENTAGE_PRECISION, rounding=ROUND_HALF_UP)
+
+    return dependence_pct
+
+
+def calculate_overall_retention_rate(
+    period_aggregations: Sequence[PeriodAggregation],
+    cohort_assignments: dict[str, str],
+) -> Decimal:
+    """Calculate overall retention rate across all cohorts.
+
+    Retention rate = (active customers / total customers) * 100
+
+    Parameters
+    ----------
+    period_aggregations:
+        All period aggregations (any customer with at least 1 period is active)
+    cohort_assignments:
+        Mapping of customer_id to cohort_id (defines total customer base)
+
+    Returns
+    -------
+    Decimal:
+        Overall retention rate (0-100)
+
+    Examples
+    --------
+    >>> periods = [...]  # 800 unique customers
+    >>> cohort_assignments = {...}  # 1000 total customers
+    >>> calculate_overall_retention_rate(periods, cohort_assignments)
+    Decimal('80.00')  # 800/1000 = 80%
+    """
+    total_customers = len(cohort_assignments)
+
+    if total_customers == 0:
+        return Decimal("0.00")
+
+    # Count unique active customers (those with at least 1 period)
+    active_customers = len(set(p.customer_id for p in period_aggregations))
+
+    retention_rate = (
+        Decimal(active_customers) / Decimal(total_customers) * 100
+    ).quantize(PERCENTAGE_PRECISION, rounding=ROUND_HALF_UP)
+
+    return retention_rate
+
+
 def calculate_health_score(
     overall_retention: Decimal,
     cohort_quality_trend: str,
@@ -581,17 +802,51 @@ def assess_customer_base_health(
         period_aggregations, cohort_assignments
     )
 
-    # Calculate health score (Phase 3 uses placeholders, Phase 4 will implement)
-    # Placeholder: use simple defaults
+    # Calculate health score components
+    total_customers = len(cohort_assignments)
+    total_active_customers = len(set(p.customer_id for p in filtered_periods))
+
+    # Calculate overall retention rate
+    overall_retention_rate = calculate_overall_retention_rate(
+        filtered_periods, cohort_assignments
+    )
+
+    # Determine cohort quality trend
+    cohort_quality_trend = determine_cohort_quality_trend(cohort_repeat_behavior)
+
+    # Get newest cohort ID (last in sorted order)
+    newest_cohort_id = (
+        cohort_repeat_behavior[-1].cohort_id if cohort_repeat_behavior else ""
+    )
+
+    # Calculate revenue predictability
+    revenue_predictability_pct = calculate_revenue_predictability(
+        cohort_revenue_contributions, newest_cohort_id
+    )
+
+    # Calculate acquisition dependence
+    acquisition_dependence_pct = calculate_acquisition_dependence(
+        cohort_revenue_contributions, newest_cohort_id
+    )
+
+    # Calculate overall health score and grade
+    health_score, health_grade = calculate_health_score(
+        overall_retention_rate,
+        cohort_quality_trend,
+        revenue_predictability_pct,
+        acquisition_dependence_pct,
+    )
+
+    # Create health score object
     health_score_obj = CustomerBaseHealthScore(
-        total_customers=len(cohort_assignments),
-        total_active_customers=len(set(p.customer_id for p in filtered_periods)),
-        overall_retention_rate=Decimal("70.00"),  # TODO: Phase 4
-        cohort_quality_trend="stable",  # TODO: Phase 4
-        revenue_predictability_pct=Decimal("60.00"),  # TODO: Phase 4
-        acquisition_dependence_pct=Decimal("30.00"),  # TODO: Phase 4
-        health_score=Decimal("65.00"),  # TODO: Phase 4
-        health_grade="C",  # TODO: Phase 4
+        total_customers=total_customers,
+        total_active_customers=total_active_customers,
+        overall_retention_rate=overall_retention_rate,
+        cohort_quality_trend=cohort_quality_trend,
+        revenue_predictability_pct=revenue_predictability_pct,
+        acquisition_dependence_pct=acquisition_dependence_pct,
+        health_score=health_score,
+        health_grade=health_grade,
     )
 
     return Lens5Metrics(
