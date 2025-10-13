@@ -629,14 +629,18 @@ class TestDataQuality:
 
         customers = [
             CustomerIdentifier("C1", datetime(2023, 1, 15), "system"),
-            CustomerIdentifier("C2", datetime(2023, 3, 20), "system"),  # Outside cohort!
+            CustomerIdentifier(
+                "C2", datetime(2023, 3, 20), "system"
+            ),  # Outside cohort!
         ]
         cohorts = [
             CohortDefinition("2023-01", datetime(2023, 1, 1), datetime(2023, 2, 1)),
         ]
 
         with caplog.at_level(logging.WARNING):
-            assignments = assign_cohorts(customers, cohorts, require_full_coverage=False)
+            assignments = assign_cohorts(
+                customers, cohorts, require_full_coverage=False
+            )
 
         # Should assign only C1
         assert len(assignments) == 1
@@ -649,7 +653,9 @@ class TestDataQuality:
 
         warning_message = warning_records[0].message
         # Verify unassigned customer is mentioned
-        assert "C2" in warning_message, "Unassigned customer should be mentioned in warning"
+        assert "C2" in warning_message, (
+            "Unassigned customer should be mentioned in warning"
+        )
         # Verify coverage statistics are included
         assert "50.0%" in warning_message, "Coverage percentage should be included"
 
