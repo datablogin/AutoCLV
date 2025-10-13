@@ -34,7 +34,34 @@ GRADE_B_THRESHOLD = Decimal("80")
 GRADE_C_THRESHOLD = Decimal("70")
 GRADE_D_THRESHOLD = Decimal("60")
 
+# Validate that health score weights sum to 1.0
+_WEIGHTS_SUM = (
+    RETENTION_WEIGHT + QUALITY_WEIGHT + PREDICTABILITY_WEIGHT + INDEPENDENCE_WEIGHT
+)
+assert _WEIGHTS_SUM == Decimal("1.0"), (
+    f"Health score weights must sum to 1.0, got {_WEIGHTS_SUM}"
+)
+
 logger = logging.getLogger(__name__)
+
+
+def _validate_percentage(value: Decimal, field_name: str) -> None:
+    """Validate that a value is a valid percentage (0-100).
+
+    Parameters
+    ----------
+    value:
+        The value to validate
+    field_name:
+        The name of the field (for error messages)
+
+    Raises
+    ------
+    ValueError:
+        If value is not in [0, 100]
+    """
+    if not (Decimal("0") <= value <= Decimal("100")):
+        raise ValueError(f"{field_name} must be in [0, 100], got {value}")
 
 
 @dataclass(frozen=True)
@@ -70,11 +97,7 @@ class CohortRevenuePeriod:
         """Validate cohort revenue period metrics."""
         if self.total_revenue < 0:
             raise ValueError(f"total_revenue must be >= 0, got {self.total_revenue}")
-        if not (Decimal("0") <= self.pct_of_period_revenue <= Decimal("100")):
-            raise ValueError(
-                f"pct_of_period_revenue must be in [0, 100], "
-                f"got {self.pct_of_period_revenue}"
-            )
+        _validate_percentage(self.pct_of_period_revenue, "pct_of_period_revenue")
         if self.active_customers < 0:
             raise ValueError(
                 f"active_customers must be >= 0, got {self.active_customers}"
@@ -103,7 +126,8 @@ class CohortRepeatBehavior:
     repeat_rate:
         Percentage of cohort with 2+ purchases (0-100)
     avg_orders_per_repeat_buyer:
-        Average orders for customers with 2+ purchases
+        Average orders for customers with 2+ purchases.
+        When cohort_size is 0, this will be 0.00 (N/A)
     """
 
     cohort_id: str
@@ -128,8 +152,7 @@ class CohortRepeatBehavior:
                 f"one_time_buyers ({self.one_time_buyers}) + repeat_buyers "
                 f"({self.repeat_buyers}) must equal cohort_size ({self.cohort_size})"
             )
-        if not (Decimal("0") <= self.repeat_rate <= Decimal("100")):
-            raise ValueError(f"repeat_rate must be in [0, 100], got {self.repeat_rate}")
+        _validate_percentage(self.repeat_rate, "repeat_rate")
         if self.repeat_buyers > 0 and self.avg_orders_per_repeat_buyer < 2:
             raise ValueError(
                 f"avg_orders_per_repeat_buyer must be >= 2 (by definition), "
@@ -183,28 +206,15 @@ class CustomerBaseHealthScore:
                 f"total_active_customers ({self.total_active_customers}) cannot exceed "
                 f"total_customers ({self.total_customers})"
             )
-        if not (Decimal("0") <= self.overall_retention_rate <= Decimal("100")):
-            raise ValueError(
-                f"overall_retention_rate must be in [0, 100], "
-                f"got {self.overall_retention_rate}"
-            )
+        _validate_percentage(self.overall_retention_rate, "overall_retention_rate")
         if self.cohort_quality_trend not in ("improving", "stable", "declining"):
             raise ValueError(
                 f"cohort_quality_trend must be 'improving', 'stable', or 'declining', "
                 f"got '{self.cohort_quality_trend}'"
             )
-        if not (Decimal("0") <= self.revenue_predictability_pct <= Decimal("100")):
-            raise ValueError(
-                f"revenue_predictability_pct must be in [0, 100], "
-                f"got {self.revenue_predictability_pct}"
-            )
-        if not (Decimal("0") <= self.acquisition_dependence_pct <= Decimal("100")):
-            raise ValueError(
-                f"acquisition_dependence_pct must be in [0, 100], "
-                f"got {self.acquisition_dependence_pct}"
-            )
-        if not (Decimal("0") <= self.health_score <= Decimal("100")):
-            raise ValueError(f"health_score must be in [0, 100], got {self.health_score}")
+        _validate_percentage(self.revenue_predictability_pct, "revenue_predictability_pct")
+        _validate_percentage(self.acquisition_dependence_pct, "acquisition_dependence_pct")
+        _validate_percentage(self.health_score, "health_score")
         if self.health_grade not in ("A", "B", "C", "D", "F"):
             raise ValueError(
                 f"health_grade must be 'A', 'B', 'C', 'D', or 'F', "
@@ -458,10 +468,9 @@ def _calculate_repeat_behavior(
             repeat_rate = Decimal("0.00")
 
         if repeat_buyers > 0:
-            avg_orders = sum(data["repeat_orders"]) / repeat_buyers
-            avg_orders_per_repeat_buyer = Decimal(str(avg_orders)).quantize(
-                Decimal("0.01"), rounding=ROUND_HALF_UP
-            )
+            avg_orders_per_repeat_buyer = (
+                Decimal(sum(data["repeat_orders"])) / Decimal(repeat_buyers)
+            ).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
         else:
             avg_orders_per_repeat_buyer = Decimal("0.00")
 
