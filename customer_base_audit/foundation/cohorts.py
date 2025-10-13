@@ -23,12 +23,15 @@ Quick Start
 
 from __future__ import annotations
 
+import logging
 from collections import Counter
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from typing import Mapping, Any, Sequence, TypedDict
 
 from customer_base_audit.foundation.customer_contract import CustomerIdentifier
+
+logger = logging.getLogger(__name__)
 
 
 class CohortMetadata(TypedDict, total=False):
@@ -234,7 +237,7 @@ def validate_non_overlapping(cohort_definitions: Sequence[CohortDefinition]) -> 
 def assign_cohorts(
     customers: Sequence[CustomerIdentifier],
     cohort_definitions: Sequence[CohortDefinition],
-    require_full_coverage: bool = False,
+    require_full_coverage: bool = True,
 ) -> dict[str, str]:
     """Assign customers to cohorts based on acquisition timestamp.
 
@@ -246,8 +249,9 @@ def assign_cohorts(
         List of cohort definitions with acquisition date ranges.
     require_full_coverage:
         If True, raise ValueError if any customers fall outside cohort ranges.
-        This prevents silent data loss in CLV analysis. Default False for
-        backward compatibility.
+        This prevents silent data loss in CLV analysis. Default True (changed
+        from False in v2.0 for data safety). Set to False to allow partial
+        coverage with warning logging instead.
 
     Returns
     -------
@@ -271,6 +275,9 @@ def assign_cohorts(
     - Customers with acquisition_ts outside all cohort ranges are not assigned
       (or raise error if require_full_coverage=True).
     - Each customer must appear exactly once; duplicates raise ValueError.
+    - **Data Safety**: Default changed to require_full_coverage=True in v2.0
+      to prevent silent data loss. If you need partial coverage, explicitly set
+      require_full_coverage=False and review warning logs.
 
     Examples
     --------
@@ -278,9 +285,12 @@ def assign_cohorts(
     >>> cohorts = [CohortDefinition("2023-01", datetime(2023, 1, 1), datetime(2023, 2, 1))]
     >>> assign_cohorts(customers, cohorts)
     {'C1': '2023-01'}
-    >>> # With strict coverage validation:
+    >>> # With strict coverage validation (default behavior):
     >>> assign_cohorts(customers, [], require_full_coverage=True)  # doctest: +SKIP
     ValueError: 1 customers fall outside cohort ranges
+    >>> # Allow partial coverage with warnings (opt-in):
+    >>> assign_cohorts(customers, cohorts, require_full_coverage=False)  # Logs warnings
+    {'C1': '2023-01'}
     """
     # Check for duplicate customer IDs (O(n) using Counter)
     customer_ids = [c.customer_id for c in customers]
@@ -302,16 +312,34 @@ def assign_cohorts(
                 assignments[customer.customer_id] = cohort.cohort_id
                 break  # Assign to first matching cohort
 
-    # Validate full coverage if required
-    if require_full_coverage and len(assignments) < len(customers):
+    # Check for unassigned customers
+    if len(assignments) < len(customers):
         unassigned = [
             c.customer_id for c in customers if c.customer_id not in assignments
         ]
-        raise ValueError(
-            f"{len(unassigned)} customers fall outside cohort ranges. "
-            f"First 5 unassigned: {unassigned[:5]}. "
-            f"This may indicate missing cohort definitions or data quality issues."
-        )
+        unassigned_count = len(unassigned)
+        coverage_pct = (len(assignments) / len(customers)) * 100 if customers else 100
+
+        if require_full_coverage:
+            # Strict mode: raise error on any data loss
+            raise ValueError(
+                f"{unassigned_count} customers fall outside cohort ranges "
+                f"({coverage_pct:.1f}% coverage). "
+                f"First 5 unassigned: {unassigned[:5]}. "
+                f"This may indicate missing cohort definitions or data quality issues. "
+                f"To allow partial coverage, set require_full_coverage=False (not recommended)."
+            )
+        else:
+            # Permissive mode: log warning but continue
+            logger.warning(
+                f"Cohort assignment incomplete: {unassigned_count}/{len(customers)} customers "
+                f"({(unassigned_count/len(customers))*100:.1f}%) fall outside cohort ranges "
+                f"({coverage_pct:.1f}% coverage). "
+                f"These customers will be excluded from cohort analysis. "
+                f"First 5 unassigned: {unassigned[:5]}. "
+                f"Consider expanding cohort definitions or setting require_full_coverage=True "
+                f"to catch data quality issues."
+            )
 
     return assignments
 
@@ -635,7 +663,10 @@ def validate_cohort_coverage(
     >>> print(f"Assigned: {assigned}, Unassigned: {unassigned}")
     Assigned: 2, Unassigned: 1
     """
-    assignments = assign_cohorts(customers, cohort_definitions)
+    # Allow partial coverage to get statistics (validation purpose)
+    assignments = assign_cohorts(
+        customers, cohort_definitions, require_full_coverage=False
+    )
     assigned = len(assignments)
     unassigned = len(customers) - assigned
     return assigned, unassigned

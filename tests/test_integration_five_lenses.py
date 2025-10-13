@@ -261,7 +261,10 @@ def test_five_lenses_complete_pipeline():
         ),
     ]
 
-    cohort_assignments = assign_cohorts(customers, [q1_cohort])
+    # Use require_full_coverage=False since we only care about Q1 cohort customers
+    cohort_assignments = assign_cohorts(
+        customers, [q1_cohort], require_full_coverage=False
+    )
     q1_cohort_customers = frozenset(
         cid for cid, cohort_id in cohort_assignments.items() if cohort_id == "2023-Q1"
     )

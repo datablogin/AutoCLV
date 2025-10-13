@@ -122,8 +122,8 @@ class TestAssignCohorts:
         assert assignments["C2"] == "2023-02"  # On end boundary: goes to next cohort
         assert assignments["C3"] == "2023-01"  # Just before end: included
 
-    def test_customers_outside_all_cohorts_not_assigned(self):
-        """Test customers with acquisition_ts outside all cohorts are excluded."""
+    def test_customers_outside_all_cohorts_raises_error_by_default(self):
+        """Test customers with acquisition_ts outside all cohorts raise error (default behavior)."""
         customers = [
             CustomerIdentifier("C1", datetime(2022, 12, 15), "system"),
             CustomerIdentifier("C2", datetime(2023, 1, 15), "system"),
@@ -135,7 +135,25 @@ class TestAssignCohorts:
             CohortDefinition("2023-03", datetime(2023, 3, 1), datetime(2023, 4, 1)),
         ]
 
-        assignments = assign_cohorts(customers, cohorts)
+        # Default behavior (require_full_coverage=True) should raise error
+        with pytest.raises(ValueError, match="2 customers fall outside cohort ranges"):
+            assign_cohorts(customers, cohorts)
+
+    def test_customers_outside_all_cohorts_not_assigned_when_allowed(self):
+        """Test customers outside cohorts are excluded when require_full_coverage=False."""
+        customers = [
+            CustomerIdentifier("C1", datetime(2022, 12, 15), "system"),
+            CustomerIdentifier("C2", datetime(2023, 1, 15), "system"),
+            CustomerIdentifier("C3", datetime(2023, 4, 15), "system"),
+        ]
+        cohorts = [
+            CohortDefinition("2023-01", datetime(2023, 1, 1), datetime(2023, 2, 1)),
+            CohortDefinition("2023-02", datetime(2023, 2, 1), datetime(2023, 3, 1)),
+            CohortDefinition("2023-03", datetime(2023, 3, 1), datetime(2023, 4, 1)),
+        ]
+
+        # Explicitly allow partial coverage
+        assignments = assign_cohorts(customers, cohorts, require_full_coverage=False)
 
         assert len(assignments) == 1  # Only C2 is assigned
         assert assignments["C2"] == "2023-01"
@@ -167,14 +185,26 @@ class TestAssignCohorts:
 
         assert assignments == {}
 
-    def test_empty_cohorts_list(self):
-        """Test assigning with empty cohorts list."""
+    def test_empty_cohorts_list_raises_error_by_default(self):
+        """Test assigning with empty cohorts list raises error (default behavior)."""
         customers = [
             CustomerIdentifier("C1", datetime(2023, 1, 15), "system"),
         ]
         cohorts = []
 
-        assignments = assign_cohorts(customers, cohorts)
+        # Default behavior should raise error
+        with pytest.raises(ValueError, match="1 customers fall outside cohort ranges"):
+            assign_cohorts(customers, cohorts)
+
+    def test_empty_cohorts_list_allowed_with_flag(self):
+        """Test assigning with empty cohorts list when allowed."""
+        customers = [
+            CustomerIdentifier("C1", datetime(2023, 1, 15), "system"),
+        ]
+        cohorts = []
+
+        # Explicitly allow partial coverage
+        assignments = assign_cohorts(customers, cohorts, require_full_coverage=False)
 
         assert assignments == {}
 
@@ -559,13 +589,24 @@ class TestDataQuality:
         error_msg = str(exc_info.value)
         assert "C1" in error_msg or "C2" in error_msg
 
-    def test_empty_cohort_definitions(self):
-        """Test assignment with empty cohort list returns empty dict."""
+    def test_empty_cohort_definitions_raises_error_by_default(self):
+        """Test assignment with empty cohort list raises error (default behavior)."""
         customers = [
             CustomerIdentifier("C1", datetime(2023, 1, 15), "system"),
         ]
 
-        assignments = assign_cohorts(customers, [])
+        # Default behavior should raise error
+        with pytest.raises(ValueError, match="1 customers fall outside cohort ranges"):
+            assign_cohorts(customers, [])
+
+    def test_empty_cohort_definitions_allowed_with_flag(self):
+        """Test assignment with empty cohort list when explicitly allowed."""
+        customers = [
+            CustomerIdentifier("C1", datetime(2023, 1, 15), "system"),
+        ]
+
+        # Explicitly allow partial coverage
+        assignments = assign_cohorts(customers, [], require_full_coverage=False)
 
         assert assignments == {}
 
@@ -581,6 +622,30 @@ class TestDataQuality:
 
         with pytest.raises(ValueError, match="1 customers fall outside cohort ranges"):
             assign_cohorts(customers, cohorts, require_full_coverage=True)
+
+    def test_partial_coverage_logs_warning_when_allowed(self, caplog):
+        """Test that partial coverage logs warning when require_full_coverage=False."""
+        import logging
+
+        customers = [
+            CustomerIdentifier("C1", datetime(2023, 1, 15), "system"),
+            CustomerIdentifier("C2", datetime(2023, 3, 20), "system"),  # Outside cohort!
+        ]
+        cohorts = [
+            CohortDefinition("2023-01", datetime(2023, 1, 1), datetime(2023, 2, 1)),
+        ]
+
+        with caplog.at_level(logging.WARNING):
+            assignments = assign_cohorts(customers, cohorts, require_full_coverage=False)
+
+        # Should assign only C1
+        assert len(assignments) == 1
+        assert assignments["C1"] == "2023-01"
+        assert "C2" not in assignments
+
+        # Should log warning about C2
+        assert any("Cohort assignment incomplete" in record.message for record in caplog.records)
+        assert any("1/2 customers" in record.message for record in caplog.records)
 
     def test_require_full_coverage_passes_with_complete_coverage(self):
         """Test that require_full_coverage passes when all customers assigned."""
