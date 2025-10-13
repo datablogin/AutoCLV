@@ -827,9 +827,7 @@ class TestHelperFunctions:
                 Decimal("100.00"),
             ),
         ]
-        predictability, dependence = calculate_revenue_metrics(
-            contributions, "2023-Q3"
-        )
+        predictability, dependence = calculate_revenue_metrics(contributions, "2023-Q3")
         # 18000 / 20000 = 90% predictable, 2000 / 20000 = 10% dependent
         assert predictability == Decimal("90.00")
         assert dependence == Decimal("10.00")
