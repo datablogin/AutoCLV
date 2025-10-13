@@ -318,27 +318,28 @@ def assign_cohorts(
             c.customer_id for c in customers if c.customer_id not in assignments
         ]
         unassigned_count = len(unassigned)
+
+        # Calculate coverage metrics once
         coverage_pct = (len(assignments) / len(customers)) * 100 if customers else 100
+        unassigned_pct = (unassigned_count / len(customers)) * 100 if customers else 0
 
         if require_full_coverage:
             # Strict mode: raise error on any data loss
             raise ValueError(
-                f"{unassigned_count} customers fall outside cohort ranges "
-                f"({coverage_pct:.1f}% coverage). "
-                f"First 5 unassigned: {unassigned[:5]}. "
-                f"This may indicate missing cohort definitions or data quality issues. "
+                f"{unassigned_count} customers fall outside cohort ranges ({coverage_pct:.1f}% coverage).\n"
+                f"First 5 unassigned: {unassigned[:5]}\n"
+                f"This may indicate missing cohort definitions or data quality issues.\n"
                 f"To allow partial coverage, set require_full_coverage=False (not recommended)."
             )
         else:
             # Permissive mode: log warning but continue
             logger.warning(
                 f"Cohort assignment incomplete: {unassigned_count}/{len(customers)} customers "
-                f"({(unassigned_count/len(customers))*100:.1f}%) fall outside cohort ranges "
-                f"({coverage_pct:.1f}% coverage). "
+                f"({unassigned_pct:.1f}%) fall outside cohort ranges ({coverage_pct:.1f}% coverage). "
                 f"These customers will be excluded from cohort analysis. "
                 f"First 5 unassigned: {unassigned[:5]}. "
-                f"Consider expanding cohort definitions or setting require_full_coverage=True "
-                f"to catch data quality issues."
+                f"Consider expanding cohort definitions to cover all customers, "
+                f"or review data quality if gaps are unexpected."
             )
 
     return assignments
@@ -627,6 +628,7 @@ def create_yearly_cohorts(
 def validate_cohort_coverage(
     customers: Sequence[CustomerIdentifier],
     cohort_definitions: Sequence[CohortDefinition],
+    require_full_coverage: bool = False,
 ) -> tuple[int, int]:
     """Validate cohort coverage and return coverage statistics.
 
@@ -639,6 +641,11 @@ def validate_cohort_coverage(
         List of customer identifiers to check coverage for.
     cohort_definitions:
         List of cohort definitions to validate against.
+    require_full_coverage:
+        If True, raise ValueError if any customers fall outside cohort ranges.
+        If False (default), return statistics for both assigned and unassigned
+        customers. Default is False since the typical use case is to check
+        coverage and decide on remediation, not to enforce it.
 
     Returns
     -------
@@ -646,6 +653,11 @@ def validate_cohort_coverage(
         (assigned_count, unassigned_count) where:
         - assigned_count: Number of customers assigned to cohorts
         - unassigned_count: Number of customers outside all cohort ranges
+
+    Raises
+    ------
+    ValueError
+        If require_full_coverage=True and any customers fall outside cohort ranges.
 
     Examples
     --------
@@ -659,13 +671,16 @@ def validate_cohort_coverage(
     ...     CohortDefinition("2023-01", datetime(2023, 1, 1), datetime(2023, 2, 1)),
     ...     CohortDefinition("2023-02", datetime(2023, 2, 1), datetime(2023, 3, 1)),
     ... ]
+    >>> # Check coverage (default behavior)
     >>> assigned, unassigned = validate_cohort_coverage(customers, cohorts)
     >>> print(f"Assigned: {assigned}, Unassigned: {unassigned}")
     Assigned: 2, Unassigned: 1
+    >>> # Strict validation (raises error on gaps)
+    >>> validate_cohort_coverage(customers, cohorts, require_full_coverage=True)  # doctest: +SKIP
+    ValueError: 1 customers fall outside cohort ranges...
     """
-    # Allow partial coverage to get statistics (validation purpose)
     assignments = assign_cohorts(
-        customers, cohort_definitions, require_full_coverage=False
+        customers, cohort_definitions, require_full_coverage=require_full_coverage
     )
     assigned = len(assignments)
     unassigned = len(customers) - assigned

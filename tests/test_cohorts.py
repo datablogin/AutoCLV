@@ -643,9 +643,15 @@ class TestDataQuality:
         assert assignments["C1"] == "2023-01"
         assert "C2" not in assignments
 
-        # Should log warning about C2
-        assert any("Cohort assignment incomplete" in record.message for record in caplog.records)
-        assert any("1/2 customers" in record.message for record in caplog.records)
+        # Verify warning was logged
+        warning_records = [r for r in caplog.records if r.levelno == logging.WARNING]
+        assert len(warning_records) == 1, "Expected exactly one warning log"
+
+        warning_message = warning_records[0].message
+        # Verify unassigned customer is mentioned
+        assert "C2" in warning_message, "Unassigned customer should be mentioned in warning"
+        # Verify coverage statistics are included
+        assert "50.0%" in warning_message, "Coverage percentage should be included"
 
     def test_require_full_coverage_passes_with_complete_coverage(self):
         """Test that require_full_coverage passes when all customers assigned."""
