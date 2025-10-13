@@ -196,7 +196,9 @@ class CustomerBaseHealthScore:
     def __post_init__(self) -> None:
         """Validate customer base health score."""
         if self.total_customers < 0:
-            raise ValueError(f"total_customers must be >= 0, got {self.total_customers}")
+            raise ValueError(
+                f"total_customers must be >= 0, got {self.total_customers}"
+            )
         if self.total_active_customers < 0:
             raise ValueError(
                 f"total_active_customers must be >= 0, got {self.total_active_customers}"
@@ -212,8 +214,12 @@ class CustomerBaseHealthScore:
                 f"cohort_quality_trend must be 'improving', 'stable', or 'declining', "
                 f"got '{self.cohort_quality_trend}'"
             )
-        _validate_percentage(self.revenue_predictability_pct, "revenue_predictability_pct")
-        _validate_percentage(self.acquisition_dependence_pct, "acquisition_dependence_pct")
+        _validate_percentage(
+            self.revenue_predictability_pct, "revenue_predictability_pct"
+        )
+        _validate_percentage(
+            self.acquisition_dependence_pct, "acquisition_dependence_pct"
+        )
         _validate_percentage(self.health_score, "health_score")
         if self.health_grade not in ("A", "B", "C", "D", "F"):
             raise ValueError(
