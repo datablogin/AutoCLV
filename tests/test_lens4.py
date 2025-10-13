@@ -6,8 +6,10 @@ from decimal import Decimal
 import pytest
 
 from customer_base_audit.analyses.lens4 import (
+    CohortComparison,
     CohortDecomposition,
     Lens4Metrics,
+    TimeToSecondPurchase,
     calculate_cohort_decomposition,
     compare_cohorts,
 )
@@ -299,17 +301,6 @@ class TestCompareCohorts:
                 period_aggregations=[],
                 cohort_assignments={},
                 alignment_type="invalid",
-            )
-
-    def test_compare_cohorts_time_aligned_not_implemented(self):
-        """Test that time-aligned mode raises NotImplementedError."""
-        with pytest.raises(
-            NotImplementedError, match="Time-aligned comparison not yet implemented"
-        ):
-            compare_cohorts(
-                period_aggregations=[],
-                cohort_assignments={},
-                alignment_type="time-aligned",
             )
 
     def test_compare_cohorts_left_aligned_single_cohort(self):
@@ -681,3 +672,377 @@ class TestDeterminismAndReconciliation:
         assert decomp.margin == Decimal("0.00")
         assert decomp.total_revenue == Decimal("0.00")
         assert decomp.revenue == Decimal("0.00")
+
+
+class TestTimeToSecondPurchase:
+    """Tests for TimeToSecondPurchase dataclass and calculate_time_to_second_purchase()."""
+
+    def test_valid_time_to_second_purchase(self):
+        """Test TimeToSecondPurchase with valid values."""
+        ttsp = TimeToSecondPurchase(
+            cohort_id="2024-Q1",
+            customers_with_repeat=80,
+            repeat_rate=Decimal("80.00"),
+            median_days=Decimal("30.00"),
+            mean_days=Decimal("35.50"),
+            cumulative_repeat_by_period={
+                0: Decimal("50.00"),
+                1: Decimal("70.00"),
+                2: Decimal("80.00"),
+            },
+        )
+        assert ttsp.cohort_id == "2024-Q1"
+        assert ttsp.customers_with_repeat == 80
+        assert ttsp.repeat_rate == Decimal("80.00")
+
+    def test_negative_customers_with_repeat_raises_error(self):
+        """Test that negative customers_with_repeat raises ValueError."""
+        with pytest.raises(ValueError, match="customers_with_repeat must be >= 0"):
+            TimeToSecondPurchase(
+                cohort_id="2024-Q1",
+                customers_with_repeat=-1,
+                repeat_rate=Decimal("80.00"),
+                median_days=Decimal("30.00"),
+                mean_days=Decimal("35.50"),
+                cumulative_repeat_by_period={},
+            )
+
+    def test_invalid_repeat_rate_raises_error(self):
+        """Test that repeat_rate outside [0, 100] raises ValueError."""
+        with pytest.raises(ValueError, match="repeat_rate must be in"):
+            TimeToSecondPurchase(
+                cohort_id="2024-Q1",
+                customers_with_repeat=80,
+                repeat_rate=Decimal("150.00"),
+                median_days=Decimal("30.00"),
+                mean_days=Decimal("35.50"),
+                cumulative_repeat_by_period={},
+            )
+
+    def test_calculate_time_to_second_purchase_basic(self):
+        """Test calculate_time_to_second_purchase with basic scenario."""
+        from customer_base_audit.analyses.lens4 import (
+            calculate_time_to_second_purchase,
+        )
+
+        customer_periods = {
+            "cust1": [
+                PeriodAggregation(
+                    "cust1",
+                    datetime(2024, 1, 1),
+                    datetime(2024, 2, 1),
+                    2,
+                    100.0,
+                    20.0,
+                    5,
+                ),
+                PeriodAggregation(
+                    "cust1",
+                    datetime(2024, 2, 1),
+                    datetime(2024, 3, 1),
+                    1,
+                    50.0,
+                    10.0,
+                    2,
+                ),
+            ],
+            "cust2": [
+                PeriodAggregation(
+                    "cust2",
+                    datetime(2024, 1, 1),
+                    datetime(2024, 2, 1),
+                    1,
+                    75.0,
+                    15.0,
+                    3,
+                ),
+            ],
+        }
+
+        ttsp = calculate_time_to_second_purchase(
+            cohort_id="2024-Q1", cohort_size=10, customer_periods=customer_periods
+        )
+
+        assert ttsp.customers_with_repeat == 1
+        assert ttsp.repeat_rate == Decimal("10.00")  # 1/10 * 100
+        assert ttsp.median_days == Decimal("31.00")  # Jan 1 to Feb 1
+        assert ttsp.mean_days == Decimal("31.00")
+
+
+class TestCohortComparison:
+    """Tests for CohortComparison dataclass and compare_cohort_pair()."""
+
+    def test_valid_cohort_comparison(self):
+        """Test CohortComparison with valid values."""
+        comparison = CohortComparison(
+            cohort_a_id="2024-Q1",
+            cohort_b_id="2024-Q2",
+            period_number=0,
+            pct_active_delta=Decimal("5.00"),
+            aof_delta=Decimal("0.20"),
+            aov_delta=Decimal("10.00"),
+            revenue_delta=Decimal("50.00"),
+            pct_active_change_pct=Decimal("6.25"),
+            aof_change_pct=Decimal("13.33"),
+            aov_change_pct=Decimal("10.00"),
+            revenue_change_pct=Decimal("25.00"),
+        )
+        assert comparison.cohort_a_id == "2024-Q1"
+        assert comparison.cohort_b_id == "2024-Q2"
+        assert comparison.period_number == 0
+
+    def test_compare_cohort_pair_basic(self):
+        """Test compare_cohort_pair with basic scenario."""
+        from customer_base_audit.analyses.lens4 import compare_cohort_pair
+
+        decomp_a = CohortDecomposition(
+            cohort_id="2024-Q1",
+            period_number=0,
+            cohort_size=100,
+            active_customers=80,
+            pct_active=Decimal("80.00"),
+            total_orders=120,
+            aof=Decimal("1.50"),
+            total_revenue=Decimal("6000.00"),
+            aov=Decimal("50.00"),
+            margin=Decimal("100.00"),
+            revenue=Decimal("6000.00"),
+        )
+
+        decomp_b = CohortDecomposition(
+            cohort_id="2024-Q2",
+            period_number=0,
+            cohort_size=100,
+            active_customers=90,
+            pct_active=Decimal("90.00"),
+            total_orders=150,
+            aof=Decimal("1.67"),
+            total_revenue=Decimal("7500.00"),
+            aov=Decimal("50.00"),
+            margin=Decimal("100.00"),
+            revenue=Decimal("7500.00"),
+        )
+
+        comparison = compare_cohort_pair(decomp_a, decomp_b)
+
+        assert comparison.pct_active_delta == Decimal("10.00")
+        assert comparison.aof_delta == Decimal("0.17")
+        assert comparison.aov_delta == Decimal("0.00")
+        assert comparison.revenue_delta == Decimal("15.00")  # (7500-6000)/100
+
+    def test_compare_cohort_pair_different_periods_raises_error(self):
+        """Test that comparing different periods raises ValueError."""
+        from customer_base_audit.analyses.lens4 import compare_cohort_pair
+
+        decomp_a = CohortDecomposition(
+            cohort_id="2024-Q1",
+            period_number=0,
+            cohort_size=100,
+            active_customers=80,
+            pct_active=Decimal("80.00"),
+            total_orders=120,
+            aof=Decimal("1.50"),
+            total_revenue=Decimal("6000.00"),
+            aov=Decimal("50.00"),
+            margin=Decimal("100.00"),
+            revenue=Decimal("6000.00"),
+        )
+
+        decomp_b = CohortDecomposition(
+            cohort_id="2024-Q2",
+            period_number=1,  # Different period
+            cohort_size=100,
+            active_customers=90,
+            pct_active=Decimal("90.00"),
+            total_orders=150,
+            aof=Decimal("1.67"),
+            total_revenue=Decimal("7500.00"),
+            aov=Decimal("50.00"),
+            margin=Decimal("100.00"),
+            revenue=Decimal("7500.00"),
+        )
+
+        with pytest.raises(
+            ValueError, match="Cannot compare cohorts at different periods"
+        ):
+            compare_cohort_pair(decomp_a, decomp_b)
+
+
+class TestPhase2Integration:
+    """Integration tests for Phase 2 features."""
+
+    def test_compare_cohorts_time_aligned_mode(self):
+        """Test time-aligned comparison mode."""
+        period_data = [
+            # Cohort 2024-Q1 in Jan
+            PeriodAggregation(
+                "cust1",
+                datetime(2024, 1, 1),
+                datetime(2024, 2, 1),
+                2,
+                100.0,
+                20.0,
+                5,
+            ),
+            # Cohort 2024-Q1 in Feb
+            PeriodAggregation(
+                "cust1",
+                datetime(2024, 2, 1),
+                datetime(2024, 3, 1),
+                1,
+                50.0,
+                10.0,
+                2,
+            ),
+            # Cohort 2024-Q2 in Feb (same calendar period as cust1's 2nd period)
+            PeriodAggregation(
+                "cust2",
+                datetime(2024, 2, 1),
+                datetime(2024, 3, 1),
+                3,
+                150.0,
+                30.0,
+                7,
+            ),
+        ]
+
+        cohort_assignments = {
+            "cust1": "2024-Q1",
+            "cust2": "2024-Q2",
+        }
+
+        metrics = compare_cohorts(
+            period_data, cohort_assignments, alignment_type="time-aligned"
+        )
+
+        assert metrics.alignment_type == "time-aligned"
+        assert len(metrics.cohort_decompositions) > 0
+
+        # In time-aligned mode, period numbers are absolute calendar periods
+        # Both cohorts should have data for period 1 (Feb)
+        period_1_decomps = [
+            d for d in metrics.cohort_decompositions if d.period_number == 1
+        ]
+        assert len(period_1_decomps) == 2  # Both cohorts active in Feb
+
+    def test_compare_cohorts_includes_time_to_second_purchase(self):
+        """Test that compare_cohorts calculates time to second purchase."""
+        period_data = [
+            PeriodAggregation(
+                "cust1",
+                datetime(2024, 1, 1),
+                datetime(2024, 2, 1),
+                2,
+                100.0,
+                20.0,
+                5,
+            ),
+            PeriodAggregation(
+                "cust1",
+                datetime(2024, 2, 1),
+                datetime(2024, 3, 1),
+                1,
+                50.0,
+                10.0,
+                2,
+            ),
+            PeriodAggregation(
+                "cust2",
+                datetime(2024, 1, 1),
+                datetime(2024, 2, 1),
+                1,
+                75.0,
+                15.0,
+                3,
+            ),
+        ]
+
+        cohort_assignments = {
+            "cust1": "2024-Q1",
+            "cust2": "2024-Q1",
+        }
+
+        metrics = compare_cohorts(period_data, cohort_assignments)
+
+        assert len(metrics.time_to_second_purchase) == 1
+        ttsp = metrics.time_to_second_purchase[0]
+        assert ttsp.cohort_id == "2024-Q1"
+        assert ttsp.customers_with_repeat == 1  # Only cust1 has 2+ periods
+
+    def test_compare_cohorts_includes_cohort_comparisons(self):
+        """Test that compare_cohorts calculates cohort comparisons."""
+        period_data = [
+            # Cohort A at period 0
+            PeriodAggregation(
+                "cust1",
+                datetime(2024, 1, 1),
+                datetime(2024, 2, 1),
+                2,
+                100.0,
+                20.0,
+                5,
+            ),
+            # Cohort B at period 0
+            PeriodAggregation(
+                "cust2",
+                datetime(2024, 2, 1),
+                datetime(2024, 3, 1),
+                3,
+                150.0,
+                30.0,
+                7,
+            ),
+        ]
+
+        cohort_assignments = {
+            "cust1": "2024-Q1",
+            "cust2": "2024-Q2",
+        }
+
+        metrics = compare_cohorts(
+            period_data, cohort_assignments, alignment_type="left-aligned"
+        )
+
+        # Should have comparisons for cohorts at same lifecycle stage
+        assert len(metrics.cohort_comparisons) > 0
+        comparison = metrics.cohort_comparisons[0]
+        assert comparison.period_number == 0  # Both at acquisition period
+
+    def test_compare_cohorts_time_aligned_no_comparisons(self):
+        """Verify time-aligned mode doesn't produce cohort comparisons."""
+        period_data = [
+            # Cohort A in Jan
+            PeriodAggregation(
+                "cust1",
+                datetime(2024, 1, 1),
+                datetime(2024, 2, 1),
+                2,
+                100.0,
+                20.0,
+                5,
+            ),
+            # Cohort B in Feb
+            PeriodAggregation(
+                "cust2",
+                datetime(2024, 2, 1),
+                datetime(2024, 3, 1),
+                3,
+                150.0,
+                30.0,
+                7,
+            ),
+        ]
+
+        cohort_assignments = {
+            "cust1": "2024-Q1",
+            "cust2": "2024-Q2",
+        }
+
+        metrics = compare_cohorts(
+            period_data, cohort_assignments, alignment_type="time-aligned"
+        )
+
+        # Time-aligned mode should not produce cohort comparisons
+        # because cohorts are at different lifecycle stages
+        assert len(metrics.cohort_comparisons) == 0
+        assert metrics.alignment_type == "time-aligned"
