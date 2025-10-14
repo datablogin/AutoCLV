@@ -536,7 +536,9 @@ class TestInputDataValidation:
                 5,
             )
         ]
-        with pytest.raises(ValueError, match="Invalid total_orders.*must be non-negative"):
+        with pytest.raises(
+            ValueError, match="Invalid total_orders.*must be non-negative"
+        ):
             prepare_bg_nbd_inputs(periods, datetime(2023, 1, 1), datetime(2023, 6, 1))
 
     def test_negative_total_spend_in_bg_nbd(self):
@@ -552,7 +554,9 @@ class TestInputDataValidation:
                 5,
             )
         ]
-        with pytest.raises(ValueError, match="Invalid total_spend.*must be non-negative"):
+        with pytest.raises(
+            ValueError, match="Invalid total_spend.*must be non-negative"
+        ):
             prepare_bg_nbd_inputs(periods, datetime(2023, 1, 1), datetime(2023, 6, 1))
 
     def test_negative_total_orders_in_gamma_gamma(self):
@@ -568,7 +572,9 @@ class TestInputDataValidation:
                 10,
             )
         ]
-        with pytest.raises(ValueError, match="Invalid total_orders.*must be non-negative"):
+        with pytest.raises(
+            ValueError, match="Invalid total_orders.*must be non-negative"
+        ):
             prepare_gamma_gamma_inputs(periods, min_frequency=2)
 
     def test_negative_total_spend_in_gamma_gamma(self):
@@ -584,7 +590,9 @@ class TestInputDataValidation:
                 10,
             )
         ]
-        with pytest.raises(ValueError, match="Invalid total_spend.*must be non-negative"):
+        with pytest.raises(
+            ValueError, match="Invalid total_spend.*must be non-negative"
+        ):
             prepare_gamma_gamma_inputs(periods, min_frequency=2)
 
     def test_zero_frequency_division_check(self):
@@ -642,7 +650,9 @@ class TestInputDataValidation:
                 5,
             )
         ]
-        with pytest.raises(ValueError, match="Period start.*is before.*observation_start"):
+        with pytest.raises(
+            ValueError, match="Period start.*is before.*observation_start"
+        ):
             prepare_bg_nbd_inputs(periods, datetime(2023, 1, 1), datetime(2023, 6, 1))
 
     def test_period_after_observation_end(self):

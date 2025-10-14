@@ -70,7 +70,7 @@ class BGNBDInput:
                 f"for customer {self.customer_id}. Capping recency at T. "
                 f"This is expected with period-level aggregations."
             )
-            object.__setattr__(self, 'recency', self.T)
+            object.__setattr__(self, "recency", self.T)
 
 
 @dataclass(frozen=True)
