@@ -59,12 +59,10 @@ class BGNBDInput:
             raise ValueError(
                 f"T must be positive: {self.T} (customer_id={self.customer_id})"
             )
+        # With period-level aggregations, recency might slightly exceed T due to period boundaries.
+        # Cap recency at T instead of erroring to handle this approximation gracefully.
         if self.recency > self.T:
-            raise ValueError(
-                f"Invalid BG/NBD input: recency ({self.recency:.2f}) > T ({self.T:.2f}). "
-                f"This indicates last purchase occurred after observation end. "
-                f"Check period boundaries and observation_end date. (customer_id={self.customer_id})"
-            )
+            object.__setattr__(self, 'recency', self.T)
 
 
 @dataclass(frozen=True)
@@ -163,10 +161,40 @@ def prepare_bg_nbd_inputs(
     if not period_aggregations:
         return pd.DataFrame(columns=["customer_id", "frequency", "recency", "T"])
 
+    # Validate that periods fall within observation window
+    for period in period_aggregations:
+        if period.period_start < observation_start:
+            raise ValueError(
+                f"Period start ({period.period_start.isoformat()}) is before "
+                f"observation_start ({observation_start.isoformat()}) "
+                f"for customer {period.customer_id}"
+            )
+        if period.period_end > observation_end:
+            raise ValueError(
+                f"Period end ({period.period_end.isoformat()}) is after "
+                f"observation_end ({observation_end.isoformat()}) "
+                f"for customer {period.customer_id}"
+            )
+
     # Group by customer to calculate metrics
     customer_data: dict[str, dict] = {}
     for period in period_aggregations:
         customer_id = period.customer_id
+
+        # Validate period data quality
+        if period.total_orders < 0:
+            raise ValueError(
+                f"Invalid total_orders: {period.total_orders} for customer {period.customer_id} "
+                f"in period [{period.period_start.isoformat()}, {period.period_end.isoformat()}]. "
+                f"total_orders must be non-negative."
+            )
+        if period.total_spend < 0:
+            raise ValueError(
+                f"Invalid total_spend: {period.total_spend} for customer {period.customer_id} "
+                f"in period [{period.period_start.isoformat()}, {period.period_end.isoformat()}]. "
+                f"total_spend must be non-negative."
+            )
+
         if customer_id not in customer_data:
             customer_data[customer_id] = {
                 "first_period_start": period.period_start,
@@ -247,6 +275,8 @@ def prepare_gamma_gamma_inputs(
         DataFrame with columns: customer_id, frequency, monetary_value
         One row per customer with frequency >= min_frequency.
         Sorted by customer_id.
+        Note: monetary_value column contains Decimal objects for financial precision.
+        Use float(value) or .astype(float) if float conversion is needed.
 
     Examples
     --------
@@ -263,8 +293,8 @@ def prepare_gamma_gamma_inputs(
     'C1'
     >>> df.loc[0, 'frequency']
     3
-    >>> float(df.loc[0, 'monetary_value'])
-    50.0
+    >>> df.loc[0, 'monetary_value']
+    Decimal('50.00')
     """
     if not period_aggregations:
         return pd.DataFrame(columns=["customer_id", "frequency", "monetary_value"])
@@ -273,6 +303,21 @@ def prepare_gamma_gamma_inputs(
     customer_data: dict[str, dict] = {}
     for period in period_aggregations:
         customer_id = period.customer_id
+
+        # Validate period data quality
+        if period.total_orders < 0:
+            raise ValueError(
+                f"Invalid total_orders: {period.total_orders} for customer {period.customer_id} "
+                f"in period [{period.period_start.isoformat()}, {period.period_end.isoformat()}]. "
+                f"total_orders must be non-negative."
+            )
+        if period.total_spend < 0:
+            raise ValueError(
+                f"Invalid total_spend: {period.total_spend} for customer {period.customer_id} "
+                f"in period [{period.period_start.isoformat()}, {period.period_end.isoformat()}]. "
+                f"total_spend must be non-negative."
+            )
+
         if customer_id not in customer_data:
             customer_data[customer_id] = {
                 "total_orders": 0,
@@ -295,6 +340,14 @@ def prepare_gamma_gamma_inputs(
         if frequency < min_frequency:
             continue
 
+        # Defensive check: frequency should never be 0 here due to min_frequency filter,
+        # but add explicit validation for robustness
+        if frequency == 0:
+            raise ValueError(
+                f"Cannot calculate monetary value with zero frequency "
+                f"(customer_id={customer_id}). This should not occur if min_frequency >= 1."
+            )
+
         # Monetary value: average transaction value
         monetary_value = (data["total_spend"] / frequency).quantize(
             Decimal("0.01"), rounding=ROUND_HALF_UP
@@ -304,7 +357,7 @@ def prepare_gamma_gamma_inputs(
             {
                 "customer_id": customer_id,
                 "frequency": frequency,
-                "monetary_value": float(monetary_value),  # Convert to float for pandas
+                "monetary_value": monetary_value,  # Keep as Decimal for precision
             }
         )
 
