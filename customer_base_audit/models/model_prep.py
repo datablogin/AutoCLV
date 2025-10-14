@@ -7,6 +7,7 @@ and Gamma-Gamma for monetary value prediction).
 
 from __future__ import annotations
 
+import logging
 from dataclasses import dataclass
 from datetime import datetime
 from decimal import Decimal, ROUND_HALF_UP
@@ -15,6 +16,8 @@ from typing import Sequence
 import pandas as pd
 
 from customer_base_audit.foundation.data_mart import PeriodAggregation
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass(frozen=True)
@@ -60,8 +63,13 @@ class BGNBDInput:
                 f"T must be positive: {self.T} (customer_id={self.customer_id})"
             )
         # With period-level aggregations, recency might slightly exceed T due to period boundaries.
-        # Cap recency at T instead of erroring to handle this approximation gracefully.
+        # Cap recency at T and log a warning to aid debugging.
         if self.recency > self.T:
+            logger.warning(
+                f"Recency ({self.recency:.2f}) exceeds T ({self.T:.2f}) for customer {self.customer_id}. "
+                f"Capping recency at T. This is expected with period-level aggregations but may indicate "
+                f"period boundary approximation issues if it occurs frequently."
+            )
             object.__setattr__(self, 'recency', self.T)
 
 
