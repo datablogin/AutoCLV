@@ -1,6 +1,6 @@
 """Tests for model input preparation utilities (BG/NBD and Gamma-Gamma)."""
 
-from datetime import datetime
+from datetime import datetime, timezone
 from decimal import Decimal
 
 import pandas as pd
@@ -13,6 +13,9 @@ from customer_base_audit.models.model_prep import (
     prepare_bg_nbd_inputs,
     prepare_gamma_gamma_inputs,
 )
+
+# Timezone-aware datetime helper for tests (Issue #62)
+UTC = timezone.utc
 
 
 class TestBGNBDInput:
@@ -98,7 +101,9 @@ class TestPrepareBGNBDInputs:
 
     def test_empty_input_returns_empty_dataframe(self):
         """Empty period aggregations should return empty DataFrame with correct columns."""
-        df = prepare_bg_nbd_inputs([], datetime(2023, 1, 1), datetime(2023, 12, 31))
+        df = prepare_bg_nbd_inputs(
+            [], datetime(2023, 1, 1, tzinfo=UTC), datetime(2023, 12, 31, tzinfo=UTC)
+        )
         assert isinstance(df, pd.DataFrame)
         assert len(df) == 0
         assert list(df.columns) == ["customer_id", "frequency", "recency", "T"]
@@ -108,21 +113,25 @@ class TestPrepareBGNBDInputs:
         periods = [
             PeriodAggregation(
                 customer_id="C1",
-                period_start=datetime(2023, 1, 1),
-                period_end=datetime(2023, 2, 1),
+                period_start=datetime(2023, 1, 1, tzinfo=UTC),
+                period_end=datetime(2023, 2, 1, tzinfo=UTC),
                 total_orders=1,
                 total_spend=100.0,
                 total_margin=30.0,
                 total_quantity=5,
             )
         ]
-        df = prepare_bg_nbd_inputs(periods, datetime(2023, 1, 1), datetime(2023, 6, 1))
+        df = prepare_bg_nbd_inputs(
+            periods, datetime(2023, 1, 1, tzinfo=UTC), datetime(2023, 6, 1, tzinfo=UTC)
+        )
         assert len(df) == 1
         assert df.loc[0, "customer_id"] == "C1"
         assert df.loc[0, "frequency"] == 0  # 1 order - 1 = 0 repeat purchases
         assert df.loc[0, "recency"] == 0.0  # No repeat purchases
         # T = from first period start (2023-01-01) to observation end (2023-06-01)
-        expected_T = (datetime(2023, 6, 1) - datetime(2023, 1, 1)).days
+        expected_T = (
+            datetime(2023, 6, 1, tzinfo=UTC) - datetime(2023, 1, 1, tzinfo=UTC)
+        ).days
         assert df.loc[0, "T"] == pytest.approx(expected_T, abs=1.0)
 
     def test_single_customer_multiple_periods(self):
@@ -130,8 +139,8 @@ class TestPrepareBGNBDInputs:
         periods = [
             PeriodAggregation(
                 customer_id="C1",
-                period_start=datetime(2023, 1, 1),
-                period_end=datetime(2023, 2, 1),
+                period_start=datetime(2023, 1, 1, tzinfo=UTC),
+                period_end=datetime(2023, 2, 1, tzinfo=UTC),
                 total_orders=2,
                 total_spend=150.0,
                 total_margin=45.0,
@@ -139,23 +148,29 @@ class TestPrepareBGNBDInputs:
             ),
             PeriodAggregation(
                 customer_id="C1",
-                period_start=datetime(2023, 3, 1),
-                period_end=datetime(2023, 4, 1),
+                period_start=datetime(2023, 3, 1, tzinfo=UTC),
+                period_end=datetime(2023, 4, 1, tzinfo=UTC),
                 total_orders=1,
                 total_spend=50.0,
                 total_margin=15.0,
                 total_quantity=3,
             ),
         ]
-        df = prepare_bg_nbd_inputs(periods, datetime(2023, 1, 1), datetime(2023, 6, 1))
+        df = prepare_bg_nbd_inputs(
+            periods, datetime(2023, 1, 1, tzinfo=UTC), datetime(2023, 6, 1, tzinfo=UTC)
+        )
         assert len(df) == 1
         assert df.loc[0, "customer_id"] == "C1"
         assert df.loc[0, "frequency"] == 2  # 3 total orders - 1 = 2 repeat purchases
         # Recency = from first period start (2023-01-01) to last period end (2023-04-01)
-        expected_recency = (datetime(2023, 4, 1) - datetime(2023, 1, 1)).days
+        expected_recency = (
+            datetime(2023, 4, 1, tzinfo=UTC) - datetime(2023, 1, 1, tzinfo=UTC)
+        ).days
         assert df.loc[0, "recency"] == pytest.approx(expected_recency, abs=1.0)
         # T = from first period start (2023-01-01) to observation end (2023-06-01)
-        expected_T = (datetime(2023, 6, 1) - datetime(2023, 1, 1)).days
+        expected_T = (
+            datetime(2023, 6, 1, tzinfo=UTC) - datetime(2023, 1, 1, tzinfo=UTC)
+        ).days
         assert df.loc[0, "T"] == pytest.approx(expected_T, abs=1.0)
 
     def test_multiple_customers(self):
@@ -163,8 +178,8 @@ class TestPrepareBGNBDInputs:
         periods = [
             PeriodAggregation(
                 "C2",
-                datetime(2023, 2, 1),
-                datetime(2023, 3, 1),
+                datetime(2023, 2, 1, tzinfo=UTC),
+                datetime(2023, 3, 1, tzinfo=UTC),
                 1,
                 75.0,
                 20.0,
@@ -172,8 +187,8 @@ class TestPrepareBGNBDInputs:
             ),
             PeriodAggregation(
                 "C1",
-                datetime(2023, 1, 1),
-                datetime(2023, 2, 1),
+                datetime(2023, 1, 1, tzinfo=UTC),
+                datetime(2023, 2, 1, tzinfo=UTC),
                 2,
                 100.0,
                 30.0,
@@ -181,15 +196,17 @@ class TestPrepareBGNBDInputs:
             ),
             PeriodAggregation(
                 "C1",
-                datetime(2023, 3, 1),
-                datetime(2023, 4, 1),
+                datetime(2023, 3, 1, tzinfo=UTC),
+                datetime(2023, 4, 1, tzinfo=UTC),
                 1,
                 50.0,
                 15.0,
                 2,
             ),
         ]
-        df = prepare_bg_nbd_inputs(periods, datetime(2023, 1, 1), datetime(2023, 6, 1))
+        df = prepare_bg_nbd_inputs(
+            periods, datetime(2023, 1, 1, tzinfo=UTC), datetime(2023, 6, 1, tzinfo=UTC)
+        )
         assert len(df) == 2
         # Should be sorted by customer_id
         assert df.loc[0, "customer_id"] == "C1"
@@ -205,8 +222,8 @@ class TestPrepareBGNBDInputs:
         periods = [
             PeriodAggregation(
                 "C1",
-                datetime(2023, 1, 1),
-                datetime(2023, 2, 1),
+                datetime(2023, 1, 1, tzinfo=UTC),
+                datetime(2023, 2, 1, tzinfo=UTC),
                 1,
                 50.0,
                 15.0,
@@ -214,15 +231,17 @@ class TestPrepareBGNBDInputs:
             ),
             PeriodAggregation(
                 "C1",
-                datetime(2023, 2, 1),
-                datetime(2023, 3, 1),
+                datetime(2023, 2, 1, tzinfo=UTC),
+                datetime(2023, 3, 1, tzinfo=UTC),
                 1,
                 75.0,
                 20.0,
                 4,
             ),
         ]
-        df = prepare_bg_nbd_inputs(periods, datetime(2023, 1, 1), datetime(2023, 6, 1))
+        df = prepare_bg_nbd_inputs(
+            periods, datetime(2023, 1, 1, tzinfo=UTC), datetime(2023, 6, 1, tzinfo=UTC)
+        )
         assert len(df) == 1
         assert df.loc[0, "frequency"] == 1  # 2 orders - 1 = 1 repeat purchase
 
@@ -231,8 +250,8 @@ class TestPrepareBGNBDInputs:
         periods = [
             PeriodAggregation(
                 "C1",
-                datetime(2023, 1, 1),
-                datetime(2023, 2, 1),
+                datetime(2023, 1, 1, tzinfo=UTC),
+                datetime(2023, 2, 1, tzinfo=UTC),
                 2,
                 100.0,
                 30.0,
@@ -240,8 +259,8 @@ class TestPrepareBGNBDInputs:
             ),
             PeriodAggregation(
                 "C1",
-                datetime(2023, 5, 1),
-                datetime(2023, 6, 1),
+                datetime(2023, 5, 1, tzinfo=UTC),
+                datetime(2023, 6, 1, tzinfo=UTC),
                 1,
                 50.0,
                 15.0,
@@ -249,12 +268,16 @@ class TestPrepareBGNBDInputs:
             ),
         ]
         df = prepare_bg_nbd_inputs(
-            periods, datetime(2023, 1, 1), datetime(2023, 12, 31)
+            periods,
+            datetime(2023, 1, 1, tzinfo=UTC),
+            datetime(2023, 12, 31, tzinfo=UTC),
         )
         assert len(df) == 1
         assert df.loc[0, "frequency"] == 2  # 3 total orders - 1
         # Recency should span from first period start to last period end
-        expected_recency = (datetime(2023, 6, 1) - datetime(2023, 1, 1)).days
+        expected_recency = (
+            datetime(2023, 6, 1, tzinfo=UTC) - datetime(2023, 1, 1, tzinfo=UTC)
+        ).days
         assert df.loc[0, "recency"] == pytest.approx(expected_recency, abs=1.0)
 
 
@@ -273,8 +296,8 @@ class TestPrepareGammaGammaInputs:
         periods = [
             PeriodAggregation(
                 "C1",
-                datetime(2023, 1, 1),
-                datetime(2023, 2, 1),
+                datetime(2023, 1, 1, tzinfo=UTC),
+                datetime(2023, 2, 1, tzinfo=UTC),
                 3,
                 150.0,
                 45.0,
@@ -293,8 +316,8 @@ class TestPrepareGammaGammaInputs:
         periods = [
             PeriodAggregation(
                 "C1",
-                datetime(2023, 1, 1),
-                datetime(2023, 2, 1),
+                datetime(2023, 1, 1, tzinfo=UTC),
+                datetime(2023, 2, 1, tzinfo=UTC),
                 1,
                 50.0,
                 15.0,
@@ -309,8 +332,8 @@ class TestPrepareGammaGammaInputs:
         periods = [
             PeriodAggregation(
                 "C1",
-                datetime(2023, 1, 1),
-                datetime(2023, 2, 1),
+                datetime(2023, 1, 1, tzinfo=UTC),
+                datetime(2023, 2, 1, tzinfo=UTC),
                 2,
                 100.0,
                 30.0,
@@ -329,8 +352,8 @@ class TestPrepareGammaGammaInputs:
             # C1: 3 orders (included)
             PeriodAggregation(
                 "C1",
-                datetime(2023, 1, 1),
-                datetime(2023, 2, 1),
+                datetime(2023, 1, 1, tzinfo=UTC),
+                datetime(2023, 2, 1, tzinfo=UTC),
                 3,
                 150.0,
                 45.0,
@@ -339,8 +362,8 @@ class TestPrepareGammaGammaInputs:
             # C2: 1 order (excluded)
             PeriodAggregation(
                 "C2",
-                datetime(2023, 1, 1),
-                datetime(2023, 2, 1),
+                datetime(2023, 1, 1, tzinfo=UTC),
+                datetime(2023, 2, 1, tzinfo=UTC),
                 1,
                 50.0,
                 15.0,
@@ -349,8 +372,8 @@ class TestPrepareGammaGammaInputs:
             # C3: 5 orders across 2 periods (included)
             PeriodAggregation(
                 "C3",
-                datetime(2023, 1, 1),
-                datetime(2023, 2, 1),
+                datetime(2023, 1, 1, tzinfo=UTC),
+                datetime(2023, 2, 1, tzinfo=UTC),
                 2,
                 100.0,
                 30.0,
@@ -358,8 +381,8 @@ class TestPrepareGammaGammaInputs:
             ),
             PeriodAggregation(
                 "C3",
-                datetime(2023, 3, 1),
-                datetime(2023, 4, 1),
+                datetime(2023, 3, 1, tzinfo=UTC),
+                datetime(2023, 4, 1, tzinfo=UTC),
                 3,
                 150.0,
                 45.0,
@@ -385,8 +408,8 @@ class TestPrepareGammaGammaInputs:
         periods = [
             PeriodAggregation(
                 "C1",
-                datetime(2023, 1, 1),
-                datetime(2023, 2, 1),
+                datetime(2023, 1, 1, tzinfo=UTC),
+                datetime(2023, 2, 1, tzinfo=UTC),
                 2,
                 100.0,
                 30.0,
@@ -394,8 +417,8 @@ class TestPrepareGammaGammaInputs:
             ),
             PeriodAggregation(
                 "C2",
-                datetime(2023, 1, 1),
-                datetime(2023, 2, 1),
+                datetime(2023, 1, 1, tzinfo=UTC),
+                datetime(2023, 2, 1, tzinfo=UTC),
                 5,
                 250.0,
                 75.0,
@@ -413,8 +436,8 @@ class TestPrepareGammaGammaInputs:
         periods = [
             PeriodAggregation(
                 "C1",
-                datetime(2023, 1, 1),
-                datetime(2023, 2, 1),
+                datetime(2023, 1, 1, tzinfo=UTC),
+                datetime(2023, 2, 1, tzinfo=UTC),
                 3,
                 100.0,
                 30.0,
@@ -430,8 +453,8 @@ class TestPrepareGammaGammaInputs:
         periods = [
             PeriodAggregation(
                 "C1",
-                datetime(2023, 1, 1),
-                datetime(2023, 2, 1),
+                datetime(2023, 1, 1, tzinfo=UTC),
+                datetime(2023, 2, 1, tzinfo=UTC),
                 2,
                 80.0,
                 24.0,
@@ -439,8 +462,8 @@ class TestPrepareGammaGammaInputs:
             ),
             PeriodAggregation(
                 "C1",
-                datetime(2023, 2, 1),
-                datetime(2023, 3, 1),
+                datetime(2023, 2, 1, tzinfo=UTC),
+                datetime(2023, 3, 1, tzinfo=UTC),
                 1,
                 40.0,
                 12.0,
@@ -448,8 +471,8 @@ class TestPrepareGammaGammaInputs:
             ),
             PeriodAggregation(
                 "C1",
-                datetime(2023, 3, 1),
-                datetime(2023, 4, 1),
+                datetime(2023, 3, 1, tzinfo=UTC),
+                datetime(2023, 4, 1, tzinfo=UTC),
                 2,
                 80.0,
                 24.0,
@@ -481,8 +504,8 @@ class TestEdgeCases:
         periods = [
             PeriodAggregation(
                 "C1",
-                datetime(2023, 1, 1),
-                datetime(2023, 2, 1),
+                datetime(2023, 1, 1, tzinfo=UTC),
+                datetime(2023, 2, 1, tzinfo=UTC),
                 100,
                 1.00,  # 100 orders at $0.01 each
                 0.30,
@@ -499,8 +522,8 @@ class TestEdgeCases:
         periods = [
             PeriodAggregation(
                 "C1",
-                datetime(2023, 1, 1),
-                datetime(2023, 2, 1),
+                datetime(2023, 1, 1, tzinfo=UTC),
+                datetime(2023, 2, 1, tzinfo=UTC),
                 3,
                 10.00,  # 3 orders, $10 total -> $3.33... per order
                 3.00,
@@ -528,8 +551,8 @@ class TestInputDataValidation:
         periods = [
             PeriodAggregation(
                 "C1",
-                datetime(2023, 1, 1),
-                datetime(2023, 2, 1),
+                datetime(2023, 1, 1, tzinfo=UTC),
+                datetime(2023, 2, 1, tzinfo=UTC),
                 -1,  # Invalid negative total_orders
                 100.0,
                 30.0,
@@ -539,15 +562,19 @@ class TestInputDataValidation:
         with pytest.raises(
             ValueError, match="Invalid total_orders.*must be non-negative"
         ):
-            prepare_bg_nbd_inputs(periods, datetime(2023, 1, 1), datetime(2023, 6, 1))
+            prepare_bg_nbd_inputs(
+                periods,
+                datetime(2023, 1, 1, tzinfo=UTC),
+                datetime(2023, 6, 1, tzinfo=UTC),
+            )
 
     def test_negative_total_spend_in_bg_nbd(self):
         """prepare_bg_nbd_inputs should reject negative total_spend."""
         periods = [
             PeriodAggregation(
                 "C1",
-                datetime(2023, 1, 1),
-                datetime(2023, 2, 1),
+                datetime(2023, 1, 1, tzinfo=UTC),
+                datetime(2023, 2, 1, tzinfo=UTC),
                 1,
                 -100.0,  # Invalid negative total_spend
                 -30.0,
@@ -557,15 +584,19 @@ class TestInputDataValidation:
         with pytest.raises(
             ValueError, match="Invalid total_spend.*must be non-negative"
         ):
-            prepare_bg_nbd_inputs(periods, datetime(2023, 1, 1), datetime(2023, 6, 1))
+            prepare_bg_nbd_inputs(
+                periods,
+                datetime(2023, 1, 1, tzinfo=UTC),
+                datetime(2023, 6, 1, tzinfo=UTC),
+            )
 
     def test_negative_total_orders_in_gamma_gamma(self):
         """prepare_gamma_gamma_inputs should reject negative total_orders."""
         periods = [
             PeriodAggregation(
                 "C1",
-                datetime(2023, 1, 1),
-                datetime(2023, 2, 1),
+                datetime(2023, 1, 1, tzinfo=UTC),
+                datetime(2023, 2, 1, tzinfo=UTC),
                 -5,  # Invalid negative total_orders
                 100.0,
                 30.0,
@@ -582,8 +613,8 @@ class TestInputDataValidation:
         periods = [
             PeriodAggregation(
                 "C1",
-                datetime(2023, 1, 1),
-                datetime(2023, 2, 1),
+                datetime(2023, 1, 1, tzinfo=UTC),
+                datetime(2023, 2, 1, tzinfo=UTC),
                 5,
                 -200.0,  # Invalid negative total_spend
                 -60.0,
@@ -603,8 +634,8 @@ class TestInputDataValidation:
         periods = [
             PeriodAggregation(
                 "C1",
-                datetime(2023, 1, 1),
-                datetime(2023, 2, 1),
+                datetime(2023, 1, 1, tzinfo=UTC),
+                datetime(2023, 2, 1, tzinfo=UTC),
                 0,  # Zero orders
                 0.0,
                 0.0,
@@ -621,15 +652,17 @@ class TestInputDataValidation:
         periods = [
             PeriodAggregation(
                 "C1",
-                datetime(2023, 1, 1),
-                datetime(2023, 2, 1),
+                datetime(2023, 1, 1, tzinfo=UTC),
+                datetime(2023, 2, 1, tzinfo=UTC),
                 0,  # Zero orders is valid
                 0.0,  # Zero spend is valid
                 0.0,
                 0,
             )
         ]
-        df = prepare_bg_nbd_inputs(periods, datetime(2023, 1, 1), datetime(2023, 6, 1))
+        df = prepare_bg_nbd_inputs(
+            periods, datetime(2023, 1, 1, tzinfo=UTC), datetime(2023, 6, 1, tzinfo=UTC)
+        )
         assert len(df) == 1
         assert df.loc[0, "frequency"] == 0  # 0 - 1 = -1, but max(0, -1) = 0
 
@@ -642,8 +675,8 @@ class TestInputDataValidation:
         periods = [
             PeriodAggregation(
                 "C1",
-                datetime(2022, 12, 1),  # Before observation_start
-                datetime(2023, 1, 15),
+                datetime(2022, 12, 1, tzinfo=UTC),  # Before observation_start
+                datetime(2023, 1, 15, tzinfo=UTC),
                 1,
                 100.0,
                 30.0,
@@ -653,15 +686,19 @@ class TestInputDataValidation:
         with pytest.raises(
             ValueError, match="Period start.*is before.*observation_start"
         ):
-            prepare_bg_nbd_inputs(periods, datetime(2023, 1, 1), datetime(2023, 6, 1))
+            prepare_bg_nbd_inputs(
+                periods,
+                datetime(2023, 1, 1, tzinfo=UTC),
+                datetime(2023, 6, 1, tzinfo=UTC),
+            )
 
     def test_period_after_observation_end(self):
         """prepare_bg_nbd_inputs should reject periods ending after observation_end."""
         periods = [
             PeriodAggregation(
                 "C1",
-                datetime(2023, 5, 1),
-                datetime(2023, 7, 1),  # After observation_end
+                datetime(2023, 5, 1, tzinfo=UTC),
+                datetime(2023, 7, 1, tzinfo=UTC),  # After observation_end
                 1,
                 100.0,
                 30.0,
@@ -669,15 +706,19 @@ class TestInputDataValidation:
             )
         ]
         with pytest.raises(ValueError, match="Period end.*is after.*observation_end"):
-            prepare_bg_nbd_inputs(periods, datetime(2023, 1, 1), datetime(2023, 6, 1))
+            prepare_bg_nbd_inputs(
+                periods,
+                datetime(2023, 1, 1, tzinfo=UTC),
+                datetime(2023, 6, 1, tzinfo=UTC),
+            )
 
     def test_period_exactly_at_boundaries(self):
         """Periods exactly at observation window boundaries should be valid."""
         periods = [
             PeriodAggregation(
                 "C1",
-                datetime(2023, 1, 1),  # Exactly at observation_start
-                datetime(2023, 2, 1),
+                datetime(2023, 1, 1, tzinfo=UTC),  # Exactly at observation_start
+                datetime(2023, 2, 1, tzinfo=UTC),
                 1,
                 100.0,
                 30.0,
@@ -685,15 +726,17 @@ class TestInputDataValidation:
             ),
             PeriodAggregation(
                 "C2",
-                datetime(2023, 5, 1),
-                datetime(2023, 6, 1),  # Exactly at observation_end
+                datetime(2023, 5, 1, tzinfo=UTC),
+                datetime(2023, 6, 1, tzinfo=UTC),  # Exactly at observation_end
                 1,
                 50.0,
                 15.0,
                 3,
             ),
         ]
-        df = prepare_bg_nbd_inputs(periods, datetime(2023, 1, 1), datetime(2023, 6, 1))
+        df = prepare_bg_nbd_inputs(
+            periods, datetime(2023, 1, 1, tzinfo=UTC), datetime(2023, 6, 1, tzinfo=UTC)
+        )
         assert len(df) == 2  # Both should be valid
 
     def test_decimal_type_preserved_in_dataframe(self):
@@ -701,8 +744,8 @@ class TestInputDataValidation:
         periods = [
             PeriodAggregation(
                 "C1",
-                datetime(2023, 1, 1),
-                datetime(2023, 2, 1),
+                datetime(2023, 1, 1, tzinfo=UTC),
+                datetime(2023, 2, 1, tzinfo=UTC),
                 3,
                 150.0,
                 45.0,
@@ -725,8 +768,8 @@ class TestInputDataValidation:
         periods = [
             PeriodAggregation(
                 "C1",
-                datetime(2023, 1, 1),
-                datetime(2023, 2, 1),
+                datetime(2023, 1, 1, tzinfo=UTC),
+                datetime(2023, 2, 1, tzinfo=UTC),
                 7,
                 123.456789,  # High precision input
                 37.0,
@@ -746,8 +789,8 @@ class TestInputDataValidation:
         periods = [
             PeriodAggregation(
                 "C1",
-                datetime(2023, 1, 1),
-                datetime(2023, 2, 1),
+                datetime(2023, 1, 1, tzinfo=UTC),
+                datetime(2023, 2, 1, tzinfo=UTC),
                 5,
                 250.0,
                 75.0,
@@ -794,8 +837,8 @@ class TestInputDataValidation:
         periods = [
             PeriodAggregation(
                 "C1",
-                datetime(2023, 1, 1),
-                datetime(2023, 2, 1),
+                datetime(2023, 1, 1, tzinfo=UTC),
+                datetime(2023, 2, 1, tzinfo=UTC),
                 3,
                 150.0,
                 45.0,
@@ -808,3 +851,161 @@ class TestInputDataValidation:
 
         with pytest.raises(ValueError, match="min_frequency must be >= 1"):
             prepare_gamma_gamma_inputs(periods, min_frequency=-1)
+
+
+class TestTimezoneValidation:
+    """Test timezone validation added for Issue #62."""
+
+    def test_observation_end_must_be_timezone_aware(self):
+        """prepare_bg_nbd_inputs should reject timezone-naive observation_end."""
+        from datetime import timezone
+
+        periods = [
+            PeriodAggregation(
+                "C1",
+                datetime(2023, 1, 1, tzinfo=timezone.utc),
+                datetime(2023, 2, 1, tzinfo=timezone.utc),
+                1,
+                100.0,
+                30.0,
+                5,
+            )
+        ]
+        # observation_end is timezone-naive (no tzinfo)
+        with pytest.raises(ValueError, match="observation_end must be timezone-aware"):
+            prepare_bg_nbd_inputs(
+                periods,
+                datetime(2023, 1, 1, tzinfo=timezone.utc),
+                datetime(2023, 6, 1),  # Missing tzinfo
+            )
+
+    def test_observation_start_must_be_timezone_aware(self):
+        """prepare_bg_nbd_inputs should reject timezone-naive observation_start."""
+        from datetime import timezone
+
+        periods = [
+            PeriodAggregation(
+                "C1",
+                datetime(2023, 1, 1, tzinfo=timezone.utc),
+                datetime(2023, 2, 1, tzinfo=timezone.utc),
+                1,
+                100.0,
+                30.0,
+                5,
+            )
+        ]
+        # observation_start is timezone-naive (no tzinfo)
+        with pytest.raises(
+            ValueError, match="observation_start must be timezone-aware"
+        ):
+            prepare_bg_nbd_inputs(
+                periods,
+                datetime(2023, 1, 1),  # Missing tzinfo
+                datetime(2023, 6, 1, tzinfo=timezone.utc),
+            )
+
+    def test_period_start_must_be_timezone_aware(self):
+        """prepare_bg_nbd_inputs should reject timezone-naive period dates."""
+        from datetime import timezone
+
+        periods = [
+            PeriodAggregation(
+                "C1",
+                datetime(2023, 1, 1),  # Missing tzinfo
+                datetime(2023, 2, 1, tzinfo=timezone.utc),
+                1,
+                100.0,
+                30.0,
+                5,
+            )
+        ]
+        with pytest.raises(
+            ValueError, match="Period start must be timezone-aware for customer C1"
+        ):
+            prepare_bg_nbd_inputs(
+                periods,
+                datetime(2023, 1, 1, tzinfo=timezone.utc),
+                datetime(2023, 6, 1, tzinfo=timezone.utc),
+            )
+
+    def test_period_end_must_be_timezone_aware(self):
+        """prepare_bg_nbd_inputs should reject timezone-naive period dates."""
+        from datetime import timezone
+
+        periods = [
+            PeriodAggregation(
+                "C1",
+                datetime(2023, 1, 1, tzinfo=timezone.utc),
+                datetime(2023, 2, 1),  # Missing tzinfo
+                1,
+                100.0,
+                30.0,
+                5,
+            )
+        ]
+        with pytest.raises(
+            ValueError, match="Period end must be timezone-aware for customer C1"
+        ):
+            prepare_bg_nbd_inputs(
+                periods,
+                datetime(2023, 1, 1, tzinfo=timezone.utc),
+                datetime(2023, 6, 1, tzinfo=timezone.utc),
+            )
+
+    def test_inconsistent_timezones_rejected(self):
+        """prepare_bg_nbd_inputs should reject inconsistent timezones."""
+        from datetime import timezone
+        from zoneinfo import ZoneInfo
+
+        periods = [
+            PeriodAggregation(
+                "C1",
+                datetime(2023, 1, 1, tzinfo=ZoneInfo("America/New_York")),
+                datetime(2023, 2, 1, tzinfo=ZoneInfo("America/New_York")),
+                1,
+                100.0,
+                30.0,
+                5,
+            )
+        ]
+        # observation dates use UTC, periods use America/New_York
+        with pytest.raises(ValueError, match="Inconsistent timezones"):
+            prepare_bg_nbd_inputs(
+                periods,
+                datetime(2023, 1, 1, tzinfo=timezone.utc),
+                datetime(2023, 6, 1, tzinfo=timezone.utc),
+            )
+
+    def test_timezone_aware_datetimes_accepted(self):
+        """prepare_bg_nbd_inputs should accept timezone-aware datetimes."""
+        from datetime import timezone
+
+        periods = [
+            PeriodAggregation(
+                "C1",
+                datetime(2023, 1, 1, tzinfo=timezone.utc),
+                datetime(2023, 2, 1, tzinfo=timezone.utc),
+                2,
+                100.0,
+                30.0,
+                5,
+            ),
+            PeriodAggregation(
+                "C1",
+                datetime(2023, 3, 1, tzinfo=timezone.utc),
+                datetime(2023, 4, 1, tzinfo=timezone.utc),
+                1,
+                50.0,
+                15.0,
+                3,
+            ),
+        ]
+        df = prepare_bg_nbd_inputs(
+            periods,
+            datetime(2023, 1, 1, tzinfo=timezone.utc),
+            datetime(2023, 6, 1, tzinfo=timezone.utc),
+        )
+        # Should succeed and produce valid results
+        assert len(df) == 1
+        assert df.loc[0, "customer_id"] == "C1"
+        assert df.loc[0, "frequency"] == 2  # 3 orders - 1
