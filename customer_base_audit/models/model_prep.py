@@ -7,6 +7,7 @@ and Gamma-Gamma for monetary value prediction).
 
 from __future__ import annotations
 
+import logging
 from dataclasses import dataclass
 from datetime import datetime
 from decimal import Decimal, ROUND_HALF_UP
@@ -15,6 +16,8 @@ from typing import Sequence
 import pandas as pd
 
 from customer_base_audit.foundation.data_mart import PeriodAggregation
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass(frozen=True)
@@ -62,6 +65,11 @@ class BGNBDInput:
         # With period-level aggregations, recency might slightly exceed T due to period boundaries.
         # Cap recency at T instead of erroring to handle this approximation gracefully.
         if self.recency > self.T:
+            logger.warning(
+                f"Recency ({self.recency:.2f}) exceeds T ({self.T:.2f}) "
+                f"for customer {self.customer_id}. Capping recency at T. "
+                f"This is expected with period-level aggregations."
+            )
             object.__setattr__(self, 'recency', self.T)
 
 
@@ -296,6 +304,13 @@ def prepare_gamma_gamma_inputs(
     >>> df.loc[0, 'monetary_value']
     Decimal('50.00')
     """
+    # Validate min_frequency parameter
+    if min_frequency < 1:
+        raise ValueError(
+            f"min_frequency must be >= 1, got {min_frequency}. "
+            f"Gamma-Gamma model requires at least one transaction to estimate monetary value."
+        )
+
     if not period_aggregations:
         return pd.DataFrame(columns=["customer_id", "frequency", "monetary_value"])
 
