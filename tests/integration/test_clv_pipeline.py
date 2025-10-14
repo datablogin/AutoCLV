@@ -20,9 +20,6 @@ from datetime import datetime, timezone
 
 import pytest
 
-# Timezone-aware datetime helper for tests (Issue #62)
-UTC = timezone.utc
-
 from customer_base_audit.synthetic.texas_clv_client import generate_texas_clv_client
 from customer_base_audit.foundation.data_mart import (
     CustomerDataMartBuilder,
@@ -43,6 +40,9 @@ from customer_base_audit.validation.validation import (
     temporal_train_test_split,
     calculate_clv_metrics,
 )
+
+# Timezone-aware datetime helper for tests (Issue #62)
+UTC = timezone.utc
 
 
 @pytest.fixture(scope="module")
