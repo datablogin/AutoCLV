@@ -577,7 +577,7 @@ print(f"Predicted mean: {stats.predicted_mean:.2f}")
 ```python
 from datetime import datetime
 from customer_base_audit.synthetic import generate_texas_clv_client
-from customer_base_audit.models.model_prep import prepare_clv_model_inputs
+from customer_base_audit.models.model_prep import prepare_bg_nbd_inputs, prepare_gamma_gamma_inputs
 from customer_base_audit.models.bg_nbd import BGNBDModelWrapper, BGNBDConfig
 from customer_base_audit.models.gamma_gamma import GammaGammaModelWrapper, GammaGammaConfig
 from customer_base_audit.models.clv_calculator import CLVCalculator
@@ -606,47 +606,49 @@ train_txns, obs_txns, test_txns = temporal_train_test_split(
 print(f"Training: {len(train_txns)} transactions")
 print(f"Test: {len(test_txns)} transactions")
 
-# 3. Prepare data for modeling (using observation transactions)
-model_data = prepare_clv_model_inputs(
-    transactions=obs_txns.to_dict('records'),
+# 3. Build data mart from observation transactions
+from customer_base_audit.foundation.data_mart import CustomerDataMartBuilder, PeriodGranularity
+builder = CustomerDataMartBuilder([PeriodGranularity.MONTH])
+mart = builder.build(obs_txns.to_dict('records'))
+
+# 4. Prepare data for modeling (using period aggregations)
+bgnbd_data = prepare_bg_nbd_inputs(
+    period_aggregations=mart.periods[PeriodGranularity.MONTH],
     observation_start=datetime(2024, 1, 1),
-    observation_end=datetime(2024, 12, 31, 23, 59, 59),
-    customer_id_field='customer_id',
-    timestamp_field='event_ts',
-    monetary_field='unit_price'
+    observation_end=datetime(2024, 12, 31, 23, 59, 59)
 )
 
-# 4. Train BG/NBD model
+gg_data = prepare_gamma_gamma_inputs(
+    period_aggregations=mart.periods[PeriodGranularity.MONTH],
+    min_frequency=2
+)
+gg_data['monetary_value'] = gg_data['monetary_value'].astype(float)
+
+# 5. Train BG/NBD model
 bgnbd_model = BGNBDModelWrapper(BGNBDConfig(method='map'))
-bgnbd_model.fit(model_data)
+bgnbd_model.fit(bgnbd_data)
 
-# 5. Train Gamma-Gamma model (repeat customers only)
-repeat_customers = model_data[model_data['frequency'] >= 2]
+# 6. Train Gamma-Gamma model (repeat customers only)
 gg_model = GammaGammaModelWrapper(GammaGammaConfig(method='map'))
-gg_model.fit(repeat_customers)
+gg_model.fit(gg_data)
 
-# 6. Calculate CLV predictions
-calculator = CLVCalculator()
-clv_predictions = calculator.calculate_clv(
-    bgnbd_model=bgnbd_model,
+# 7. Calculate CLV predictions
+calculator = CLVCalculator(
+    bg_nbd_model=bgnbd_model,
     gamma_gamma_model=gg_model,
-    customer_data=model_data,
-    time_period_days=90  # Predict next 90 days
+    time_horizon_months=3  # Predict next 3 months (~90 days)
 )
+clv_df = calculator.calculate_clv(bgnbd_data, gg_data)
 
-# 7. Calculate actual CLV from test period
+# 8. Calculate actual CLV from test period
 actual_clv = test_txns.groupby('customer_id')['amount'].sum().reset_index()
 actual_clv.columns = ['customer_id', 'actual_clv']
 
-# 8. Merge predictions with actuals
-predictions_df = pd.DataFrame([{
-    'customer_id': score.customer_id,
-    'predicted_clv': score.clv
-} for score in clv_predictions])
+# 9. Merge predictions with actuals
+comparison = clv_df[['customer_id', 'clv']].merge(actual_clv, on='customer_id', how='inner')
+comparison.rename(columns={'clv': 'predicted_clv'}, inplace=True)
 
-comparison = predictions_df.merge(actual_clv, on='customer_id', how='inner')
-
-# 9. Calculate validation metrics
+# 10. Calculate validation metrics
 metrics = calculate_clv_metrics(
     actual=comparison['actual_clv'],
     predicted=comparison['predicted_clv']
@@ -679,33 +681,37 @@ from customer_base_audit.validation import cross_validate_clv
 # Define model pipeline
 def clv_pipeline(transactions, observation_end):
     """Full CLV modeling pipeline."""
+    # Build data mart
+    builder = CustomerDataMartBuilder([PeriodGranularity.MONTH])
+    mart = builder.build(transactions.to_dict('records'))
+
     # Prepare data
-    model_data = prepare_clv_model_inputs(
-        transactions=transactions.to_dict('records'),
-        observation_start=datetime(2024, 1, 1),
-        observation_end=observation_end,
-        customer_id_field='customer_id',
-        timestamp_field='event_ts',
-        monetary_field='unit_price'
+    observation_start = datetime(2024, 1, 1)
+    bgnbd_data = prepare_bg_nbd_inputs(
+        period_aggregations=mart.periods[PeriodGranularity.MONTH],
+        observation_start=observation_start,
+        observation_end=observation_end
     )
+
+    gg_data = prepare_gamma_gamma_inputs(
+        period_aggregations=mart.periods[PeriodGranularity.MONTH],
+        min_frequency=2
+    )
+    gg_data['monetary_value'] = gg_data['monetary_value'].astype(float)
 
     # Train models
     bgnbd = BGNBDModelWrapper(BGNBDConfig(method='map'))
-    bgnbd.fit(model_data)
+    bgnbd.fit(bgnbd_data)
 
-    repeat = model_data[model_data['frequency'] >= 2]
     gg = GammaGammaModelWrapper(GammaGammaConfig(method='map'))
-    gg.fit(repeat)
+    gg.fit(gg_data)
 
     # Calculate CLV
-    calc = CLVCalculator()
-    clv_scores = calc.calculate_clv(bgnbd, gg, model_data, time_period_days=90)
+    calc = CLVCalculator(bgnbd, gg, time_horizon_months=3)
+    clv_df = calc.calculate_clv(bgnbd_data, gg_data)
 
     # Return predictions
-    return pd.DataFrame([{
-        'customer_id': s.customer_id,
-        'clv': s.clv
-    } for s in clv_scores])
+    return clv_df[['customer_id', 'clv']]
 
 # Run 5-fold cross-validation
 metrics_list = cross_validate_clv(

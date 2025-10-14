@@ -580,22 +580,25 @@ Fit BG/NBD model to customer data.
 **Example:**
 ```python
 from customer_base_audit.models.bg_nbd import BGNBDModelWrapper, BGNBDConfig
-from customer_base_audit.models.model_prep import prepare_clv_model_inputs
+from customer_base_audit.models.model_prep import prepare_bg_nbd_inputs
+from customer_base_audit.foundation.data_mart import CustomerDataMartBuilder, PeriodGranularity
+from datetime import datetime
 
-# Prepare data
-model_data = prepare_clv_model_inputs(
-    transactions=transactions,
+# Build data mart
+builder = CustomerDataMartBuilder([PeriodGranularity.MONTH])
+mart = builder.build([t.__dict__ for t in transactions])
+
+# Prepare data for BG/NBD
+bgnbd_data = prepare_bg_nbd_inputs(
+    period_aggregations=mart.periods[PeriodGranularity.MONTH],
     observation_start=datetime(2024, 1, 1),
-    observation_end=datetime(2024, 12, 31, 23, 59, 59),
-    customer_id_field='customer_id',
-    timestamp_field='event_ts',
-    monetary_field='unit_price'
+    observation_end=datetime(2024, 12, 31, 23, 59, 59)
 )
 
 # Train model
 config = BGNBDConfig(method="map")
 model = BGNBDModelWrapper(config)
-model.fit(model_data)
+model.fit(bgnbd_data)
 
 print(f"Model parameters: {model.params_}")
 ```
@@ -719,44 +722,58 @@ High-level CLV calculation combining BG/NBD and Gamma-Gamma models.
 
 **Class** for calculating CLV scores.
 
-**Methods:**
-
-##### `calculate_clv(bgnbd_model, gamma_gamma_model, customer_data, time_period_days, discount_rate)`
-
-Calculate CLV for customers.
+**Constructor:**
+```python
+CLVCalculator(bg_nbd_model, gamma_gamma_model, time_horizon_months=12, discount_rate=0.1, profit_margin=1.0)
+```
 
 **Parameters:**
-- `bgnbd_model` (BGNBDModelWrapper): Fitted BG/NBD model
+- `bg_nbd_model` (BGNBDModelWrapper): Fitted BG/NBD model
 - `gamma_gamma_model` (GammaGammaModelWrapper): Fitted Gamma-Gamma model
-- `customer_data` (pd.DataFrame): Customer RFM data
-- `time_period_days` (int): Prediction horizon (e.g., 90, 180, 365)
-- `discount_rate` (float): Annual discount rate (default: 0.1 = 10%)
+- `time_horizon_months` (int): Prediction horizon in months (default: 12)
+- `discount_rate` (Decimal): Annual discount rate (default: 0.1 = 10%)
+- `profit_margin` (Decimal): Profit margin multiplier (default: 1.0 = 100%)
+
+**Methods:**
+
+##### `calculate_clv(bg_nbd_data, gamma_gamma_data, include_confidence_intervals=False)`
+
+Calculate CLV for all customers.
+
+**Parameters:**
+- `bg_nbd_data` (pd.DataFrame): DataFrame with columns [customer_id, frequency, recency, T]
+- `gamma_gamma_data` (pd.DataFrame): DataFrame with columns [customer_id, frequency, monetary_value] for repeat customers
+- `include_confidence_intervals` (bool): If True, calculate confidence intervals (requires MCMC models). Default: False. Not yet implemented.
 
 **Returns:**
-- `list[CLVScore]`: CLV predictions for each customer
+- `pd.DataFrame`: CLV predictions with columns:
+  - `customer_id` (str)
+  - `predicted_purchases` (float)
+  - `predicted_avg_value` (float)
+  - `prob_alive` (float)
+  - `clv` (float)
 
 **Example:**
 ```python
 from customer_base_audit.models.clv_calculator import CLVCalculator
 
 # Train models (see above examples)
-bgnbd_model.fit(model_data)
-gamma_gamma_model.fit(model_data[model_data['frequency'] >= 2])
+bgnbd_model.fit(bgnbd_data)
+gamma_gamma_model.fit(gg_data)
 
-# Calculate 90-day CLV
-calculator = CLVCalculator()
-clv_scores = calculator.calculate_clv(
-    bgnbd_model=bgnbd_model,
+# Calculate 3-month CLV
+calculator = CLVCalculator(
+    bg_nbd_model=bgnbd_model,
     gamma_gamma_model=gamma_gamma_model,
-    customer_data=model_data,
-    time_period_days=90,
+    time_horizon_months=3,
     discount_rate=0.10
 )
+clv_df = calculator.calculate_clv(bgnbd_data, gg_data)
 
 # Find top customers
-top_10 = sorted(clv_scores, key=lambda x: x.clv, reverse=True)[:10]
-for score in top_10:
-    print(f"{score.customer_id}: ${score.clv:.2f} CLV")
+top_10 = clv_df.nlargest(10, 'clv')
+for _, row in top_10.iterrows():
+    print(f"{row['customer_id']}: ${row['clv']:.2f} CLV")
 ```
 
 ---
@@ -767,42 +784,64 @@ for score in top_10:
 
 Utilities for preparing transaction data for CLV models.
 
-#### `prepare_clv_model_inputs(transactions, observation_start, observation_end, customer_id_field, timestamp_field, monetary_field)`
+#### `prepare_bg_nbd_inputs(period_aggregations, observation_start, observation_end)`
 
-Prepare transaction data for BG/NBD and Gamma-Gamma models.
+Prepare period aggregations for BG/NBD model input.
 
 **Parameters:**
-- `transactions` (list[dict]): Transaction records
-- `observation_start` (datetime): Start of observation period
-- `observation_end` (datetime): End of observation period
-- `customer_id_field` (str): Field name for customer ID
-- `timestamp_field` (str): Field name for transaction timestamp
-- `monetary_field` (str): Field name for transaction amount
+- `period_aggregations` (Sequence[PeriodAggregation]): List of period-level customer aggregations
+- `observation_start` (datetime): Start date of observation period (used for validation)
+- `observation_end` (datetime): End date of observation period
 
 **Returns:**
-- `pd.DataFrame`: Model-ready data with columns:
+- `pd.DataFrame`: BG/NBD model-ready data with columns:
   - `customer_id` (str)
-  - `frequency` (int): Number of repeat purchases
-  - `recency` (float): Time of last purchase (in days)
-  - `T` (float): Customer age (in days)
-  - `monetary_value` (float): Average transaction value
+  - `frequency` (int): Number of repeat purchases (total_orders - 1)
+  - `recency` (float): Time from first purchase to last purchase (in days)
+  - `T` (float): Customer age from first purchase to observation_end (in days)
 
 **Example:**
 ```python
-from customer_base_audit.models.model_prep import prepare_clv_model_inputs
+from customer_base_audit.models.model_prep import prepare_bg_nbd_inputs
 from datetime import datetime
 
-model_data = prepare_clv_model_inputs(
-    transactions=[asdict(t) for t in transactions],
+bgnbd_data = prepare_bg_nbd_inputs(
+    period_aggregations=mart.periods[PeriodGranularity.MONTH],
     observation_start=datetime(2024, 1, 1),
-    observation_end=datetime(2024, 12, 31, 23, 59, 59),
-    customer_id_field='customer_id',
-    timestamp_field='event_ts',
-    monetary_field='unit_price'
+    observation_end=datetime(2024, 12, 31, 23, 59, 59)
 )
 
-print(f"Prepared {len(model_data)} customers for modeling")
-print(f"Repeat customers: {len(model_data[model_data['frequency'] > 0])}")
+print(f"Prepared {len(bgnbd_data)} customers for BG/NBD modeling")
+print(f"Repeat customers: {len(bgnbd_data[bgnbd_data['frequency'] > 0])}")
+```
+
+#### `prepare_gamma_gamma_inputs(period_aggregations, min_frequency)`
+
+Prepare period aggregations for Gamma-Gamma model input.
+
+**Parameters:**
+- `period_aggregations` (Sequence[PeriodAggregation]): List of period-level customer aggregations
+- `min_frequency` (int): Minimum number of transactions required (default: 2)
+
+**Returns:**
+- `pd.DataFrame`: Gamma-Gamma model-ready data with columns:
+  - `customer_id` (str)
+  - `frequency` (int): Number of purchases
+  - `monetary_value` (Decimal): Average transaction value (use `.astype(float)` for model fitting)
+
+**Example:**
+```python
+from customer_base_audit.models.model_prep import prepare_gamma_gamma_inputs
+
+gg_data = prepare_gamma_gamma_inputs(
+    period_aggregations=mart.periods[PeriodGranularity.MONTH],
+    min_frequency=2
+)
+
+# Convert monetary_value from Decimal to float for model fitting
+gg_data['monetary_value'] = gg_data['monetary_value'].astype(float)
+
+print(f"Prepared {len(gg_data)} repeat customers for Gamma-Gamma modeling")
 ```
 
 ---
@@ -1058,13 +1097,16 @@ lens3_results = lens3.analyze_cohort_evolution(cohort_name, acq_date, aggs, cust
 ```python
 from customer_base_audit.models import BGNBDModelWrapper, GammaGammaModelWrapper, CLVCalculator
 from customer_base_audit.models import BGNBDConfig, GammaGammaConfig
-from customer_base_audit.models.model_prep import prepare_clv_model_inputs
+from customer_base_audit.models.model_prep import prepare_bg_nbd_inputs, prepare_gamma_gamma_inputs
 
 # Prepare → Train → Predict
-data = prepare_clv_model_inputs(txns, start, end, 'customer_id', 'timestamp', 'amount')
-bgnbd = BGNBDModelWrapper(BGNBDConfig(method="map")).fit(data)
-gg = GammaGammaModelWrapper(GammaGammaConfig(method="map")).fit(data[data['frequency'] >= 2])
-clv_scores = CLVCalculator().calculate_clv(bgnbd, gg, data, 90)
+bgnbd_data = prepare_bg_nbd_inputs(mart.periods[PeriodGranularity.MONTH], start, end)
+gg_data = prepare_gamma_gamma_inputs(mart.periods[PeriodGranularity.MONTH], min_frequency=2)
+gg_data['monetary_value'] = gg_data['monetary_value'].astype(float)
+bgnbd = BGNBDModelWrapper(BGNBDConfig(method="map")).fit(bgnbd_data)
+gg = GammaGammaModelWrapper(GammaGammaConfig(method="map")).fit(gg_data)
+calculator = CLVCalculator(bgnbd, gg, time_horizon_months=3)
+clv_df = calculator.calculate_clv(bgnbd_data, gg_data)
 ```
 
 #### 4. Synthetic Data Generation
