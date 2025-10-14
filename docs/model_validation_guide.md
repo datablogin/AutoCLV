@@ -622,6 +622,7 @@ gg_data = prepare_gamma_gamma_inputs(
     period_aggregations=mart.periods[PeriodGranularity.MONTH],
     min_frequency=2
 )
+# Convert monetary_value from Decimal to float for model fitting
 gg_data['monetary_value'] = gg_data['monetary_value'].astype(float)
 
 # 5. Train BG/NBD model
@@ -697,6 +698,7 @@ def clv_pipeline(transactions, observation_end):
         period_aggregations=mart.periods[PeriodGranularity.MONTH],
         min_frequency=2
     )
+    # Convert monetary_value from Decimal to float for model fitting
     gg_data['monetary_value'] = gg_data['monetary_value'].astype(float)
 
     # Train models

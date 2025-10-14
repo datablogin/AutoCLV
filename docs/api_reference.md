@@ -1102,6 +1102,7 @@ from customer_base_audit.models.model_prep import prepare_bg_nbd_inputs, prepare
 # Prepare → Train → Predict
 bgnbd_data = prepare_bg_nbd_inputs(mart.periods[PeriodGranularity.MONTH], start, end)
 gg_data = prepare_gamma_gamma_inputs(mart.periods[PeriodGranularity.MONTH], min_frequency=2)
+# Convert monetary_value from Decimal to float for model fitting
 gg_data['monetary_value'] = gg_data['monetary_value'].astype(float)
 bgnbd = BGNBDModelWrapper(BGNBDConfig(method="map")).fit(bgnbd_data)
 gg = GammaGammaModelWrapper(GammaGammaConfig(method="map")).fit(gg_data)

@@ -312,6 +312,7 @@ def prepare_model_inputs(transactions):
         period_aggregations=mart.periods[PeriodGranularity.MONTH],
         min_frequency=2
     )
+    # Convert monetary_value from Decimal to float for model fitting
     gg_data['monetary_value'] = gg_data['monetary_value'].astype(float)
 
     return bgnbd_data, gg_data
