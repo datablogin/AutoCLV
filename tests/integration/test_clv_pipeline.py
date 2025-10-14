@@ -79,15 +79,17 @@ def test_end_to_end_clv_pipeline(texas_clv_data):
     observation_start = datetime(2023, 1, 1)
     observation_end = datetime(2025, 1, 1)
 
-    rfm_metrics = calculate_rfm(
-        mart.periods[PeriodGranularity.MONTH], observation_end
-    )
+    rfm_metrics = calculate_rfm(mart.periods[PeriodGranularity.MONTH], observation_end)
 
     # Validate RFM
     assert len(rfm_metrics) > 0, "Should have RFM metrics"
     assert len(rfm_metrics) <= len(customers), "RFM should not exceed customer count"
-    assert all(m.frequency > 0 for m in rfm_metrics), "All frequencies should be positive"
-    assert all(m.monetary >= 0 for m in rfm_metrics), "All monetary values should be non-negative"
+    assert all(m.frequency > 0 for m in rfm_metrics), (
+        "All frequencies should be positive"
+    )
+    assert all(m.monetary >= 0 for m in rfm_metrics), (
+        "All monetary values should be non-negative"
+    )
 
     # Step 3: Prepare model inputs
 
@@ -162,7 +164,9 @@ def test_end_to_end_clv_pipeline(texas_clv_data):
     # Check all CLV values are valid
     assert (clv_df["clv"] >= 0).all(), "All CLV values should be non-negative"
     assert (~clv_df["clv"].isna()).all(), "CLV should not contain NaN"
-    assert (~clv_df["clv"].isin([float("inf"), float("-inf")])).all(), "CLV should be finite"
+    assert (~clv_df["clv"].isin([float("inf"), float("-inf")])).all(), (
+        "CLV should be finite"
+    )
 
     # Step 7: Validate high-value customer identification
     import numpy as np
@@ -290,7 +294,9 @@ def test_clv_pipeline_handles_edge_cases(texas_clv_data):
     # Take small subset for edge case testing
     small_customers = customers[:20]
     small_customer_ids = {c.customer_id for c in small_customers}
-    small_transactions = [t for t in transactions if t.customer_id in small_customer_ids]
+    small_transactions = [
+        t for t in transactions if t.customer_id in small_customer_ids
+    ]
 
     # Build mart
     builder = CustomerDataMartBuilder([PeriodGranularity.MONTH])

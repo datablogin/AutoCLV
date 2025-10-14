@@ -103,9 +103,9 @@ def test_all_notebooks_found():
     ]
 
     for expected in expected_notebooks:
-        assert (
-            expected in notebook_names
-        ), f"Expected notebook {expected} not found in {EXAMPLES_DIR}"
+        assert expected in notebook_names, (
+            f"Expected notebook {expected} not found in {EXAMPLES_DIR}"
+        )
 
 
 @pytest.mark.skip(reason="Notebooks have outdated imports - need updating separately")
@@ -149,7 +149,9 @@ def test_monitoring_notebook_detects_drift():
                     text = output.get("text", "")
                     if isinstance(text, list):
                         text = "".join(text)
-                    if "drift" in text.lower() and ("alert" in text.lower() or "detected" in text.lower()):
+                    if "drift" in text.lower() and (
+                        "alert" in text.lower() or "detected" in text.lower()
+                    ):
                         found_drift_detection = True
                         break
 
