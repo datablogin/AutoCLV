@@ -1009,3 +1009,40 @@ class TestTimezoneValidation:
         assert len(df) == 1
         assert df.loc[0, "customer_id"] == "C1"
         assert df.loc[0, "frequency"] == 2  # 3 orders - 1
+
+    def test_equivalent_utc_timezones_accepted(self):
+        """prepare_bg_nbd_inputs should accept equivalent UTC timezones (Issue #62 Claude Review)."""
+        from datetime import timezone
+        from zoneinfo import ZoneInfo
+
+        # Test that datetime.timezone.utc and ZoneInfo("UTC") are accepted as equivalent
+        periods = [
+            PeriodAggregation(
+                "C1",
+                datetime(2023, 1, 1, tzinfo=ZoneInfo("UTC")),
+                datetime(2023, 2, 1, tzinfo=ZoneInfo("UTC")),
+                2,
+                100.0,
+                30.0,
+                5,
+            ),
+            PeriodAggregation(
+                "C1",
+                datetime(2023, 3, 1, tzinfo=ZoneInfo("UTC")),
+                datetime(2023, 4, 1, tzinfo=ZoneInfo("UTC")),
+                1,
+                50.0,
+                15.0,
+                3,
+            ),
+        ]
+        # Should not fail even though ZoneInfo("UTC") != datetime.timezone.utc by identity
+        # but they have the same UTC offset (0:00:00)
+        df = prepare_bg_nbd_inputs(
+            periods,
+            datetime(2023, 1, 1, tzinfo=timezone.utc),
+            datetime(2023, 6, 1, tzinfo=timezone.utc),
+        )
+        assert len(df) == 1
+        assert df.loc[0, "customer_id"] == "C1"
+        assert df.loc[0, "frequency"] == 2  # 3 orders - 1

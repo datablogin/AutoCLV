@@ -176,13 +176,13 @@ def prepare_bg_nbd_inputs(
 
     Examples
     --------
-    >>> from datetime import datetime
+    >>> from datetime import datetime, timezone
     >>> from customer_base_audit.foundation.data_mart import PeriodAggregation
     >>> periods = [
-    ...     PeriodAggregation("C1", datetime(2023,1,1), datetime(2023,2,1), 2, 100.0, 30.0, 5),
-    ...     PeriodAggregation("C1", datetime(2023,3,1), datetime(2023,4,1), 1, 50.0, 15.0, 3),
+    ...     PeriodAggregation("C1", datetime(2023,1,1,tzinfo=timezone.utc), datetime(2023,2,1,tzinfo=timezone.utc), 2, 100.0, 30.0, 5),
+    ...     PeriodAggregation("C1", datetime(2023,3,1,tzinfo=timezone.utc), datetime(2023,4,1,tzinfo=timezone.utc), 1, 50.0, 15.0, 3),
     ... ]
-    >>> df = prepare_bg_nbd_inputs(periods, datetime(2023,1,1), datetime(2023,6,1))
+    >>> df = prepare_bg_nbd_inputs(periods, datetime(2023,1,1,tzinfo=timezone.utc), datetime(2023,6,1,tzinfo=timezone.utc))
     >>> df.loc[0, 'customer_id']
     'C1'
     >>> df.loc[0, 'frequency']  # total_orders (3) - 1 = 2
@@ -203,26 +203,30 @@ def prepare_bg_nbd_inputs(
             "Use datetime.replace(tzinfo=...) or ZoneInfo/pytz to add timezone."
         )
 
-    # Validate all periods have consistent timezone
-    for period in period_aggregations:
-        if period.period_start.tzinfo is None:
+    # Validate first period's timezone consistency (optimization: check only first period)
+    # All periods should have the same timezone, checking the first validates the pattern
+    if period_aggregations:
+        first_period = period_aggregations[0]
+        if first_period.period_start.tzinfo is None:
             raise ValueError(
-                f"Period start must be timezone-aware for customer {period.customer_id}. "
-                f"Period: [{period.period_start}, {period.period_end}]"
+                f"Period start must be timezone-aware for customer {first_period.customer_id}. "
+                f"Period: [{first_period.period_start}, {first_period.period_end}]"
             )
-        if period.period_end.tzinfo is None:
+        if first_period.period_end.tzinfo is None:
             raise ValueError(
-                f"Period end must be timezone-aware for customer {period.customer_id}. "
-                f"Period: [{period.period_start}, {period.period_end}]"
+                f"Period end must be timezone-aware for customer {first_period.customer_id}. "
+                f"Period: [{first_period.period_start}, {first_period.period_end}]"
             )
-        # Check timezone consistency (compare timezone names to handle UTC vs UTC equivalents)
-        if period.period_start.tzinfo.tzname(
-            period.period_start
-        ) != observation_start.tzinfo.tzname(observation_start):
+        # Check timezone consistency using UTC offset comparison to handle equivalent timezones
+        # (e.g., datetime.timezone.utc vs ZoneInfo("UTC") vs pytz.UTC)
+        obs_offset = observation_start.utcoffset()
+        period_offset = first_period.period_start.utcoffset()
+        if period_offset != obs_offset:
             raise ValueError(
-                f"Inconsistent timezones: period uses {period.period_start.tzinfo.tzname(period.period_start)}, "
-                f"but observation_start uses {observation_start.tzinfo.tzname(observation_start)} "
-                f"(customer {period.customer_id})"
+                f"Inconsistent timezones: period has UTC offset {period_offset}, "
+                f"but observation_start has UTC offset {obs_offset} "
+                f"(customer {first_period.customer_id}). "
+                f"All datetimes must use equivalent timezones."
             )
 
     # Validate that periods fall within observation window
