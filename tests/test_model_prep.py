@@ -46,10 +46,12 @@ class TestBGNBDInput:
         with pytest.raises(ValueError, match="T must be positive"):
             BGNBDInput(customer_id="C1", frequency=5, recency=30.0, T=-90.0)
 
-    def test_recency_exceeds_T_raises_error(self):
-        """Recency exceeding T should raise ValueError."""
-        with pytest.raises(ValueError, match="Invalid BG/NBD input: recency"):
-            BGNBDInput(customer_id="C1", frequency=5, recency=100.0, T=90.0)
+    def test_recency_exceeds_T_is_capped(self):
+        """Recency exceeding T should be capped at T (Issue #4)."""
+        input_data = BGNBDInput(customer_id="C1", frequency=5, recency=100.0, T=90.0)
+        # recency should be capped at T
+        assert input_data.recency == 90.0
+        assert input_data.T == 90.0
 
     def test_recency_equals_T_is_valid(self):
         """Recency equal to T should be valid (edge case)."""
@@ -284,7 +286,7 @@ class TestPrepareGammaGammaInputs:
         assert df.loc[0, "customer_id"] == "C1"
         assert df.loc[0, "frequency"] == 3
         # Monetary value = 150.0 / 3 = 50.0
-        assert df.loc[0, "monetary_value"] == pytest.approx(50.0, abs=0.01)
+        assert df.loc[0, "monetary_value"] == Decimal("50.00")
 
     def test_one_time_buyer_excluded(self):
         """Customer with frequency < min_frequency should be excluded."""
@@ -319,7 +321,7 @@ class TestPrepareGammaGammaInputs:
         assert len(df) == 1
         assert df.loc[0, "frequency"] == 2
         # Monetary value = 100.0 / 2 = 50.0
-        assert df.loc[0, "monetary_value"] == pytest.approx(50.0, abs=0.01)
+        assert df.loc[0, "monetary_value"] == Decimal("50.00")
 
     def test_multiple_customers_mixed_frequencies(self):
         """Multiple customers with different frequencies (some excluded)."""
@@ -372,11 +374,11 @@ class TestPrepareGammaGammaInputs:
 
         # C1: 3 orders, 150.0 spend -> 50.0 avg
         assert df.loc[0, "frequency"] == 3
-        assert df.loc[0, "monetary_value"] == pytest.approx(50.0, abs=0.01)
+        assert df.loc[0, "monetary_value"] == Decimal("50.00")
 
         # C3: 5 orders, 250.0 total spend -> 50.0 avg
         assert df.loc[1, "frequency"] == 5
-        assert df.loc[1, "monetary_value"] == pytest.approx(50.0, abs=0.01)
+        assert df.loc[1, "monetary_value"] == Decimal("50.00")
 
     def test_custom_min_frequency_threshold(self):
         """Test with custom min_frequency threshold."""
@@ -421,7 +423,7 @@ class TestPrepareGammaGammaInputs:
         ]
         df = prepare_gamma_gamma_inputs(periods, min_frequency=2)
         # 100.0 / 3 = 33.333... -> should round to 33.33
-        assert df.loc[0, "monetary_value"] == pytest.approx(33.33, abs=0.01)
+        assert df.loc[0, "monetary_value"] == Decimal("33.33")
 
     def test_aggregation_across_multiple_periods(self):
         """Customer with purchases in multiple periods should aggregate correctly."""
@@ -459,7 +461,7 @@ class TestPrepareGammaGammaInputs:
         assert df.loc[0, "frequency"] == 5  # 2 + 1 + 2 = 5
         # Total spend: 80 + 40 + 80 = 200
         # Monetary value: 200 / 5 = 40.0
-        assert df.loc[0, "monetary_value"] == pytest.approx(40.0, abs=0.01)
+        assert df.loc[0, "monetary_value"] == Decimal("40.00")
 
 
 class TestEdgeCases:
@@ -490,7 +492,7 @@ class TestEdgeCases:
         df = prepare_gamma_gamma_inputs(periods, min_frequency=2)
         assert len(df) == 1
         # Monetary value: 1.00 / 100 = 0.01
-        assert df.loc[0, "monetary_value"] == pytest.approx(0.01, abs=0.001)
+        assert df.loc[0, "monetary_value"] == Decimal("0.01")
 
     def test_decimal_precision_preserved_through_rounding(self):
         """Decimal precision should be preserved with ROUND_HALF_UP."""
@@ -508,7 +510,7 @@ class TestEdgeCases:
         df = prepare_gamma_gamma_inputs(periods, min_frequency=2)
         assert len(df) == 1
         # Monetary value: 10.00 / 3 = 3.333... -> should round to 3.33
-        assert df.loc[0, "monetary_value"] == pytest.approx(3.33, abs=0.01)
+        assert df.loc[0, "monetary_value"] == Decimal("3.33")
 
     def test_gamma_gamma_input_zero_monetary_value_validation(self):
         """GammaGammaInput should reject zero monetary values."""
@@ -516,3 +518,262 @@ class TestEdgeCases:
             GammaGammaInput(
                 customer_id="C1", frequency=5, monetary_value=Decimal("0.00")
             )
+
+
+class TestIssue61Validations:
+    """Test validations added for Issue #61."""
+
+    def test_negative_total_orders_in_bg_nbd(self):
+        """prepare_bg_nbd_inputs should reject negative total_orders."""
+        periods = [
+            PeriodAggregation(
+                "C1",
+                datetime(2023, 1, 1),
+                datetime(2023, 2, 1),
+                -1,  # Invalid negative total_orders
+                100.0,
+                30.0,
+                5,
+            )
+        ]
+        with pytest.raises(ValueError, match="Invalid total_orders.*must be non-negative"):
+            prepare_bg_nbd_inputs(periods, datetime(2023, 1, 1), datetime(2023, 6, 1))
+
+    def test_negative_total_spend_in_bg_nbd(self):
+        """prepare_bg_nbd_inputs should reject negative total_spend."""
+        periods = [
+            PeriodAggregation(
+                "C1",
+                datetime(2023, 1, 1),
+                datetime(2023, 2, 1),
+                1,
+                -100.0,  # Invalid negative total_spend
+                -30.0,
+                5,
+            )
+        ]
+        with pytest.raises(ValueError, match="Invalid total_spend.*must be non-negative"):
+            prepare_bg_nbd_inputs(periods, datetime(2023, 1, 1), datetime(2023, 6, 1))
+
+    def test_negative_total_orders_in_gamma_gamma(self):
+        """prepare_gamma_gamma_inputs should reject negative total_orders."""
+        periods = [
+            PeriodAggregation(
+                "C1",
+                datetime(2023, 1, 1),
+                datetime(2023, 2, 1),
+                -5,  # Invalid negative total_orders
+                100.0,
+                30.0,
+                10,
+            )
+        ]
+        with pytest.raises(ValueError, match="Invalid total_orders.*must be non-negative"):
+            prepare_gamma_gamma_inputs(periods, min_frequency=2)
+
+    def test_negative_total_spend_in_gamma_gamma(self):
+        """prepare_gamma_gamma_inputs should reject negative total_spend."""
+        periods = [
+            PeriodAggregation(
+                "C1",
+                datetime(2023, 1, 1),
+                datetime(2023, 2, 1),
+                5,
+                -200.0,  # Invalid negative total_spend
+                -60.0,
+                10,
+            )
+        ]
+        with pytest.raises(ValueError, match="Invalid total_spend.*must be non-negative"):
+            prepare_gamma_gamma_inputs(periods, min_frequency=2)
+
+    def test_zero_frequency_division_check(self):
+        """Defensive check: division by zero should be caught (though prevented by design)."""
+        # This test verifies the defensive programming in prepare_gamma_gamma_inputs
+        # With min_frequency=0 (unusual but technically possible), a customer with 0 orders
+        # would pass the frequency < min_frequency check and trigger the division check
+        periods = [
+            PeriodAggregation(
+                "C1",
+                datetime(2023, 1, 1),
+                datetime(2023, 2, 1),
+                0,  # Zero orders
+                0.0,
+                0.0,
+                0,
+            )
+        ]
+        with pytest.raises(ValueError, match="Cannot calculate monetary value with zero frequency"):
+            prepare_gamma_gamma_inputs(periods, min_frequency=0)
+
+    def test_zero_values_are_valid(self):
+        """Zero total_orders and total_spend should be valid (not negative)."""
+        # BG/NBD: Zero orders is valid (results in frequency=0)
+        periods = [
+            PeriodAggregation(
+                "C1",
+                datetime(2023, 1, 1),
+                datetime(2023, 2, 1),
+                0,  # Zero orders is valid
+                0.0,  # Zero spend is valid
+                0.0,
+                0,
+            )
+        ]
+        df = prepare_bg_nbd_inputs(periods, datetime(2023, 1, 1), datetime(2023, 6, 1))
+        assert len(df) == 1
+        assert df.loc[0, "frequency"] == 0  # 0 - 1 = -1, but max(0, -1) = 0
+
+        # Gamma-Gamma: Zero orders will be excluded by min_frequency filter
+        df_gg = prepare_gamma_gamma_inputs(periods, min_frequency=2)
+        assert len(df_gg) == 0  # Excluded by min_frequency
+
+    def test_period_before_observation_start(self):
+        """prepare_bg_nbd_inputs should reject periods starting before observation_start."""
+        periods = [
+            PeriodAggregation(
+                "C1",
+                datetime(2022, 12, 1),  # Before observation_start
+                datetime(2023, 1, 15),
+                1,
+                100.0,
+                30.0,
+                5,
+            )
+        ]
+        with pytest.raises(ValueError, match="Period start.*is before.*observation_start"):
+            prepare_bg_nbd_inputs(periods, datetime(2023, 1, 1), datetime(2023, 6, 1))
+
+    def test_period_after_observation_end(self):
+        """prepare_bg_nbd_inputs should reject periods ending after observation_end."""
+        periods = [
+            PeriodAggregation(
+                "C1",
+                datetime(2023, 5, 1),
+                datetime(2023, 7, 1),  # After observation_end
+                1,
+                100.0,
+                30.0,
+                5,
+            )
+        ]
+        with pytest.raises(ValueError, match="Period end.*is after.*observation_end"):
+            prepare_bg_nbd_inputs(periods, datetime(2023, 1, 1), datetime(2023, 6, 1))
+
+    def test_period_exactly_at_boundaries(self):
+        """Periods exactly at observation window boundaries should be valid."""
+        periods = [
+            PeriodAggregation(
+                "C1",
+                datetime(2023, 1, 1),  # Exactly at observation_start
+                datetime(2023, 2, 1),
+                1,
+                100.0,
+                30.0,
+                5,
+            ),
+            PeriodAggregation(
+                "C2",
+                datetime(2023, 5, 1),
+                datetime(2023, 6, 1),  # Exactly at observation_end
+                1,
+                50.0,
+                15.0,
+                3,
+            ),
+        ]
+        df = prepare_bg_nbd_inputs(periods, datetime(2023, 1, 1), datetime(2023, 6, 1))
+        assert len(df) == 2  # Both should be valid
+
+    def test_decimal_type_preserved_in_dataframe(self):
+        """monetary_value should be Decimal type in DataFrame (Issue #3)."""
+        periods = [
+            PeriodAggregation(
+                "C1",
+                datetime(2023, 1, 1),
+                datetime(2023, 2, 1),
+                3,
+                150.0,
+                45.0,
+                10,
+            )
+        ]
+        df = prepare_gamma_gamma_inputs(periods, min_frequency=2)
+        assert len(df) == 1
+
+        # Verify monetary_value is Decimal type, not float
+        monetary_value = df.loc[0, "monetary_value"]
+        assert isinstance(monetary_value, Decimal)
+        assert monetary_value == Decimal("50.00")
+
+        # Verify column dtype is 'object' (which holds Decimal)
+        assert df["monetary_value"].dtype == "object"
+
+    def test_decimal_precision_not_lost(self):
+        """High-precision Decimal values should not lose precision (Issue #3)."""
+        periods = [
+            PeriodAggregation(
+                "C1",
+                datetime(2023, 1, 1),
+                datetime(2023, 2, 1),
+                7,
+                123.456789,  # High precision input
+                37.0,
+                20,
+            )
+        ]
+        df = prepare_gamma_gamma_inputs(periods, min_frequency=2)
+        assert len(df) == 1
+
+        # Should round to 2 decimal places: 123.456789 / 7 = 17.636827... -> 17.64
+        monetary_value = df.loc[0, "monetary_value"]
+        assert isinstance(monetary_value, Decimal)
+        assert monetary_value == Decimal("17.64")
+
+    def test_dataframe_to_gamma_gamma_input_roundtrip(self):
+        """DataFrame → GammaGammaInput should work with Decimal values (Issue #3)."""
+        periods = [
+            PeriodAggregation(
+                "C1",
+                datetime(2023, 1, 1),
+                datetime(2023, 2, 1),
+                5,
+                250.0,
+                75.0,
+                15,
+            )
+        ]
+        df = prepare_gamma_gamma_inputs(periods, min_frequency=2)
+
+        # Create GammaGammaInput from DataFrame row
+        row = df.iloc[0]
+        gamma_input = GammaGammaInput(
+            customer_id=row["customer_id"],
+            frequency=row["frequency"],
+            monetary_value=row["monetary_value"],  # Should be Decimal
+        )
+
+        # Verify successful creation
+        assert gamma_input.customer_id == "C1"
+        assert gamma_input.frequency == 5
+        assert gamma_input.monetary_value == Decimal("50.00")
+
+    def test_recency_slightly_exceeds_T(self):
+        """Small recency > T (e.g., 0.1 days) should be capped (Issue #4)."""
+        input_data = BGNBDInput(customer_id="C1", frequency=5, recency=90.1, T=90.0)
+        assert input_data.recency == 90.0
+        assert input_data.T == 90.0
+
+    def test_recency_significantly_exceeds_T(self):
+        """Large recency > T should still be capped (Issue #4)."""
+        input_data = BGNBDInput(customer_id="C1", frequency=5, recency=200.0, T=90.0)
+        assert input_data.recency == 90.0
+        assert input_data.T == 90.0
+
+    def test_recency_capping_preserves_other_fields(self):
+        """Recency capping should not affect other fields (Issue #4)."""
+        input_data = BGNBDInput(customer_id="C1", frequency=5, recency=100.0, T=90.0)
+        assert input_data.customer_id == "C1"
+        assert input_data.frequency == 5
+        assert input_data.recency == 90.0  # Capped
+        assert input_data.T == 90.0
