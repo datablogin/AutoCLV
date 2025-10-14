@@ -520,8 +520,8 @@ class TestEdgeCases:
             )
 
 
-class TestIssue61Validations:
-    """Test validations added for Issue #61."""
+class TestInputDataValidation:
+    """Test validation of negative values, boundary conditions, and parameter validation (Issue #61)."""
 
     def test_negative_total_orders_in_bg_nbd(self):
         """prepare_bg_nbd_inputs should reject negative total_orders."""
@@ -596,10 +596,10 @@ class TestIssue61Validations:
             prepare_gamma_gamma_inputs(periods, min_frequency=2)
 
     def test_zero_frequency_division_check(self):
-        """Defensive check: division by zero should be caught (though prevented by design)."""
-        # This test verifies the defensive programming in prepare_gamma_gamma_inputs
-        # With min_frequency=0 (unusual but technically possible), a customer with 0 orders
-        # would pass the frequency < min_frequency check and trigger the division check
+        """min_frequency=0 should be caught at function entry (prevents division by zero)."""
+        # This test verifies that invalid min_frequency is caught early at function entry,
+        # which prevents division by zero downstream. This is better than catching it later.
+        # Updated in response to Claude Review recommendation to validate min_frequency early.
         periods = [
             PeriodAggregation(
                 "C1",
@@ -611,9 +611,8 @@ class TestIssue61Validations:
                 0,
             )
         ]
-        with pytest.raises(
-            ValueError, match="Cannot calculate monetary value with zero frequency"
-        ):
+        # Now caught at function entry instead of during division
+        with pytest.raises(ValueError, match="min_frequency must be >= 1"):
             prepare_gamma_gamma_inputs(periods, min_frequency=0)
 
     def test_zero_values_are_valid(self):
@@ -789,3 +788,23 @@ class TestIssue61Validations:
         assert input_data.frequency == 5
         assert input_data.recency == 90.0  # Capped
         assert input_data.T == 90.0
+
+    def test_min_frequency_validation(self):
+        """prepare_gamma_gamma_inputs should reject min_frequency < 1."""
+        periods = [
+            PeriodAggregation(
+                "C1",
+                datetime(2023, 1, 1),
+                datetime(2023, 2, 1),
+                3,
+                150.0,
+                45.0,
+                10,
+            )
+        ]
+        # min_frequency must be >= 1
+        with pytest.raises(ValueError, match="min_frequency must be >= 1"):
+            prepare_gamma_gamma_inputs(periods, min_frequency=0)
+
+        with pytest.raises(ValueError, match="min_frequency must be >= 1"):
+            prepare_gamma_gamma_inputs(periods, min_frequency=-1)

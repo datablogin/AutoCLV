@@ -304,6 +304,13 @@ def prepare_gamma_gamma_inputs(
     >>> df.loc[0, 'monetary_value']
     Decimal('50.00')
     """
+    # Validate min_frequency parameter
+    if min_frequency < 1:
+        raise ValueError(
+            f"min_frequency must be >= 1, got {min_frequency}. "
+            f"Gamma-Gamma model requires at least one transaction to estimate monetary value."
+        )
+
     if not period_aggregations:
         return pd.DataFrame(columns=["customer_id", "frequency", "monetary_value"])
 
