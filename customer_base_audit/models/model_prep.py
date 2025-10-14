@@ -19,6 +19,9 @@ from customer_base_audit.foundation.data_mart import PeriodAggregation
 
 logger = logging.getLogger(__name__)
 
+# Time conversion constants
+SECONDS_PER_DAY = 86400.0  # 60 * 60 * 24
+
 
 @dataclass(frozen=True)
 class BGNBDInput:
@@ -126,25 +129,44 @@ def prepare_bg_nbd_inputs(
     - First purchase time: period_start of earliest period
     - Last purchase time: period_end of most recent period
 
-    **Known Limitations**:
+    **Known Limitations & Bias Quantification**:
     - `recency` will be OVERESTIMATED (using period_end instead of actual last transaction)
     - `T` will be OVERESTIMATED (using period_start instead of actual first transaction)
     - This introduces systematic bias in BG/NBD parameter estimation (λ, p)
     - May underestimate churn probability and overestimate future purchases
 
+    **Expected Bias Magnitude**:
+    - Weekly periods: ~3-4 days bias per metric (recency, T)
+    - Monthly periods: ~15-20 days bias per metric
+    - Quarterly periods: ~45-60 days bias per metric
+    - Impact increases with observation window length and period granularity
+
+    **When Approximation is Acceptable**:
+    ✓ Monthly/quarterly periods with 1+ year observation window
+    ✓ Analysis focused on customer segments (not individual predictions)
+    ✓ Relative comparisons (cohort A vs B) rather than absolute values
+    ✓ Initial exploration or prototyping before production rollout
+
+    **When Transaction-Level Data is Required**:
+    ✗ Short observation windows (< 6 months)
+    ✗ High-stakes individual customer predictions (e.g., retention interventions)
+    ✗ Model comparison or academic research requiring precise parameters
+    ✗ Weekly or daily period granularity
+
     For most accurate CLV predictions, use transaction-level data with exact timestamps.
     For period-aggregated data, this approximation provides reasonable estimates but
-    should be validated against holdout data
+    should be validated against holdout data.
 
     Parameters
     ----------
     period_aggregations:
-        List of period-level customer aggregations covering the observation period
+        List of period-level customer aggregations covering the observation period.
+        All datetime fields must be timezone-aware and use consistent timezones.
     observation_start:
-        Start date of observation period (used for validation)
+        Start date of observation period (used for validation). Must be timezone-aware.
     observation_end:
-        End date of observation period. T is calculated as time from each
-        customer's first purchase to this date.
+        End date of observation period. Must be timezone-aware. T is calculated
+        as time from each customer's first purchase to this date.
 
     Returns
     -------
@@ -154,13 +176,13 @@ def prepare_bg_nbd_inputs(
 
     Examples
     --------
-    >>> from datetime import datetime
+    >>> from datetime import datetime, timezone
     >>> from customer_base_audit.foundation.data_mart import PeriodAggregation
     >>> periods = [
-    ...     PeriodAggregation("C1", datetime(2023,1,1), datetime(2023,2,1), 2, 100.0, 30.0, 5),
-    ...     PeriodAggregation("C1", datetime(2023,3,1), datetime(2023,4,1), 1, 50.0, 15.0, 3),
+    ...     PeriodAggregation("C1", datetime(2023,1,1,tzinfo=timezone.utc), datetime(2023,2,1,tzinfo=timezone.utc), 2, 100.0, 30.0, 5),
+    ...     PeriodAggregation("C1", datetime(2023,3,1,tzinfo=timezone.utc), datetime(2023,4,1,tzinfo=timezone.utc), 1, 50.0, 15.0, 3),
     ... ]
-    >>> df = prepare_bg_nbd_inputs(periods, datetime(2023,1,1), datetime(2023,6,1))
+    >>> df = prepare_bg_nbd_inputs(periods, datetime(2023,1,1,tzinfo=timezone.utc), datetime(2023,6,1,tzinfo=timezone.utc))
     >>> df.loc[0, 'customer_id']
     'C1'
     >>> df.loc[0, 'frequency']  # total_orders (3) - 1 = 2
@@ -168,6 +190,44 @@ def prepare_bg_nbd_inputs(
     """
     if not period_aggregations:
         return pd.DataFrame(columns=["customer_id", "frequency", "recency", "T"])
+
+    # Validate timezone consistency
+    if observation_end.tzinfo is None:
+        raise ValueError(
+            "observation_end must be timezone-aware. "
+            "Use datetime.replace(tzinfo=...) or ZoneInfo/pytz to add timezone."
+        )
+    if observation_start.tzinfo is None:
+        raise ValueError(
+            "observation_start must be timezone-aware. "
+            "Use datetime.replace(tzinfo=...) or ZoneInfo/pytz to add timezone."
+        )
+
+    # Validate first period's timezone consistency (optimization: check only first period)
+    # All periods should have the same timezone, checking the first validates the pattern
+    if period_aggregations:
+        first_period = period_aggregations[0]
+        if first_period.period_start.tzinfo is None:
+            raise ValueError(
+                f"Period start must be timezone-aware for customer {first_period.customer_id}. "
+                f"Period: [{first_period.period_start}, {first_period.period_end}]"
+            )
+        if first_period.period_end.tzinfo is None:
+            raise ValueError(
+                f"Period end must be timezone-aware for customer {first_period.customer_id}. "
+                f"Period: [{first_period.period_start}, {first_period.period_end}]"
+            )
+        # Check timezone consistency using UTC offset comparison to handle equivalent timezones
+        # (e.g., datetime.timezone.utc vs ZoneInfo("UTC") vs pytz.UTC)
+        obs_offset = observation_start.utcoffset()
+        period_offset = first_period.period_start.utcoffset()
+        if period_offset != obs_offset:
+            raise ValueError(
+                f"Inconsistent timezones: period has UTC offset {period_offset}, "
+                f"but observation_start has UTC offset {obs_offset} "
+                f"(customer {first_period.customer_id}). "
+                f"All datetimes must use equivalent timezones."
+            )
 
     # Validate that periods fall within observation window
     for period in period_aggregations:
@@ -233,13 +293,13 @@ def prepare_bg_nbd_inputs(
         # For single-purchase customers, recency = 0
         if frequency > 0:
             recency_delta = data["last_period_end"] - data["first_period_start"]
-            recency = recency_delta.total_seconds() / 86400.0  # Convert to days
+            recency = recency_delta.total_seconds() / SECONDS_PER_DAY
         else:
             recency = 0.0
 
         # T: total observation time from first purchase to observation_end (in days)
         T_delta = observation_end - data["first_period_start"]
-        T = T_delta.total_seconds() / 86400.0  # Convert to days
+        T = T_delta.total_seconds() / SECONDS_PER_DAY
 
         rows.append(
             {
