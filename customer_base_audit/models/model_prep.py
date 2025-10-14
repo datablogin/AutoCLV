@@ -70,7 +70,7 @@ class BGNBDInput:
                 f"Capping recency at T. This is expected with period-level aggregations but may indicate "
                 f"period boundary approximation issues if it occurs frequently."
             )
-            object.__setattr__(self, 'recency', self.T)
+            object.__setattr__(self, "recency", self.T)
 
 
 @dataclass(frozen=True)
