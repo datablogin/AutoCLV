@@ -205,38 +205,40 @@ AutoCLV implements industry-standard probabilistic models:
 from customer_base_audit.models.bg_nbd import BGNBDModelWrapper, BGNBDConfig
 from customer_base_audit.models.gamma_gamma import GammaGammaModelWrapper, GammaGammaConfig
 from customer_base_audit.models.clv_calculator import CLVCalculator
-from customer_base_audit.models.model_prep import prepare_clv_model_inputs
+from customer_base_audit.models.model_prep import prepare_bg_nbd_inputs, prepare_gamma_gamma_inputs
 
-# Prepare data
-model_data = prepare_clv_model_inputs(
-    transactions=transactions,
-    observation_start=datetime(2024, 1, 1),
-    observation_end=datetime(2024, 12, 31, 23, 59, 59),
-    customer_id_field='customer_id',
-    timestamp_field='event_ts',
-    monetary_field='unit_price'
+# Prepare data for BG/NBD and Gamma-Gamma models
+observation_start = datetime(2024, 1, 1)
+observation_end = datetime(2024, 12, 31, 23, 59, 59)
+
+bgnbd_data = prepare_bg_nbd_inputs(
+    period_aggregations=mart.periods[PeriodGranularity.MONTH],
+    observation_start=observation_start,
+    observation_end=observation_end
 )
+
+gg_data = prepare_gamma_gamma_inputs(
+    period_aggregations=mart.periods[PeriodGranularity.MONTH],
+    min_frequency=2
+)
+# Convert monetary_value from Decimal to float for model fitting
+gg_data['monetary_value'] = gg_data['monetary_value'].astype(float)
 
 # Train models
 bgnbd_model = BGNBDModelWrapper(BGNBDConfig(method="map"))
-bgnbd_model.fit(model_data)
+bgnbd_model.fit(bgnbd_data)
 
 gamma_gamma_model = GammaGammaModelWrapper(GammaGammaConfig(method="map"))
-gamma_gamma_model.fit(model_data[model_data['frequency'] >= 2])
+gamma_gamma_model.fit(gg_data)
 
-# Calculate CLV
-calculator = CLVCalculator()
-clv_scores = calculator.calculate_clv(
-    bgnbd_model=bgnbd_model,
-    gamma_gamma_model=gamma_gamma_model,
-    customer_data=model_data,
-    time_period_days=90
-)
+# Calculate CLV (time_horizon_months defaults to 12)
+calculator = CLVCalculator(bg_nbd_model=bgnbd_model, gamma_gamma_model=gamma_gamma_model, time_horizon_months=3)
+clv_df = calculator.calculate_clv(bgnbd_data, gg_data)
 
 # Find top 10 customers by CLV
-top_10 = sorted(clv_scores, key=lambda x: x.clv, reverse=True)[:10]
-for score in top_10:
-    print(f"{score.customer_id}: ${score.clv:.2f}")
+top_10 = clv_df.nlargest(10, 'clv')
+for _, row in top_10.iterrows():
+    print(f"{row['customer_id']}: ${row['clv']:.2f}")
 ```
 
 ---
