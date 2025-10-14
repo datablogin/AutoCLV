@@ -17,7 +17,6 @@ Issue #30: https://github.com/datablogin/AutoCLV/issues/30
 """
 
 from datetime import datetime
-from decimal import Decimal
 
 import pytest
 
@@ -26,7 +25,7 @@ from customer_base_audit.foundation.data_mart import (
     CustomerDataMartBuilder,
     PeriodGranularity,
 )
-from customer_base_audit.foundation.rfm import calculate_rfm, calculate_rfm_scores
+from customer_base_audit.foundation.rfm import calculate_rfm
 from customer_base_audit.models.model_prep import (
     prepare_bg_nbd_inputs,
     prepare_gamma_gamma_inputs,
@@ -83,7 +82,6 @@ def test_end_to_end_clv_pipeline(texas_clv_data):
     rfm_metrics = calculate_rfm(
         mart.periods[PeriodGranularity.MONTH], observation_end
     )
-    rfm_scores = calculate_rfm_scores(rfm_metrics)
 
     # Validate RFM
     assert len(rfm_metrics) > 0, "Should have RFM metrics"
@@ -277,7 +275,7 @@ def test_clv_pipeline_with_validation_metrics(texas_clv_data):
     assert metrics.sample_size == len(common_customers)
 
     # Log metrics for monitoring (informational only, no hard thresholds)
-    print(f"\nValidation Metrics (informational only):")
+    print("\nValidation Metrics (informational only):")
     print(f"  MAPE: {metrics.mape:.2f}%")
     print(f"  R²: {metrics.r_squared:.4f}")
     print(f"  MAE: ${metrics.mae:.2f}")
@@ -308,12 +306,9 @@ def test_clv_pipeline_handles_edge_cases(texas_clv_data):
     ]
     mart = builder.build(transaction_dicts)
 
-    # Calculate RFM
+    # Prepare model data
     observation_start = datetime(2023, 1, 1)
     observation_end = datetime(2025, 1, 1)
-    rfm_metrics = calculate_rfm(mart.periods[PeriodGranularity.MONTH], observation_end)
-
-    # Prepare model data
 
     bgnbd_data = prepare_bg_nbd_inputs(
         period_aggregations=mart.periods[PeriodGranularity.MONTH],
@@ -376,8 +371,6 @@ def test_clv_pipeline_performance(texas_clv_data):
 
     observation_start = datetime(2023, 1, 1)
     observation_end = datetime(2025, 1, 1)
-
-    rfm_metrics = calculate_rfm(mart.periods[PeriodGranularity.MONTH], observation_end)
 
     bgnbd_data = prepare_bg_nbd_inputs(
         period_aggregations=mart.periods[PeriodGranularity.MONTH],
