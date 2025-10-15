@@ -91,7 +91,7 @@ async def test_with_json_file(json_path: str):
         data_mart_request, ctx, transactions=transactions
     )
 
-    print(f"✓ Data Mart Built:")
+    print("✓ Data Mart Built:")
     print(f"  - Orders: {data_mart_response.order_count}")
     print(f"  - Customers: {data_mart_response.customer_count}")
     print(f"  - Periods: {data_mart_response.period_count}")
@@ -116,7 +116,7 @@ async def test_with_json_file(json_path: str):
 
     rfm_response = await calculate_rfm_metrics(rfm_request, ctx)
 
-    print(f"✓ RFM Metrics Calculated:")
+    print("✓ RFM Metrics Calculated:")
     print(f"  - Customers: {rfm_response.metrics_count}")
     print(f"  - Scores: {rfm_response.score_count}")
     print(
@@ -126,7 +126,7 @@ async def test_with_json_file(json_path: str):
     # Show sample RFM metrics
     rfm_metrics = ctx.state["rfm_metrics"]
     if rfm_metrics:
-        print(f"\n  Sample RFM Metrics (first 5):")
+        print("\n  Sample RFM Metrics (first 5):")
         for i, metric in enumerate(rfm_metrics[:5]):
             print(
                 f"    {metric.customer_id}: R={metric.recency_days}d, F={metric.frequency}, M=${metric.monetary}"
@@ -141,7 +141,7 @@ async def test_with_json_file(json_path: str):
 
     cohort_response = await create_customer_cohorts(cohort_request, ctx)
 
-    print(f"✓ Cohorts Created:")
+    print("✓ Cohorts Created:")
     print(f"  - Cohort Count: {cohort_response.cohort_count}")
     print(f"  - Customers: {cohort_response.customer_count}")
     print(f"  - Type: {cohort_response.cohort_type}")
@@ -149,7 +149,7 @@ async def test_with_json_file(json_path: str):
         f"  - Date Range: {cohort_response.date_range[0]} to {cohort_response.date_range[1]}"
     )
 
-    print(f"\n  Cohort Distribution:")
+    print("\n  Cohort Distribution:")
     for cohort_id, count in sorted(cohort_response.assignment_summary.items()):
         print(f"    {cohort_id}: {count} customers")
 
@@ -167,7 +167,7 @@ async def test_with_python_data(transactions: list[dict]):
         transactions: List of transaction dictionaries with datetime objects
     """
     print(f"\n{'=' * 60}")
-    print(f"Testing Phase 1 with in-memory data")
+    print("Testing Phase 1 with in-memory data")
     print(f"{'=' * 60}\n")
 
     print(f"Using {len(transactions)} transactions")

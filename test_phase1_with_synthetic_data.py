@@ -6,7 +6,7 @@ with realistic customer scenarios.
 """
 
 import asyncio
-from datetime import datetime, timezone, date
+from datetime import datetime, date
 from unittest.mock import AsyncMock, MagicMock
 
 from customer_base_audit.synthetic import (
@@ -65,7 +65,7 @@ async def test_scenario(
     print(f"{'=' * 80}\n")
 
     # Generate synthetic customers and transactions
-    print(f"Generating synthetic data...")
+    print("Generating synthetic data...")
     print(f"  - Customers: {num_customers}")
     print(f"  - Scenario: {scenario_name}")
 
@@ -99,7 +99,7 @@ async def test_scenario(
     ctx = create_mock_context()
 
     # Step 1: Build Data Mart
-    print(f"\n--- Step 1: Building Data Mart ---")
+    print("\n--- Step 1: Building Data Mart ---")
     data_mart_request = BuildDataMartRequest(
         transaction_data_path="synthetic", period_granularities=["quarter", "year"]
     )
@@ -108,7 +108,7 @@ async def test_scenario(
         data_mart_request, ctx, transactions=transactions
     )
 
-    print(f"✓ Data Mart Built:")
+    print("✓ Data Mart Built:")
     print(f"  - Orders: {data_mart_response.order_count}")
     print(f"  - Customers: {data_mart_response.customer_count}")
     print(f"  - Periods: {data_mart_response.period_count}")
@@ -117,7 +117,7 @@ async def test_scenario(
     )
 
     # Step 2: Calculate RFM Metrics
-    print(f"\n--- Step 2: Calculating RFM Metrics ---")
+    print("\n--- Step 2: Calculating RFM Metrics ---")
 
     rfm_request = CalculateRFMRequest(
         observation_end=datetime(
@@ -129,7 +129,7 @@ async def test_scenario(
 
     rfm_response = await calculate_rfm_metrics(rfm_request, ctx)
 
-    print(f"✓ RFM Metrics Calculated:")
+    print("✓ RFM Metrics Calculated:")
     print(f"  - Customers Analyzed: {rfm_response.metrics_count}")
     print(f"  - RFM Scores Generated: {rfm_response.score_count}")
     print(f"  - Parallel Processing: {rfm_response.parallel_enabled}")
@@ -143,7 +143,7 @@ async def test_scenario(
         avg_frequency = sum(m.frequency for m in rfm_metrics) / len(rfm_metrics)
         avg_monetary = sum(float(m.monetary) for m in rfm_metrics) / len(rfm_metrics)
 
-        print(f"\n  RFM Averages:")
+        print("\n  RFM Averages:")
         print(f"    - Recency: {avg_recency:.1f} days")
         print(f"    - Frequency: {avg_frequency:.2f} orders")
         print(f"    - Monetary: ${avg_monetary:.2f} per order")
@@ -155,7 +155,7 @@ async def test_scenario(
             key = score.rfm_score
             score_dist[key] = score_dist.get(key, 0) + 1
 
-        print(f"\n  Top 5 RFM Segments:")
+        print("\n  Top 5 RFM Segments:")
         for score, count in sorted(
             score_dist.items(), key=lambda x: x[1], reverse=True
         )[:5]:
@@ -164,17 +164,17 @@ async def test_scenario(
             )
 
     # Step 3: Create Cohorts
-    print(f"\n--- Step 3: Creating Customer Cohorts ---")
+    print("\n--- Step 3: Creating Customer Cohorts ---")
 
     cohort_request = CreateCohortsRequest(cohort_type="quarterly")
 
     cohort_response = await create_customer_cohorts(cohort_request, ctx)
 
-    print(f"✓ Cohorts Created:")
+    print("✓ Cohorts Created:")
     print(f"  - Cohort Count: {cohort_response.cohort_count}")
     print(f"  - Customers Assigned: {cohort_response.customer_count}")
 
-    print(f"\n  Cohort Distribution:")
+    print("\n  Cohort Distribution:")
     for cohort_id, count in sorted(cohort_response.assignment_summary.items()):
         pct = (count / cohort_response.customer_count) * 100
         print(f"    {cohort_id}: {count} customers ({pct:.1f}%)")
