@@ -214,7 +214,9 @@ async def test_lens2_period_comparison(mock_rfm_metrics):
 
     # Create two different period datasets
     period1_rfm = mock_rfm_metrics[:80]  # Simulate 80 customers in period 1
-    period2_rfm = mock_rfm_metrics[20:]  # Simulate 80 customers in period 2 (60 overlap)
+    period2_rfm = mock_rfm_metrics[
+        20:
+    ]  # Simulate 80 customers in period 2 (60 overlap)
 
     # Populate SharedState (used by tool implementation)
     shared_state = get_shared_state()
@@ -312,9 +314,7 @@ async def test_lens3_invalid_cohort_fails(
 
 
 @pytest.mark.asyncio
-async def test_lens4_multi_cohort_comparison(
-    mock_data_mart, mock_cohort_assignments
-):
+async def test_lens4_multi_cohort_comparison(mock_data_mart, mock_cohort_assignments):
     """Test Lens 4 multi-cohort comparison analysis."""
     ctx = MockContext()
 
@@ -477,10 +477,7 @@ def test_lens2_growth_momentum_assessment():
     new_ids = set([f"cust_{i:03d}" for i in range(100, 130)])
 
     migration = CustomerMigration(
-        retained=retained_ids,
-        churned=churned_ids,
-        new=new_ids,
-        reactivated=set()
+        retained=retained_ids, churned=churned_ids, new=new_ids, reactivated=set()
     )
 
     metrics = Lens2Metrics(
