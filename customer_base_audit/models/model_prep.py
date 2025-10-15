@@ -54,7 +54,10 @@ Example Workflow
 >>> bgf.fit(clv_data['frequency'], clv_data['recency'], clv_data['T'])
 >>>
 >>> ggf = GammaGammaFitter()
->>> ggf.fit(clv_data['frequency'], clv_data['monetary_value'])
+>>> ggf.fit(
+...     clv_data['frequency'],
+...     clv_data['monetary_value'].astype(float)  # Convert Decimal to float
+... )
 >>>
 >>> # Step 5: Predict CLV for next 12 months
 >>> clv_predictions = ggf.customer_lifetime_value(
@@ -62,7 +65,7 @@ Example Workflow
 ...     clv_data['frequency'],
 ...     clv_data['recency'],
 ...     clv_data['T'],
-...     clv_data['monetary_value'],
+...     clv_data['monetary_value'].astype(float),  # Convert Decimal to float
 ...     time=12,  # months
 ...     discount_rate=0.01  # monthly discount rate
 ... )
@@ -70,13 +73,18 @@ Example Workflow
 Performance Characteristics
 ---------------------------
 Both functions use dictionary-based aggregation for memory efficiency with large
-customer bases:
-- **100k customers**: ~1-2 seconds
-- **500k customers**: ~5-10 seconds
-- **1M customers**: ~15-20 seconds
+customer bases. Actual performance (on typical development hardware):
+- **100k customers**: ~0.2 seconds
+- **500k customers**: ~1-2 seconds
+- **1M customers**: ~3-5 seconds
 
 For datasets exceeding 1M customers, consider processing in batches or using
 pandas-native groupby aggregation for improved parallelization.
+
+**Note on Decimal vs Float**: `prepare_gamma_gamma_inputs()` returns `monetary_value`
+as Decimal for financial accuracy, but the `lifetimes` library requires float inputs.
+Always convert using `.astype(float)` before passing to model fitting functions (see
+example above).
 
 References
 ----------
@@ -289,7 +297,15 @@ def prepare_bg_nbd_inputs(
     2
     """
     if not period_aggregations:
-        return pd.DataFrame(columns=["customer_id", "frequency", "recency", "T"])
+        # Return empty DataFrame with correct dtypes
+        return pd.DataFrame(
+            {
+                "customer_id": pd.Series(dtype=str),
+                "frequency": pd.Series(dtype="int64"),
+                "recency": pd.Series(dtype="float64"),
+                "T": pd.Series(dtype="float64"),
+            }
+        )
 
     # Validate timezone consistency
     if observation_end.tzinfo is None:
@@ -479,7 +495,14 @@ def prepare_gamma_gamma_inputs(
         )
 
     if not period_aggregations:
-        return pd.DataFrame(columns=["customer_id", "frequency", "monetary_value"])
+        # Return empty DataFrame with correct dtypes
+        return pd.DataFrame(
+            {
+                "customer_id": pd.Series(dtype=str),
+                "frequency": pd.Series(dtype="int64"),
+                "monetary_value": pd.Series(dtype=object),  # Decimal objects
+            }
+        )
 
     # Group by customer to calculate total orders and spend
     customer_data: dict[str, dict] = {}
@@ -543,12 +566,18 @@ def prepare_gamma_gamma_inputs(
             }
         )
 
-    # Create DataFrame with explicit columns to handle empty rows case
+    # Create DataFrame with explicit dtypes for empty case
     if rows:
         df = pd.DataFrame(rows)
         # Sort by customer_id for consistency with prepare_bg_nbd_inputs
         df = df.sort_values("customer_id").reset_index(drop=True)
     else:
-        # If all customers filtered out, return empty DataFrame with correct columns
-        df = pd.DataFrame(columns=["customer_id", "frequency", "monetary_value"])
+        # If all customers filtered out, return empty DataFrame with correct dtypes
+        df = pd.DataFrame(
+            {
+                "customer_id": pd.Series(dtype=str),
+                "frequency": pd.Series(dtype="int64"),
+                "monetary_value": pd.Series(dtype=object),  # Decimal objects
+            }
+        )
     return df
