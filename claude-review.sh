@@ -20,6 +20,7 @@ POST_COMMENT=true
 OUTPUT_MODE="comment"   # comment|draft-comment|file
 DRY_RUN=false
 MAX_DIFF_LINES=500
+CHUNK_FILES=0  # 0 = review all at once; N = review N files per chunk
 
 ORIGINAL_BRANCH=$(git branch --show-current || true)
 
@@ -32,6 +33,7 @@ usage() {
   echo "  --save-file         Save review to file instead of posting a comment"
   echo "  --draft-comment     Post review as a draft PR comment"
   echo "  --max-diff-lines N  Maximum diff lines to include (default: 500, 0 = no limit)"
+  echo "  --chunk-files N     Review N files per chunk (default: 0 = all at once)"
   echo "  --dry-run           Show what would be reviewed without calling Claude"
   echo "  --help              Show this help"
   echo ""
@@ -62,6 +64,7 @@ while [[ $# -gt 0 ]]; do
     --save-file) POST_COMMENT=false; OUTPUT_MODE="file"; shift ;;
     --draft-comment) POST_COMMENT=true; OUTPUT_MODE="draft-comment"; shift ;;
     --max-diff-lines) MAX_DIFF_LINES="$2"; shift 2 ;;
+    --chunk-files) CHUNK_FILES="$2"; shift 2 ;;
     --dry-run) DRY_RUN=true; shift ;;
     --help) usage; exit 0 ;;
     -*) echo -e "${RED}Unknown option: $1${NC}"; usage; exit 1 ;;

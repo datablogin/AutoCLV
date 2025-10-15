@@ -4,7 +4,7 @@ Wraps Lens 4 (Multi-Cohort Comparison) as an MCP tool for agentic orchestration.
 """
 
 import structlog
-from customer_base_audit.analyses.lens4 import compare_cohorts, Lens4Metrics
+from customer_base_audit.analyses.lens4 import Lens4Metrics, compare_cohorts
 from fastmcp import Context
 from pydantic import BaseModel, Field
 
@@ -78,9 +78,7 @@ def _generate_cohort_summaries(metrics: Lens4Metrics) -> list[CohortSummary]:
         total_revenue = data["total_revenue"]
         total_orders = data["total_orders"]
 
-        avg_revenue_per_member = (
-            total_revenue / cohort_size if cohort_size > 0 else 0.0
-        )
+        avg_revenue_per_member = total_revenue / cohort_size if cohort_size > 0 else 0.0
         avg_frequency = total_orders / cohort_size if cohort_size > 0 else 0.0
         avg_order_value = total_revenue / total_orders if total_orders > 0 else 0.0
 
@@ -259,6 +257,12 @@ async def _compare_multiple_cohorts_impl(
     if cohort_assignments is None:
         raise ValueError(
             "Cohort assignments not found. Run create_customer_cohorts first."
+        )
+
+    # Validate cohort assignments is not empty
+    if not cohort_assignments:
+        raise ValueError(
+            "Cohort assignments is empty. Ensure customers are assigned to cohorts."
         )
 
     # Get data mart from context

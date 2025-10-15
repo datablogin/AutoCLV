@@ -3,11 +3,8 @@
 Wraps Lens 3 (Single Cohort Evolution) as an MCP tool for agentic orchestration.
 """
 
-from datetime import datetime
-from decimal import Decimal
-
 import structlog
-from customer_base_audit.analyses.lens3 import analyze_cohort_evolution, Lens3Metrics
+from customer_base_audit.analyses.lens3 import Lens3Metrics, analyze_cohort_evolution
 from fastmcp import Context
 from pydantic import BaseModel, Field
 
@@ -175,9 +172,7 @@ async def _analyze_cohort_lifecycle_impl(
     cohort_assignments = shared_state.get("cohort_assignments")
 
     if cohort_definitions is None or cohort_assignments is None:
-        raise ValueError(
-            "Cohort data not found. Run create_customer_cohorts first."
-        )
+        raise ValueError("Cohort data not found. Run create_customer_cohorts first.")
 
     # Find the requested cohort
     target_cohort = None
@@ -200,12 +195,17 @@ async def _analyze_cohort_lifecycle_impl(
         if assigned_cohort == request.cohort_id
     ]
 
+    # Validate cohort has customers assigned
+    if not cohort_customer_ids:
+        raise ValueError(
+            f"No customers assigned to cohort '{request.cohort_id}'. "
+            f"Cohort may be empty or cohort assignments may be incorrect."
+        )
+
     # Get data mart from context
     mart = shared_state.get("data_mart")
     if mart is None:
-        raise ValueError(
-            "Data mart not found. Run build_customer_data_mart first."
-        )
+        raise ValueError("Data mart not found. Run build_customer_data_mart first.")
 
     # Get period aggregations (use first granularity)
     first_granularity = list(mart.periods.keys())[0]

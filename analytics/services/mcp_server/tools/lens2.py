@@ -6,7 +6,7 @@ Wraps Lens 2 (Period-to-Period Comparison) as an MCP tool for agentic orchestrat
 from decimal import Decimal
 
 import structlog
-from customer_base_audit.analyses.lens2 import analyze_period_comparison, Lens2Metrics
+from customer_base_audit.analyses.lens2 import Lens2Metrics, analyze_period_comparison
 from fastmcp import Context
 from pydantic import BaseModel, Field
 
@@ -69,10 +69,7 @@ class Lens2Response(BaseModel):
 def _assess_growth_momentum(metrics: Lens2Metrics) -> str:
     """Assess growth momentum based on key metrics."""
     # Strong growth: positive customer growth and revenue growth > 10%
-    if (
-        metrics.customer_count_change > 0
-        and metrics.revenue_change_pct > Decimal("10")
-    ):
+    if metrics.customer_count_change > 0 and metrics.revenue_change_pct > Decimal("10"):
         return "strong"
 
     # Moderate growth: positive customer growth or revenue growth 0-10%
@@ -80,10 +77,7 @@ def _assess_growth_momentum(metrics: Lens2Metrics) -> str:
         return "moderate"
 
     # Declining: negative customer growth but positive revenue
-    if (
-        metrics.customer_count_change < 0
-        and metrics.revenue_change_pct > Decimal("0")
-    ):
+    if metrics.customer_count_change < 0 and metrics.revenue_change_pct > Decimal("0"):
         return "declining"
 
     # Negative: negative customer and revenue growth

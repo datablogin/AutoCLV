@@ -6,7 +6,7 @@ Wraps Lens 1 (Single Period Analysis) as an MCP tool for agentic orchestration.
 from decimal import Decimal
 
 import structlog
-from customer_base_audit.analyses.lens1 import analyze_single_period, Lens1Metrics
+from customer_base_audit.analyses.lens1 import Lens1Metrics, analyze_single_period
 from fastmcp import Context
 from pydantic import BaseModel, Field
 

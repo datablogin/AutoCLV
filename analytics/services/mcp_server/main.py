@@ -75,18 +75,15 @@ async def health_check(ctx: Context) -> dict:
 
 # Import Phase 1 Foundation Tools
 # This registers the tools with the MCP server
+# Import Phase 2 Lens Tools
 from analytics.services.mcp_server.tools import (
     cohorts,  # noqa: F401, E402
     data_mart,  # noqa: F401, E402
-    rfm,  # noqa: F401, E402
-)
-
-# Import Phase 2 Lens Tools
-from analytics.services.mcp_server.tools import (
     lens1,  # noqa: F401, E402
     lens2,  # noqa: F401, E402
     lens3,  # noqa: F401, E402
     lens4,  # noqa: F401, E402
+    rfm,  # noqa: F401, E402
 )
 
 logger.info("mcp_server_initialized", phase="Phase 2", tools_registered=7)
