@@ -67,6 +67,13 @@ async def _calculate_rfm_metrics_impl(
     if request.calculate_scores:
         rfm_scores = calculate_rfm_scores(rfm_metrics)
 
+    # Validate RFM metrics were calculated
+    if not rfm_metrics:
+        raise ValueError(
+            "No RFM metrics calculated. "
+            "Check that period aggregations contain customer data."
+        )
+
     # Store in context
     ctx.set_state("rfm_metrics", rfm_metrics)
     ctx.set_state("rfm_scores", rfm_scores)
@@ -74,8 +81,8 @@ async def _calculate_rfm_metrics_impl(
     # Extract date range
     dates = [m.observation_start for m in rfm_metrics]
     date_range = (
-        min(dates).isoformat() if dates else "",
-        max(dates).isoformat() if dates else ""
+        min(dates).isoformat(),
+        max(dates).isoformat()
     )
 
     await ctx.info(f"RFM calculation complete: {len(rfm_metrics)} customers")

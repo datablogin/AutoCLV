@@ -158,6 +158,30 @@ Optional fields:
 - `line_total` (float): Total line amount (calculated if not provided)
 - `line_margin` (float): Line margin (calculated if not provided)
 
+### Timezone Requirements
+
+**IMPORTANT**: All datetime fields must use **consistent timezone handling**:
+
+- **Option 1 (Recommended)**: All datetimes timezone-aware (e.g., UTC)
+  ```python
+  from datetime import datetime, timezone
+  event_ts = datetime(2023, 1, 15, 10, 0, 0, tzinfo=timezone.utc)
+  ```
+
+- **Option 2**: All datetimes naive (no timezone)
+  ```python
+  event_ts = datetime(2023, 1, 15, 10, 0, 0)
+  ```
+
+**DO NOT MIX** timezone-aware and naive datetimes in the same dataset. This will cause comparison errors during RFM calculation.
+
+When using JSON files, ISO format strings are automatically parsed:
+```json
+{
+  "event_ts": "2023-01-15T10:00:00+00:00"  // Timezone-aware
+}
+```
+
 ## Performance Notes
 
 - **Parallel Processing**: RFM calculation supports parallel processing for large datasets

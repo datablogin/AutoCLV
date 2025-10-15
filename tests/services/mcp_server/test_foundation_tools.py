@@ -275,3 +275,75 @@ async def test_cohorts_without_data_mart_raises_error():
 
     with pytest.raises(ValueError, match="Data mart not found"):
         await create_customer_cohorts(cohort_request, ctx)
+
+
+@pytest.mark.asyncio
+async def test_empty_transactions_raises_error():
+    """Test that empty transaction list raises appropriate error."""
+    ctx = create_mock_context()
+
+    data_mart_request = BuildDataMartRequest(
+        transaction_data_path="test.json",
+        period_granularities=["quarter"]
+    )
+
+    # Should succeed building empty data mart
+    response = await build_customer_data_mart(data_mart_request, ctx, transactions=[])
+
+    # But should fail when trying to calculate RFM on empty data
+    rfm_request = CalculateRFMRequest(
+        observation_end=datetime(2023, 6, 30, tzinfo=timezone.utc),
+        enable_parallel=False,
+        calculate_scores=True
+    )
+
+    with pytest.raises(ValueError, match="No RFM metrics calculated"):
+        await calculate_rfm_metrics(rfm_request, ctx)
+
+
+@pytest.mark.asyncio
+async def test_single_customer_workflow():
+    """Test that single customer works through full pipeline."""
+    transactions = [
+        {
+            "order_id": "O1",
+            "customer_id": "C1",
+            "event_ts": datetime(2023, 1, 15, 10, 0, 0, tzinfo=timezone.utc),
+            "unit_price": 100.0,
+            "quantity": 1,
+        },
+        {
+            "order_id": "O2",
+            "customer_id": "C1",
+            "event_ts": datetime(2023, 2, 20, 14, 30, 0, tzinfo=timezone.utc),
+            "unit_price": 150.0,
+            "quantity": 1,
+        },
+    ]
+
+    ctx = create_mock_context()
+
+    # Build data mart
+    data_mart_request = BuildDataMartRequest(
+        transaction_data_path="test.json",
+        period_granularities=["quarter"]
+    )
+    data_mart_response = await build_customer_data_mart(data_mart_request, ctx, transactions=transactions)
+    assert data_mart_response.customer_count == 1
+    assert data_mart_response.order_count == 2
+
+    # Calculate RFM
+    rfm_request = CalculateRFMRequest(
+        observation_end=datetime(2023, 6, 30, tzinfo=timezone.utc),
+        enable_parallel=False,
+        calculate_scores=True
+    )
+    rfm_response = await calculate_rfm_metrics(rfm_request, ctx)
+    assert rfm_response.metrics_count == 1
+    assert rfm_response.score_count == 1
+
+    # Create cohorts
+    cohort_request = CreateCohortsRequest(cohort_type="quarterly")
+    cohort_response = await create_customer_cohorts(cohort_request, ctx)
+    assert cohort_response.customer_count == 1
+    assert cohort_response.cohort_count == 1

@@ -7,8 +7,6 @@ Phase 0: Basic scaffold with observability setup.
 
 from fastmcp import FastMCP, Context
 from contextlib import asynccontextmanager
-from dataclasses import dataclass
-from typing import Optional
 import structlog
 import sys
 import logging
@@ -33,24 +31,22 @@ structlog.configure(
 logger = structlog.get_logger(__name__)
 
 
-@dataclass
-class AppContext:
-    """Application-wide resources for MCP server."""
-    config: dict
-
-
 @asynccontextmanager
 async def app_lifespan(app):
-    """Initialize and cleanup MCP server resources."""
-    logger.info("mcp_server_starting", phase="Phase 0 - Infrastructure Setup")
+    """Initialize and cleanup MCP server resources.
 
-    # Startup
-    config = {
-        "max_lookback_days": 730,
-        "default_discount_rate": 0.1,
-    }
+    Phase 1: Minimal lifespan management (startup/shutdown logging only).
+    Phase 4: Will add observability initialization, resource pooling, and graceful shutdown.
 
-    yield AppContext(config=config)
+    Note: AppContext was removed as it's not accessed by tools in Phase 1.
+    Configuration will be reintroduced in Phase 4 when needed for observability setup.
+    """
+    logger.info("mcp_server_starting", phase="Phase 1 - Foundation Services")
+
+    # Phase 1: No resources to initialize yet
+    # Phase 4: Initialize observability, database pools, config, etc.
+
+    yield
 
     # Shutdown
     logger.info("mcp_server_stopping")

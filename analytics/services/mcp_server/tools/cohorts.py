@@ -57,16 +57,17 @@ async def _create_customer_cohorts_impl(
 
     # Extract customer identifiers (need acquisition dates)
     # For now, use first transaction date as acquisition proxy
-    customer_first_dates = {}
-    for granularity, periods in mart.periods.items():
-        for period in periods:
-            if period.customer_id not in customer_first_dates:
-                customer_first_dates[period.customer_id] = period.period_start
-            else:
-                customer_first_dates[period.customer_id] = min(
-                    customer_first_dates[period.customer_id],
-                    period.period_start
-                )
+    # Use first granularity only to avoid O(n*g) iteration
+    first_granularity = list(mart.periods.keys())[0]
+    periods = mart.periods[first_granularity]
+
+    # Group by customer and get minimum period_start (O(n) instead of O(n*g))
+    from itertools import groupby
+    sorted_periods = sorted(periods, key=lambda p: (p.customer_id, p.period_start))
+    customer_first_dates = {
+        customer_id: next(group).period_start
+        for customer_id, group in groupby(sorted_periods, key=lambda p: p.customer_id)
+    }
 
     customers = [
         CustomerIdentifier(customer_id=cid, acquisition_ts=acq_date, source_system="transactions")
@@ -98,12 +99,16 @@ async def _create_customer_cohorts_impl(
     ctx.set_state("cohort_definitions", cohort_defs)
     ctx.set_state("cohort_assignments", cohort_assignments)
 
-    # Calculate summary
-    assignment_summary = {}
-    for cohort_id in set(cohort_assignments.values()):
-        assignment_summary[cohort_id] = sum(
-            1 for cid in cohort_assignments.values() if cid == cohort_id
+    # Validate cohorts were created
+    if not cohort_defs:
+        raise ValueError(
+            "No cohorts created in specified date range. "
+            "Check that customers exist within the time period."
         )
+
+    # Calculate summary using Counter for O(n) performance
+    from collections import Counter
+    assignment_summary = dict(Counter(cohort_assignments.values()))
 
     date_range = (
         min(c.start_date for c in cohort_defs).isoformat(),
