@@ -38,9 +38,11 @@ usage() {
   echo "  --help              Show this help"
   echo ""
   echo "Examples:"
-  echo "  $0                           # Review current PR and post as comment"
-  echo "  $0 12                        # Review PR #12 and post as comment"
-  echo "  $0 --focus analytics,ml 12   # Focus analytics and ML components"
+  echo "  $0                             # Review current PR and post as comment"
+  echo "  $0 12                          # Review PR #12 and post as comment"
+  echo "  $0 --focus analytics,ml 12     # Focus analytics and ML components"
+  echo "  $0 --chunk-files 10 12         # Review PR #12 in chunks of 10 files each"
+  echo "  $0 --chunk-files 5 --max-diff-lines 0 12  # Review 5 files at a time, no line limit"
 }
 
 check_dependencies() {
@@ -91,9 +93,15 @@ has_clv_files()       { gh pr diff "$PR_NUM" --name-only | grep -E "customer_bas
 has_api_files()       { gh pr diff "$PR_NUM" --name-only | grep -E "analytics/services/analytics_api|analytics/libs/api_common" >/dev/null 2>&1; }
 
 create_diff_summary() {
-  local pr_num="$1"; local max_lines="$2"
-  if [ "$max_lines" -eq 0 ]; then gh pr diff "$pr_num"; return; fi
-  local full; full=$(gh pr diff "$pr_num")
+  local pr_num="$1"; local max_lines="$2"; shift 2
+  local files=("$@")
+  local full
+  if [ ${#files[@]} -eq 0 ]; then
+    full=$(gh pr diff "$pr_num")
+  else
+    full=$(gh pr diff "$pr_num" -- "${files[@]}")
+  fi
+  if [ "$max_lines" -eq 0 ]; then echo "$full"; return; fi
   local n; n=$(echo "$full" | wc -l | tr -d ' ')
   if [ "$n" -le "$max_lines" ]; then echo "$full"; else
     echo "### ⚠️ Large Diff Summary (${n} lines total, showing first ${max_lines} lines)"
@@ -173,8 +181,25 @@ fi
 
 REVIEW_PROMPT=$(generate_review_prompt)
 
+# Get all changed files
+ALL_FILES=($(gh pr diff "$PR_NUM" --name-only))
+TOTAL_FILES=${#ALL_FILES[@]}
+
+# Determine chunking strategy
+if [ "$CHUNK_FILES" -gt 0 ] && [ "$TOTAL_FILES" -gt "$CHUNK_FILES" ]; then
+  NUM_CHUNKS=$(( (TOTAL_FILES + CHUNK_FILES - 1) / CHUNK_FILES ))
+  echo -e "${YELLOW}Large PR detected: splitting into $NUM_CHUNKS chunks ($CHUNK_FILES files each)${NC}"
+else
+  NUM_CHUNKS=1
+  CHUNK_FILES=$TOTAL_FILES
+fi
+
 echo -e "${BLUE}Preparing PR context (max diff lines: $MAX_DIFF_LINES)...${NC}"
-PR_CONTEXT=$(cat <<EOF
+
+# Function to create PR context for specific files
+create_pr_context() {
+  local chunk_num="$1"; local chunk_files=("${@:2}")
+  cat <<EOF
 ### PR Context
 - **Title:** $PR_TITLE
 - **Author:** $PR_AUTHOR
@@ -183,16 +208,22 @@ PR_CONTEXT=$(cat <<EOF
 - **Deletions:** $PR_DELETIONS
 - **Files Changed:** $PR_CHANGED_FILES
 - **Commits:** $PR_COMMITS
+$([ "$NUM_CHUNKS" -gt 1 ] && echo "- **Review Chunk:** $chunk_num of $NUM_CHUNKS")
 
-### Files in this PR:
+### Files in this chunk:
 \`\`\`
-$(gh pr diff "$PR_NUM" --name-only)
+$(printf '%s\n' "${chunk_files[@]}")
 \`\`\`
 
 ### Code Changes:
-$(create_diff_summary "$PR_NUM" "$MAX_DIFF_LINES")
+$(create_diff_summary "$PR_NUM" "$MAX_DIFF_LINES" "${chunk_files[@]}")
 EOF
-)
+}
+
+# For single chunk, use original variable name for backwards compatibility
+if [ "$NUM_CHUNKS" -eq 1 ]; then
+  PR_CONTEXT=$(create_pr_context 1 "${ALL_FILES[@]}")
+fi
 
 if [ "$DRY_RUN" = true ]; then
   echo -e "${BLUE}DRY RUN — Files to review:${NC}"
@@ -204,19 +235,61 @@ fi
 case "$OUTPUT_MODE" in
   comment|draft-comment)
     echo -e "${YELLOW}Running Claude review and posting to PR...${NC}"
-    TMP=$(mktemp)
-    echo "$PR_CONTEXT" > "$TMP"
-    echo -e "\n---\n\n$REVIEW_PROMPT" >> "$TMP"
-    OUT="${TMP}.out"
-    # If MODEL is set and supported by CLI, you can add e.g.: claude chat --model "$MODEL"
-    if claude chat < "$TMP" > "$OUT" 2>&1; then
+    REVIEWS_DIR=$(mktemp -d)
+    ALL_REVIEWS=()
+
+    # Review each chunk
+    for (( chunk=0; chunk<NUM_CHUNKS; chunk++ )); do
+      START_IDX=$((chunk * CHUNK_FILES))
+      END_IDX=$((START_IDX + CHUNK_FILES))
+      [ "$END_IDX" -gt "$TOTAL_FILES" ] && END_IDX=$TOTAL_FILES
+      CHUNK_FILES_ARRAY=("${ALL_FILES[@]:$START_IDX:$((END_IDX - START_IDX))}")
+      CHUNK_NUM=$((chunk + 1))
+
+      if [ "$NUM_CHUNKS" -gt 1 ]; then
+        echo -e "${BLUE}Reviewing chunk $CHUNK_NUM/$NUM_CHUNKS (files $((START_IDX + 1))-$END_IDX)...${NC}"
+      fi
+
+      CHUNK_CONTEXT=$(create_pr_context "$CHUNK_NUM" "${CHUNK_FILES_ARRAY[@]}")
+      TMP=$(mktemp)
+      echo "$CHUNK_CONTEXT" > "$TMP"
+      echo -e "\n---\n\n$REVIEW_PROMPT" >> "$TMP"
+      OUT="${REVIEWS_DIR}/chunk_${CHUNK_NUM}.md"
+
+      if claude chat < "$TMP" > "$OUT" 2>&1; then
+        ALL_REVIEWS+=("$OUT")
+        if [ "$NUM_CHUNKS" -gt 1 ]; then
+          echo -e "${GREEN}✓ Chunk $CHUNK_NUM reviewed${NC}"
+        fi
+      else
+        echo -e "${RED}✗ Chunk $CHUNK_NUM review failed${NC}"
+        [ -f "$OUT" ] && head -n 20 "$OUT" || true
+      fi
+      rm -f "$TMP"
+    done
+
+    # Aggregate reviews
+    if [ ${#ALL_REVIEWS[@]} -gt 0 ]; then
       COMMENT=$(mktemp)
       cat > "$COMMENT" <<EOC
 # 🔍 Claude Code Review
 
 ## Review Feedback
 
-$(cat "$OUT")
+EOC
+      if [ "$NUM_CHUNKS" -gt 1 ]; then
+        for (( i=0; i<${#ALL_REVIEWS[@]}; i++ )); do
+          echo "### Chunk $((i + 1)) of ${#ALL_REVIEWS[@]}" >> "$COMMENT"
+          echo "" >> "$COMMENT"
+          cat "${ALL_REVIEWS[$i]}" >> "$COMMENT"
+          echo "" >> "$COMMENT"
+          echo "---" >> "$COMMENT"
+          echo "" >> "$COMMENT"
+        done
+      else
+        cat "${ALL_REVIEWS[0]}" >> "$COMMENT"
+      fi
+      cat >> "$COMMENT" <<EOC
 
 ---
 *Generated by AutoCLV PR Review Tool*
@@ -229,9 +302,9 @@ EOC
       echo -e "${GREEN}✓ Review comment posted${NC}"
       rm -f "$COMMENT"
     else
-      echo -e "${RED}✗ Claude review failed${NC}"; [ -f "$OUT" ] && head -n 40 "$OUT" || true
+      echo -e "${RED}✗ All reviews failed${NC}"
     fi
-    rm -f "$TMP" "$OUT"
+    rm -rf "$REVIEWS_DIR"
     ;;
   file)
     DATE=$(date +%Y%m%d_%H%M)
@@ -245,16 +318,59 @@ EOC
       echo "**Title:** $PR_TITLE  "; echo "**Author:** $PR_AUTHOR  ";
       echo "**Date:** $(date +"%Y-%m-%d %H:%M:%S")  ";
       echo "**Branch:** $PR_BRANCH → $PR_BASE_BRANCH"; echo "";
-      echo "$PR_CONTEXT"; echo "\n---\n\n## Review Prompt Used\n\n$REVIEW_PROMPT\n\n---\n\n## Claude Review Output\n";
+      [ "$NUM_CHUNKS" -gt 1 ] && echo "**Review Mode:** Chunked ($NUM_CHUNKS chunks, $CHUNK_FILES files each)"; echo "";
     } > "$OUTFILE"
-    TMP=$(mktemp)
-    echo "$PR_CONTEXT" > "$TMP"; echo -e "\n---\n\n$REVIEW_PROMPT" >> "$TMP"
-    if claude chat < "$TMP" >> "$OUTFILE" 2>&1; then
-      echo -e "${GREEN}✓ Review saved: $OUTFILE${NC}"
-    else
-      echo -e "${RED}✗ Review failed${NC}"; echo "See $OUTFILE for details";
-    fi
-    rm -f "$TMP"
+
+    # Review each chunk
+    for (( chunk=0; chunk<NUM_CHUNKS; chunk++ )); do
+      START_IDX=$((chunk * CHUNK_FILES))
+      END_IDX=$((START_IDX + CHUNK_FILES))
+      [ "$END_IDX" -gt "$TOTAL_FILES" ] && END_IDX=$TOTAL_FILES
+      CHUNK_FILES_ARRAY=("${ALL_FILES[@]:$START_IDX:$((END_IDX - START_IDX))}")
+      CHUNK_NUM=$((chunk + 1))
+
+      if [ "$NUM_CHUNKS" -gt 1 ]; then
+        echo -e "${BLUE}Reviewing chunk $CHUNK_NUM/$NUM_CHUNKS (files $((START_IDX + 1))-$END_IDX)...${NC}"
+        echo "" >> "$OUTFILE"
+        echo "## Chunk $CHUNK_NUM of $NUM_CHUNKS" >> "$OUTFILE"
+        echo "" >> "$OUTFILE"
+      fi
+
+      CHUNK_CONTEXT=$(create_pr_context "$CHUNK_NUM" "${CHUNK_FILES_ARRAY[@]}")
+      echo "$CHUNK_CONTEXT" >> "$OUTFILE"
+      echo "" >> "$OUTFILE"
+      echo "---" >> "$OUTFILE"
+      echo "" >> "$OUTFILE"
+      echo "### Review Prompt Used" >> "$OUTFILE"
+      echo "" >> "$OUTFILE"
+      echo "$REVIEW_PROMPT" >> "$OUTFILE"
+      echo "" >> "$OUTFILE"
+      echo "---" >> "$OUTFILE"
+      echo "" >> "$OUTFILE"
+      echo "### Claude Review Output" >> "$OUTFILE"
+      echo "" >> "$OUTFILE"
+
+      TMP=$(mktemp)
+      echo "$CHUNK_CONTEXT" > "$TMP"
+      echo -e "\n---\n\n$REVIEW_PROMPT" >> "$TMP"
+
+      if claude chat < "$TMP" >> "$OUTFILE" 2>&1; then
+        if [ "$NUM_CHUNKS" -gt 1 ]; then
+          echo -e "${GREEN}✓ Chunk $CHUNK_NUM reviewed${NC}"
+        fi
+      else
+        echo -e "${RED}✗ Chunk $CHUNK_NUM review failed${NC}"
+      fi
+      rm -f "$TMP"
+
+      if [ "$NUM_CHUNKS" -gt 1 ] && [ "$CHUNK_NUM" -lt "$NUM_CHUNKS" ]; then
+        echo "" >> "$OUTFILE"
+        echo "---" >> "$OUTFILE"
+        echo "" >> "$OUTFILE"
+      fi
+    done
+
+    echo -e "${GREEN}✓ Review saved: $OUTFILE${NC}"
     ;;
 esac
 

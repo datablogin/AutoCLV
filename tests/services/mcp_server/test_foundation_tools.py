@@ -22,6 +22,16 @@ from analytics.services.mcp_server.tools.cohorts import (
     _create_customer_cohorts_impl as create_customer_cohorts,
     CreateCohortsRequest,
 )
+from analytics.services.mcp_server.state import get_shared_state
+
+
+@pytest.fixture(autouse=True)
+def clear_shared_state():
+    """Clear SharedState before each test to avoid contamination."""
+    shared_state = get_shared_state()
+    shared_state.clear()
+    yield
+    shared_state.clear()
 
 
 def create_sample_transactions():
@@ -134,9 +144,10 @@ async def test_data_mart_build_workflow():
     assert "quarter" in response.granularities
     assert "year" in response.granularities
 
-    # Verify data mart was stored in context
-    assert ctx.state["data_mart"] is not None
-    mart = ctx.state["data_mart"]
+    # Verify data mart was stored in SharedState
+    shared_state = get_shared_state()
+    assert shared_state.get("data_mart") is not None
+    mart = shared_state.get("data_mart")
     assert len(mart.orders) == 8
     assert len(mart.periods) == 2  # QUARTER and YEAR
 
@@ -167,11 +178,12 @@ async def test_rfm_calculation_workflow():
     assert response.score_count == 5  # 5 scores
     assert response.parallel_enabled is False
 
-    # Verify RFM metrics were stored in context
-    assert ctx.state["rfm_metrics"] is not None
-    assert ctx.state["rfm_scores"] is not None
-    assert len(ctx.state["rfm_metrics"]) == 5
-    assert len(ctx.state["rfm_scores"]) == 5
+    # Verify RFM metrics were stored in SharedState
+    shared_state = get_shared_state()
+    assert shared_state.get("rfm_metrics") is not None
+    assert shared_state.get("rfm_scores") is not None
+    assert len(shared_state.get("rfm_metrics")) == 5
+    assert len(shared_state.get("rfm_scores")) == 5
 
 
 @pytest.mark.asyncio
@@ -197,12 +209,13 @@ async def test_cohort_creation_workflow():
     assert response.cohort_type == "quarterly"
     assert len(response.assignment_summary) > 0
 
-    # Verify cohorts were stored in context
-    assert ctx.state["cohort_definitions"] is not None
-    assert ctx.state["cohort_assignments"] is not None
+    # Verify cohorts were stored in SharedState
+    shared_state = get_shared_state()
+    assert shared_state.get("cohort_definitions") is not None
+    assert shared_state.get("cohort_assignments") is not None
 
     # Verify all customers are assigned
-    assignments = ctx.state["cohort_assignments"]
+    assignments = shared_state.get("cohort_assignments")
     assert len(assignments) == 5
 
 
@@ -235,12 +248,13 @@ async def test_full_foundation_pipeline():
     cohort_response = await create_customer_cohorts(cohort_request, ctx)
     assert cohort_response.customer_count == 5
 
-    # Verify all data is in context
-    assert ctx.state["data_mart"] is not None
-    assert ctx.state["rfm_metrics"] is not None
-    assert ctx.state["rfm_scores"] is not None
-    assert ctx.state["cohort_definitions"] is not None
-    assert ctx.state["cohort_assignments"] is not None
+    # Verify all data is in SharedState
+    shared_state = get_shared_state()
+    assert shared_state.get("data_mart") is not None
+    assert shared_state.get("rfm_metrics") is not None
+    assert shared_state.get("rfm_scores") is not None
+    assert shared_state.get("cohort_definitions") is not None
+    assert shared_state.get("cohort_assignments") is not None
 
 
 @pytest.mark.asyncio

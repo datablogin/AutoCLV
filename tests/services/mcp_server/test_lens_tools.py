@@ -32,10 +32,7 @@ from customer_base_audit.foundation.data_mart import (
     PeriodAggregation,
     PeriodGranularity,
 )
-from customer_base_audit.foundation.cohorts import (
-    CohortDefinition,
-    CustomerIdentifier,
-)
+from customer_base_audit.foundation.cohorts import CohortDefinition
 
 # Import SharedState for testing
 from analytics.services.mcp_server.state import get_shared_state

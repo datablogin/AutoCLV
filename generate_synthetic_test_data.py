@@ -12,10 +12,9 @@ Output:
     synthetic_transactions.json - Transaction data for MCP testing
 """
 
-from datetime import date
 import json
+from datetime import date
 from pathlib import Path
-from collections import defaultdict
 
 from customer_base_audit.synthetic import (
     generate_customers,
@@ -89,13 +88,13 @@ def main():
         json.dump(transactions, f, indent=2)
 
     print(f"\n✅ Synthetic data saved to: {output_file.absolute()}")
-    print(f"\nTransaction statistics:")
+    print("\nTransaction statistics:")
     print(f"  - Total line items: {len(transactions)}")
     print(f"  - Unique orders: {len(set(t['order_id'] for t in transactions))}")
     print(f"  - Unique customers: {len(set(t['customer_id'] for t in transactions))}")
     print(f"  - Date range: {transactions[0]['event_ts'][:10]} to {transactions[-1]['event_ts'][:10]}")
     print(f"  - Total revenue: ${sum(t['unit_price'] * t['quantity'] for t in transactions):,.2f}")
-    print(f"\nYou can now test the MCP server with this data!")
+    print("\nYou can now test the MCP server with this data!")
     print(f"File path: {output_file.absolute()}")
 
 
