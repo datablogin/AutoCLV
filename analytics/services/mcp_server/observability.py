@@ -5,13 +5,17 @@ This module configures OpenTelemetry tracing, metrics, and structured logging
 for the Four Lenses Analytics MCP server.
 """
 
-from opentelemetry import trace, metrics
-from opentelemetry.sdk.trace import TracerProvider
-from opentelemetry.sdk.metrics import MeterProvider
-from opentelemetry.sdk.trace.export import BatchSpanProcessor, ConsoleSpanExporter
-from opentelemetry.sdk.metrics.export import PeriodicExportingMetricReader, ConsoleMetricExporter
-import structlog
 import sys
+
+import structlog
+from opentelemetry import metrics, trace
+from opentelemetry.sdk.metrics import MeterProvider
+from opentelemetry.sdk.metrics.export import (
+    ConsoleMetricExporter,
+    PeriodicExportingMetricReader,
+)
+from opentelemetry.sdk.trace import TracerProvider
+from opentelemetry.sdk.trace.export import BatchSpanProcessor, ConsoleSpanExporter
 
 
 def configure_observability(service_name: str = "mcp-four-lenses"):
@@ -27,9 +31,7 @@ def configure_observability(service_name: str = "mcp-four-lenses"):
 
     # Configure tracing
     trace_provider = TracerProvider()
-    trace_provider.add_span_processor(
-        BatchSpanProcessor(ConsoleSpanExporter())
-    )
+    trace_provider.add_span_processor(BatchSpanProcessor(ConsoleSpanExporter()))
     trace.set_tracer_provider(trace_provider)
 
     # Configure metrics

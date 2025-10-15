@@ -5,11 +5,12 @@ This module provides the main MCP server for AutoCLV Four Lenses customer analyt
 Phase 0: Basic scaffold with observability setup.
 """
 
-from fastmcp import FastMCP, Context
-from contextlib import asynccontextmanager
-import structlog
-import sys
 import logging
+import sys
+from contextlib import asynccontextmanager
+
+import structlog
+from fastmcp import Context, FastMCP
 
 # Configure structlog to write to stderr, not stdout (to avoid interfering with MCP JSON protocol)
 logging.basicConfig(
@@ -53,11 +54,7 @@ async def app_lifespan(app):
 
 
 # Initialize MCP server
-mcp = FastMCP(
-    name="Four Lenses Analytics",
-    version="0.1.0",
-    lifespan=app_lifespan
-)
+mcp = FastMCP(name="Four Lenses Analytics", version="0.1.0", lifespan=app_lifespan)
 
 
 @mcp.tool()
@@ -72,15 +69,17 @@ async def health_check(ctx: Context) -> dict:
         "status": "healthy",
         "version": "0.1.0",
         "phase": "Phase 1 - Foundation Services",
-        "server_name": "Four Lenses Analytics"
+        "server_name": "Four Lenses Analytics",
     }
 
 
 # Import Phase 1 Foundation Tools
 # This registers the tools with the MCP server
-from analytics.services.mcp_server.tools import data_mart  # noqa: F401, E402
-from analytics.services.mcp_server.tools import rfm  # noqa: F401, E402
-from analytics.services.mcp_server.tools import cohorts  # noqa: F401, E402
+from analytics.services.mcp_server.tools import (
+    cohorts,  # noqa: F401, E402
+    data_mart,  # noqa: F401, E402
+    rfm,  # noqa: F401, E402
+)
 
 logger.info("mcp_server_initialized", phase="Phase 1", tools_registered=3)
 

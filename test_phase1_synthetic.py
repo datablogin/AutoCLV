@@ -61,20 +61,20 @@ async def test_with_json_file(json_path: str):
         ...
     ]
     """
-    print(f"\n{'='*60}")
+    print(f"\n{'=' * 60}")
     print(f"Testing Phase 1 with: {json_path}")
-    print(f"{'='*60}\n")
+    print(f"{'=' * 60}\n")
 
     # Load transactions from JSON
-    with open(json_path, 'r') as f:
+    with open(json_path, "r") as f:
         transactions = json.load(f)
 
     # Convert ISO strings to datetime objects if needed
     for txn in transactions:
-        if isinstance(txn.get('event_ts'), str):
-            txn['event_ts'] = datetime.fromisoformat(txn['event_ts'])
-        elif isinstance(txn.get('order_ts'), str):
-            txn['order_ts'] = datetime.fromisoformat(txn['order_ts'])
+        if isinstance(txn.get("event_ts"), str):
+            txn["event_ts"] = datetime.fromisoformat(txn["event_ts"])
+        elif isinstance(txn.get("order_ts"), str):
+            txn["order_ts"] = datetime.fromisoformat(txn["order_ts"])
 
     print(f"Loaded {len(transactions)} transactions")
 
@@ -84,14 +84,11 @@ async def test_with_json_file(json_path: str):
     # Step 1: Build Data Mart
     print("\n--- Step 1: Building Data Mart ---")
     data_mart_request = BuildDataMartRequest(
-        transaction_data_path=json_path,
-        period_granularities=["quarter", "year"]
+        transaction_data_path=json_path, period_granularities=["quarter", "year"]
     )
 
     data_mart_response = await build_customer_data_mart(
-        data_mart_request,
-        ctx,
-        transactions=transactions
+        data_mart_request, ctx, transactions=transactions
     )
 
     print(f"✓ Data Mart Built:")
@@ -99,7 +96,9 @@ async def test_with_json_file(json_path: str):
     print(f"  - Customers: {data_mart_response.customer_count}")
     print(f"  - Periods: {data_mart_response.period_count}")
     print(f"  - Granularities: {', '.join(data_mart_response.granularities)}")
-    print(f"  - Date Range: {data_mart_response.date_range[0]} to {data_mart_response.date_range[1]}")
+    print(
+        f"  - Date Range: {data_mart_response.date_range[0]} to {data_mart_response.date_range[1]}"
+    )
 
     # Step 2: Calculate RFM Metrics
     print("\n--- Step 2: Calculating RFM Metrics ---")
@@ -112,7 +111,7 @@ async def test_with_json_file(json_path: str):
     rfm_request = CalculateRFMRequest(
         observation_end=observation_end,
         enable_parallel=False,  # Set to True for large datasets
-        calculate_scores=True
+        calculate_scores=True,
     )
 
     rfm_response = await calculate_rfm_metrics(rfm_request, ctx)
@@ -120,14 +119,18 @@ async def test_with_json_file(json_path: str):
     print(f"✓ RFM Metrics Calculated:")
     print(f"  - Customers: {rfm_response.metrics_count}")
     print(f"  - Scores: {rfm_response.score_count}")
-    print(f"  - Date Range: {rfm_response.date_range[0]} to {rfm_response.date_range[1]}")
+    print(
+        f"  - Date Range: {rfm_response.date_range[0]} to {rfm_response.date_range[1]}"
+    )
 
     # Show sample RFM metrics
     rfm_metrics = ctx.state["rfm_metrics"]
     if rfm_metrics:
         print(f"\n  Sample RFM Metrics (first 5):")
         for i, metric in enumerate(rfm_metrics[:5]):
-            print(f"    {metric.customer_id}: R={metric.recency_days}d, F={metric.frequency}, M=${metric.monetary}")
+            print(
+                f"    {metric.customer_id}: R={metric.recency_days}d, F={metric.frequency}, M=${metric.monetary}"
+            )
 
     # Step 3: Create Cohorts
     print("\n--- Step 3: Creating Customer Cohorts ---")
@@ -142,15 +145,17 @@ async def test_with_json_file(json_path: str):
     print(f"  - Cohort Count: {cohort_response.cohort_count}")
     print(f"  - Customers: {cohort_response.customer_count}")
     print(f"  - Type: {cohort_response.cohort_type}")
-    print(f"  - Date Range: {cohort_response.date_range[0]} to {cohort_response.date_range[1]}")
+    print(
+        f"  - Date Range: {cohort_response.date_range[0]} to {cohort_response.date_range[1]}"
+    )
 
     print(f"\n  Cohort Distribution:")
     for cohort_id, count in sorted(cohort_response.assignment_summary.items()):
         print(f"    {cohort_id}: {count} customers")
 
-    print(f"\n{'='*60}")
+    print(f"\n{'=' * 60}")
     print("✓ Phase 1 Pipeline Complete!")
-    print(f"{'='*60}\n")
+    print(f"{'=' * 60}\n")
 
     return ctx
 
@@ -161,9 +166,9 @@ async def test_with_python_data(transactions: list[dict]):
     Args:
         transactions: List of transaction dictionaries with datetime objects
     """
-    print(f"\n{'='*60}")
+    print(f"\n{'=' * 60}")
     print(f"Testing Phase 1 with in-memory data")
-    print(f"{'='*60}\n")
+    print(f"{'=' * 60}\n")
 
     print(f"Using {len(transactions)} transactions")
 
@@ -173,18 +178,17 @@ async def test_with_python_data(transactions: list[dict]):
     # Build Data Mart
     print("\n--- Building Data Mart ---")
     data_mart_request = BuildDataMartRequest(
-        transaction_data_path="memory",
-        period_granularities=["quarter"]
+        transaction_data_path="memory", period_granularities=["quarter"]
     )
 
     data_mart_response = await build_customer_data_mart(
-        data_mart_request,
-        ctx,
-        transactions=transactions
+        data_mart_request, ctx, transactions=transactions
     )
 
-    print(f"✓ Data Mart: {data_mart_response.customer_count} customers, "
-          f"{data_mart_response.order_count} orders")
+    print(
+        f"✓ Data Mart: {data_mart_response.customer_count} customers, "
+        f"{data_mart_response.order_count} orders"
+    )
 
     # Calculate RFM
     print("\n--- Calculating RFM ---")
@@ -192,9 +196,7 @@ async def test_with_python_data(transactions: list[dict]):
     latest_date = max(order.order_ts for order in mart.orders)
 
     rfm_request = CalculateRFMRequest(
-        observation_end=latest_date,
-        enable_parallel=False,
-        calculate_scores=True
+        observation_end=latest_date, enable_parallel=False, calculate_scores=True
     )
 
     rfm_response = await calculate_rfm_metrics(rfm_request, ctx)
@@ -206,9 +208,9 @@ async def test_with_python_data(transactions: list[dict]):
     cohort_response = await create_customer_cohorts(cohort_request, ctx)
     print(f"✓ Cohorts: {cohort_response.cohort_count} cohorts created")
 
-    print(f"\n{'='*60}")
+    print(f"\n{'=' * 60}")
     print("✓ Complete!")
-    print(f"{'='*60}\n")
+    print(f"{'=' * 60}\n")
 
     return ctx
 

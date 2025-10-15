@@ -1,39 +1,41 @@
 """Cohorts MCP Tool - Phase 1 Foundation Service"""
 
-from fastmcp import Context
-from pydantic import BaseModel, Field
 from datetime import datetime
 from typing import Literal
+
+import structlog
 from customer_base_audit.foundation.cohorts import (
+    assign_cohorts,
     create_monthly_cohorts,
     create_quarterly_cohorts,
     create_yearly_cohorts,
-    assign_cohorts,
 )
 from customer_base_audit.foundation.customer_contract import CustomerIdentifier
+from fastmcp import Context
+from pydantic import BaseModel, Field
+
 from analytics.services.mcp_server.main import mcp
-import structlog
 
 logger = structlog.get_logger(__name__)
 
 
 class CreateCohortsRequest(BaseModel):
     """Request to create cohort definitions."""
+
     cohort_type: Literal["monthly", "quarterly", "yearly"] = Field(
         description="Type of cohorts to create"
     )
     start_date: datetime | None = Field(
-        default=None,
-        description="Start date (defaults to earliest customer)"
+        default=None, description="Start date (defaults to earliest customer)"
     )
     end_date: datetime | None = Field(
-        default=None,
-        description="End date (defaults to latest customer)"
+        default=None, description="End date (defaults to latest customer)"
     )
 
 
 class CohortResponse(BaseModel):
     """Cohort creation response."""
+
     cohort_count: int
     customer_count: int
     date_range: tuple[str, str]
@@ -42,8 +44,7 @@ class CohortResponse(BaseModel):
 
 
 async def _create_customer_cohorts_impl(
-    request: CreateCohortsRequest,
-    ctx: Context
+    request: CreateCohortsRequest, ctx: Context
 ) -> CohortResponse:
     """Implementation of cohort creation logic."""
     await ctx.info(f"Creating {request.cohort_type} cohorts")
@@ -51,9 +52,7 @@ async def _create_customer_cohorts_impl(
     # Get data mart from context
     mart = ctx.get_state("data_mart")
     if mart is None:
-        raise ValueError(
-            "Data mart not found. Run build_customer_data_mart first."
-        )
+        raise ValueError("Data mart not found. Run build_customer_data_mart first.")
 
     # Extract customer identifiers (need acquisition dates)
     # For now, use first transaction date as acquisition proxy
@@ -63,6 +62,7 @@ async def _create_customer_cohorts_impl(
 
     # Group by customer and get minimum period_start (O(n) instead of O(n*g))
     from itertools import groupby
+
     sorted_periods = sorted(periods, key=lambda p: (p.customer_id, p.period_start))
     customer_first_dates = {
         customer_id: next(group).period_start
@@ -70,7 +70,9 @@ async def _create_customer_cohorts_impl(
     }
 
     customers = [
-        CustomerIdentifier(customer_id=cid, acquisition_ts=acq_date, source_system="transactions")
+        CustomerIdentifier(
+            customer_id=cid, acquisition_ts=acq_date, source_system="transactions"
+        )
         for cid, acq_date in customer_first_dates.items()
     ]
 
@@ -108,11 +110,12 @@ async def _create_customer_cohorts_impl(
 
     # Calculate summary using Counter for O(n) performance
     from collections import Counter
+
     assignment_summary = dict(Counter(cohort_assignments.values()))
 
     date_range = (
         min(c.start_date for c in cohort_defs).isoformat(),
-        max(c.end_date for c in cohort_defs).isoformat()
+        max(c.end_date for c in cohort_defs).isoformat(),
     )
 
     await ctx.info(f"Created {len(cohort_defs)} cohorts")
@@ -122,14 +125,13 @@ async def _create_customer_cohorts_impl(
         customer_count=len(customers),
         date_range=date_range,
         cohort_type=request.cohort_type,
-        assignment_summary=assignment_summary
+        assignment_summary=assignment_summary,
     )
 
 
 @mcp.tool()
 async def create_customer_cohorts(
-    request: CreateCohortsRequest,
-    ctx: Context
+    request: CreateCohortsRequest, ctx: Context
 ) -> CohortResponse:
     """
     Create cohort definitions and assign customers.

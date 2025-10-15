@@ -1,17 +1,18 @@
 """Data Mart MCP Tool - Phase 1 Foundation Service"""
 
-from fastmcp import Context
-from pydantic import BaseModel, Field
-from datetime import datetime
-from typing import Literal
-from pathlib import Path
 import json
+from pathlib import Path
+from typing import Literal
+
+import structlog
 from customer_base_audit.foundation.data_mart import (
     CustomerDataMartBuilder,
     PeriodGranularity,
 )
+from fastmcp import Context
+from pydantic import BaseModel, Field
+
 from analytics.services.mcp_server.main import mcp
-import structlog
 
 logger = structlog.get_logger(__name__)
 
@@ -35,17 +36,16 @@ def _load_transactions(path: Path) -> list[dict]:
 
 class BuildDataMartRequest(BaseModel):
     """Request to build customer data mart."""
-    transaction_data_path: str = Field(
-        description="Path to transaction data (JSON)"
-    )
+
+    transaction_data_path: str = Field(description="Path to transaction data (JSON)")
     period_granularities: list[Literal["month", "quarter", "year"]] = Field(
-        default=["quarter", "year"],
-        description="Period granularities to compute"
+        default=["quarter", "year"], description="Period granularities to compute"
     )
 
 
 class DataMartResponse(BaseModel):
     """Data mart build response."""
+
     order_count: int
     period_count: int
     customer_count: int
@@ -54,9 +54,7 @@ class DataMartResponse(BaseModel):
 
 
 async def _build_customer_data_mart_impl(
-    request: BuildDataMartRequest,
-    ctx: Context,
-    transactions: list[dict] | None = None
+    request: BuildDataMartRequest, ctx: Context, transactions: list[dict] | None = None
 ) -> DataMartResponse:
     """Implementation of data mart building logic.
 
@@ -68,10 +66,7 @@ async def _build_customer_data_mart_impl(
     await ctx.info(f"Building data mart from {request.transaction_data_path}")
 
     # Parse granularities
-    granularities = tuple(
-        PeriodGranularity(g)
-        for g in request.period_granularities
-    )
+    granularities = tuple(PeriodGranularity(g) for g in request.period_granularities)
 
     # Build data mart
     builder = CustomerDataMartBuilder(period_granularities=granularities)
@@ -93,7 +88,7 @@ async def _build_customer_data_mart_impl(
     dates = [p.period_start for p in all_periods]
     date_range = (
         min(dates).isoformat() if dates else "",
-        max(dates).isoformat() if dates else ""
+        max(dates).isoformat() if dates else "",
     )
 
     # Store in context for reuse
@@ -106,14 +101,13 @@ async def _build_customer_data_mart_impl(
         period_count=len(all_periods),
         customer_count=len(set(p.customer_id for p in all_periods)),
         granularities=[g.value for g in granularities],
-        date_range=date_range
+        date_range=date_range,
     )
 
 
 @mcp.tool()
 async def build_customer_data_mart(
-    request: BuildDataMartRequest,
-    ctx: Context
+    request: BuildDataMartRequest, ctx: Context
 ) -> DataMartResponse:
     """
     Build customer data mart from raw transaction data.

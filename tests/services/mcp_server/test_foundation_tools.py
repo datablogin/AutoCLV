@@ -7,9 +7,6 @@ Tests the three foundation tools:
 """
 
 import pytest
-import json
-import tempfile
-from pathlib import Path
 from datetime import datetime, timezone
 from unittest.mock import AsyncMock, MagicMock
 
@@ -121,7 +118,7 @@ async def test_data_mart_build_workflow():
     # Create request
     request = BuildDataMartRequest(
         transaction_data_path="test.json",  # Dummy path for testing
-        period_granularities=["quarter", "year"]
+        period_granularities=["quarter", "year"],
     )
 
     # Create mock context
@@ -152,8 +149,7 @@ async def test_rfm_calculation_workflow():
 
     # Build data mart
     data_mart_request = BuildDataMartRequest(
-        transaction_data_path="test.json",
-        period_granularities=["quarter"]
+        transaction_data_path="test.json", period_granularities=["quarter"]
     )
     await build_customer_data_mart(data_mart_request, ctx, transactions=transactions)
 
@@ -161,7 +157,7 @@ async def test_rfm_calculation_workflow():
     rfm_request = CalculateRFMRequest(
         observation_end=datetime(2023, 6, 30, tzinfo=timezone.utc),
         enable_parallel=False,  # Disable parallel for deterministic testing
-        calculate_scores=True
+        calculate_scores=True,
     )
 
     response = await calculate_rfm_metrics(rfm_request, ctx)
@@ -186,15 +182,12 @@ async def test_cohort_creation_workflow():
 
     # Build data mart
     data_mart_request = BuildDataMartRequest(
-        transaction_data_path="test.json",
-        period_granularities=["quarter"]
+        transaction_data_path="test.json", period_granularities=["quarter"]
     )
     await build_customer_data_mart(data_mart_request, ctx, transactions=transactions)
 
     # Create cohorts
-    cohort_request = CreateCohortsRequest(
-        cohort_type="quarterly"
-    )
+    cohort_request = CreateCohortsRequest(cohort_type="quarterly")
 
     response = await create_customer_cohorts(cohort_request, ctx)
 
@@ -221,25 +214,24 @@ async def test_full_foundation_pipeline():
 
     # Step 1: Build data mart
     data_mart_request = BuildDataMartRequest(
-        transaction_data_path="test.json",
-        period_granularities=["quarter"]
+        transaction_data_path="test.json", period_granularities=["quarter"]
     )
-    data_mart_response = await build_customer_data_mart(data_mart_request, ctx, transactions=transactions)
+    data_mart_response = await build_customer_data_mart(
+        data_mart_request, ctx, transactions=transactions
+    )
     assert data_mart_response.customer_count == 5
 
     # Step 2: Calculate RFM
     rfm_request = CalculateRFMRequest(
         observation_end=datetime(2023, 6, 30, tzinfo=timezone.utc),
         enable_parallel=False,
-        calculate_scores=True
+        calculate_scores=True,
     )
     rfm_response = await calculate_rfm_metrics(rfm_request, ctx)
     assert rfm_response.metrics_count == 5
 
     # Step 3: Create cohorts
-    cohort_request = CreateCohortsRequest(
-        cohort_type="monthly"
-    )
+    cohort_request = CreateCohortsRequest(cohort_type="monthly")
     cohort_response = await create_customer_cohorts(cohort_request, ctx)
     assert cohort_response.customer_count == 5
 
@@ -269,9 +261,7 @@ async def test_cohorts_without_data_mart_raises_error():
     """Test that cohort creation fails without data mart."""
     ctx = create_mock_context()
 
-    cohort_request = CreateCohortsRequest(
-        cohort_type="quarterly"
-    )
+    cohort_request = CreateCohortsRequest(cohort_type="quarterly")
 
     with pytest.raises(ValueError, match="Data mart not found"):
         await create_customer_cohorts(cohort_request, ctx)
@@ -283,18 +273,17 @@ async def test_empty_transactions_raises_error():
     ctx = create_mock_context()
 
     data_mart_request = BuildDataMartRequest(
-        transaction_data_path="test.json",
-        period_granularities=["quarter"]
+        transaction_data_path="test.json", period_granularities=["quarter"]
     )
 
     # Should succeed building empty data mart
-    response = await build_customer_data_mart(data_mart_request, ctx, transactions=[])
+    await build_customer_data_mart(data_mart_request, ctx, transactions=[])
 
     # But should fail when trying to calculate RFM on empty data
     rfm_request = CalculateRFMRequest(
         observation_end=datetime(2023, 6, 30, tzinfo=timezone.utc),
         enable_parallel=False,
-        calculate_scores=True
+        calculate_scores=True,
     )
 
     with pytest.raises(ValueError, match="No RFM metrics calculated"):
@@ -325,10 +314,11 @@ async def test_single_customer_workflow():
 
     # Build data mart
     data_mart_request = BuildDataMartRequest(
-        transaction_data_path="test.json",
-        period_granularities=["quarter"]
+        transaction_data_path="test.json", period_granularities=["quarter"]
     )
-    data_mart_response = await build_customer_data_mart(data_mart_request, ctx, transactions=transactions)
+    data_mart_response = await build_customer_data_mart(
+        data_mart_request, ctx, transactions=transactions
+    )
     assert data_mart_response.customer_count == 1
     assert data_mart_response.order_count == 2
 
@@ -336,7 +326,7 @@ async def test_single_customer_workflow():
     rfm_request = CalculateRFMRequest(
         observation_end=datetime(2023, 6, 30, tzinfo=timezone.utc),
         enable_parallel=False,
-        calculate_scores=True
+        calculate_scores=True,
     )
     rfm_response = await calculate_rfm_metrics(rfm_request, ctx)
     assert rfm_response.metrics_count == 1

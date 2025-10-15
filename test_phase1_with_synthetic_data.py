@@ -50,7 +50,9 @@ def create_mock_context():
     return ctx
 
 
-async def test_scenario(scenario_name: str, scenario_config: dict, num_customers: int = 100):
+async def test_scenario(
+    scenario_name: str, scenario_config: dict, num_customers: int = 100
+):
     """Test Phase 1 with a specific synthetic data scenario.
 
     Args:
@@ -58,9 +60,9 @@ async def test_scenario(scenario_name: str, scenario_config: dict, num_customers
         scenario_config: Scenario configuration dict
         num_customers: Number of customers to generate
     """
-    print(f"\n{'='*80}")
+    print(f"\n{'=' * 80}")
     print(f"TESTING: {scenario_name}")
-    print(f"{'='*80}\n")
+    print(f"{'=' * 80}\n")
 
     # Generate synthetic customers and transactions
     print(f"Generating synthetic data...")
@@ -77,10 +79,7 @@ async def test_scenario(scenario_name: str, scenario_config: dict, num_customers
     )
 
     transaction_objects = generate_transactions(
-        customers,
-        start=start_date,
-        end=end_date,
-        scenario=scenario_config
+        customers, start=start_date, end=end_date, scenario=scenario_config
     )
 
     # Convert Transaction objects to dicts for data mart builder
@@ -102,29 +101,30 @@ async def test_scenario(scenario_name: str, scenario_config: dict, num_customers
     # Step 1: Build Data Mart
     print(f"\n--- Step 1: Building Data Mart ---")
     data_mart_request = BuildDataMartRequest(
-        transaction_data_path="synthetic",
-        period_granularities=["quarter", "year"]
+        transaction_data_path="synthetic", period_granularities=["quarter", "year"]
     )
 
     data_mart_response = await build_customer_data_mart(
-        data_mart_request,
-        ctx,
-        transactions=transactions
+        data_mart_request, ctx, transactions=transactions
     )
 
     print(f"✓ Data Mart Built:")
     print(f"  - Orders: {data_mart_response.order_count}")
     print(f"  - Customers: {data_mart_response.customer_count}")
     print(f"  - Periods: {data_mart_response.period_count}")
-    print(f"  - Date Range: {data_mart_response.date_range[0][:10]} to {data_mart_response.date_range[1][:10]}")
+    print(
+        f"  - Date Range: {data_mart_response.date_range[0][:10]} to {data_mart_response.date_range[1][:10]}"
+    )
 
     # Step 2: Calculate RFM Metrics
     print(f"\n--- Step 2: Calculating RFM Metrics ---")
 
     rfm_request = CalculateRFMRequest(
-        observation_end=datetime(2023, 12, 31, 23, 59, 59),  # Naive datetime to match synthetic data
+        observation_end=datetime(
+            2023, 12, 31, 23, 59, 59
+        ),  # Naive datetime to match synthetic data
         enable_parallel=True,  # Enable for realistic dataset sizes
-        calculate_scores=True
+        calculate_scores=True,
     )
 
     rfm_response = await calculate_rfm_metrics(rfm_request, ctx)
@@ -156,15 +156,17 @@ async def test_scenario(scenario_name: str, scenario_config: dict, num_customers
             score_dist[key] = score_dist.get(key, 0) + 1
 
         print(f"\n  Top 5 RFM Segments:")
-        for score, count in sorted(score_dist.items(), key=lambda x: x[1], reverse=True)[:5]:
-            print(f"    {score}: {count} customers ({count/len(rfm_scores)*100:.1f}%)")
+        for score, count in sorted(
+            score_dist.items(), key=lambda x: x[1], reverse=True
+        )[:5]:
+            print(
+                f"    {score}: {count} customers ({count / len(rfm_scores) * 100:.1f}%)"
+            )
 
     # Step 3: Create Cohorts
     print(f"\n--- Step 3: Creating Customer Cohorts ---")
 
-    cohort_request = CreateCohortsRequest(
-        cohort_type="quarterly"
-    )
+    cohort_request = CreateCohortsRequest(cohort_type="quarterly")
 
     cohort_response = await create_customer_cohorts(cohort_request, ctx)
 
@@ -177,43 +179,35 @@ async def test_scenario(scenario_name: str, scenario_config: dict, num_customers
         pct = (count / cohort_response.customer_count) * 100
         print(f"    {cohort_id}: {count} customers ({pct:.1f}%)")
 
-    print(f"\n{'='*80}")
+    print(f"\n{'=' * 80}")
     print(f"✓ {scenario_name} - Phase 1 Pipeline Complete!")
-    print(f"{'='*80}\n")
+    print(f"{'=' * 80}\n")
 
     return ctx
 
 
 async def main():
     """Run Phase 1 tests with different synthetic scenarios."""
-    print("\n" + "="*80)
+    print("\n" + "=" * 80)
     print("Phase 1 Foundation Services - Synthetic Data Testing")
-    print("="*80)
+    print("=" * 80)
 
     # Test 1: Baseline Scenario
     await test_scenario(
-        "Baseline Business Scenario",
-        BASELINE_SCENARIO,
-        num_customers=200
+        "Baseline Business Scenario", BASELINE_SCENARIO, num_customers=200
     )
 
     # Test 2: High Churn Scenario
-    await test_scenario(
-        "High Churn Scenario",
-        HIGH_CHURN_SCENARIO,
-        num_customers=200
-    )
+    await test_scenario("High Churn Scenario", HIGH_CHURN_SCENARIO, num_customers=200)
 
     # Test 3: Stable Business Scenario
     await test_scenario(
-        "Stable Business Scenario",
-        STABLE_BUSINESS_SCENARIO,
-        num_customers=200
+        "Stable Business Scenario", STABLE_BUSINESS_SCENARIO, num_customers=200
     )
 
-    print("\n" + "="*80)
+    print("\n" + "=" * 80)
     print("✓ ALL SCENARIOS TESTED SUCCESSFULLY")
-    print("="*80 + "\n")
+    print("=" * 80 + "\n")
 
 
 if __name__ == "__main__":
