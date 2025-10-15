@@ -1364,7 +1364,7 @@ Lens 5 provides an integrative health assessment of your entire customer base, a
 **Complete Example**
 
 ```python
-from datetime import datetime
+from datetime import datetime, timezone
 from dataclasses import asdict
 from customer_base_audit.foundation.data_mart import CustomerDataMartBuilder, PeriodGranularity
 from customer_base_audit.foundation.cohorts import create_monthly_cohorts, assign_cohorts
@@ -1390,8 +1390,8 @@ cohort_assignments = assign_cohorts(customers, cohort_definitions)
 all_period_aggregations = mart.periods[PeriodGranularity.MONTH]
 
 # 5. Define analysis window
-analysis_start = datetime(2024, 1, 1, tzinfo=datetime.timezone.utc)
-analysis_end = datetime(2024, 12, 31, 23, 59, 59, tzinfo=datetime.timezone.utc)
+analysis_start = datetime(2024, 1, 1, tzinfo=timezone.utc)
+analysis_end = datetime(2024, 12, 31, 23, 59, 59, tzinfo=timezone.utc)
 
 # 6. Run Lens 5 health assessment
 lens5_results = assess_customer_base_health(
@@ -1553,8 +1553,8 @@ quarters = [
 
 health_scores = []
 for start, end in quarters:
-    start_tz = start.replace(tzinfo=datetime.timezone.utc)
-    end_tz = end.replace(hour=23, minute=59, second=59, tzinfo=datetime.timezone.utc)
+    start_tz = start.replace(tzinfo=timezone.utc)
+    end_tz = end.replace(hour=23, minute=59, second=59, tzinfo=timezone.utc)
 
     lens5 = assess_customer_base_health(
         period_aggregations=all_period_aggregations,
@@ -1562,7 +1562,8 @@ for start, end in quarters:
         analysis_start_date=start_tz,
         analysis_end_date=end_tz
     )
-    health_scores.append((start.strftime("%Y-Q%q"), float(lens5.health_score.health_score)))
+    quarter = (start.month - 1) // 3 + 1
+    health_scores.append((f"{start.year}-Q{quarter}", float(lens5.health_score.health_score)))
 
 # Plot or analyze trends
 for period, score in health_scores:
