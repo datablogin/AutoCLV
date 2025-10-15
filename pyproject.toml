@@ -38,6 +38,8 @@ dev = [
 markers = [
     "slow: marks tests as slow (deselect with '-m \"not slow\"')",
 ]
+testpaths = ["tests"]
+norecursedirs = ["analytics", ".git", ".tox", "dist", "build"]
 
 [tool.setuptools]
 package-dir = {"" = "."}
