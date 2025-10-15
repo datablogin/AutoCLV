@@ -16,16 +16,25 @@ dependencies = [
     "pymc-marketing>=0.3.0",
     "pymc>=5.10.0",
     "arviz>=0.16.0",
+    # Phase 0: MCP Server & Agentic Architecture
+    "fastmcp>=2.12.0",
+    "langgraph>=0.6.0",
+    "opentelemetry-sdk>=1.37.0",
+    "opentelemetry-instrumentation>=0.58b0",
+    "structlog>=25.4.0",
 ]
+
+[project.scripts]
+mcp-server = "analytics.services.mcp_server.main:mcp.run"
 
 [project.optional-dependencies]
 dev = [
     "pytest>=8.4.0,<9.0.0",
+    "pytest-asyncio>=1.2.0",
     "ruff==0.14.0",
 ]
 
 [tool.pytest.ini_options]
-addopts = "--ignore=analytics"
 markers = [
     "slow: marks tests as slow (deselect with '-m \"not slow\"')",
 ]
@@ -34,5 +43,4 @@ markers = [
 package-dir = {"" = "."}
 
 [tool.setuptools.packages.find]
-include = ["customer_base_audit*"]
-exclude = ["analytics", "analytics.*"]
+include = ["customer_base_audit*", "analytics*"]
