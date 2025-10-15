@@ -1,6 +1,8 @@
 """Tests for model input preparation utilities (BG/NBD and Gamma-Gamma)."""
 
-from datetime import datetime, timezone
+import os
+import time
+from datetime import datetime, timedelta, timezone
 from decimal import Decimal
 
 import pandas as pd
@@ -16,6 +18,55 @@ from customer_base_audit.models.model_prep import (
 
 # Timezone-aware datetime helper for tests (Issue #62)
 UTC = timezone.utc
+
+
+def generate_large_dataset(num_customers: int) -> list[PeriodAggregation]:
+    """Generate realistic synthetic dataset for performance testing.
+
+    Creates customer purchase history with:
+    - 1-5 periods per customer
+    - 1-10 orders per period
+    - Varying spend amounts with ±50% variance for realism
+    - Monthly periods spanning Jan-Dec 2023
+
+    Uses fixed random seed for reproducibility.
+    """
+    import random
+
+    random.seed(42)  # Fixed seed for reproducible performance testing
+
+    periods = []
+    base_date = datetime(2023, 1, 1, tzinfo=UTC)
+
+    for customer_idx in range(num_customers):
+        customer_id = f"C{customer_idx:07d}"  # C0000000, C0000001, etc.
+        num_periods = (customer_idx % 5) + 1  # 1-5 periods per customer
+
+        for period_idx in range(num_periods):
+            period_start = base_date + timedelta(days=30 * period_idx)
+            period_end = period_start + timedelta(days=30)
+
+            # Vary orders and spend realistically with random variance
+            total_orders = ((customer_idx + period_idx) % 10) + 1  # 1-10 orders
+            avg_order_value = ((customer_idx + period_idx) % 50) + 10  # $10-$60 base
+            variance = random.uniform(0.5, 1.5)  # ±50% variance for realism
+            total_spend = float(total_orders * avg_order_value * variance)
+            total_margin = total_spend * 0.3
+            total_quantity = int(total_orders * random.uniform(1.5, 2.5))
+
+            periods.append(
+                PeriodAggregation(
+                    customer_id,
+                    period_start,
+                    period_end,
+                    total_orders,
+                    total_spend,
+                    total_margin,
+                    total_quantity,
+                )
+            )
+
+    return periods
 
 
 class TestBGNBDInput:
@@ -326,6 +377,41 @@ class TestPrepareGammaGammaInputs:
         ]
         df = prepare_gamma_gamma_inputs(periods, min_frequency=2)
         assert len(df) == 0  # One-time buyer excluded
+        # Verify correct columns and dtypes (Issue #63.8 edge case)
+        assert list(df.columns) == ["customer_id", "frequency", "monetary_value"]
+        assert df["customer_id"].dtype == object  # str dtype shows as object
+        assert df["frequency"].dtype == "int64"
+        assert df["monetary_value"].dtype == object  # Decimal objects
+
+    def test_all_customers_filtered_out_by_high_min_frequency(self):
+        """When min_frequency too high, returns empty DataFrame with correct dtypes."""
+        periods = [
+            PeriodAggregation(
+                "C1",
+                datetime(2023, 1, 1, tzinfo=UTC),
+                datetime(2023, 2, 1, tzinfo=UTC),
+                1,
+                50.0,
+                15.0,
+                3,
+            ),
+            PeriodAggregation(
+                "C2",
+                datetime(2023, 1, 1, tzinfo=UTC),
+                datetime(2023, 2, 1, tzinfo=UTC),
+                2,
+                100.0,
+                30.0,
+                5,
+            ),
+        ]
+        df = prepare_gamma_gamma_inputs(periods, min_frequency=10)
+        assert len(df) == 0
+        assert list(df.columns) == ["customer_id", "frequency", "monetary_value"]
+        # Verify dtypes are correct for empty DataFrame (critical for downstream operations)
+        assert df["customer_id"].dtype == object  # str dtype
+        assert df["frequency"].dtype == "int64"
+        assert df["monetary_value"].dtype == object  # Decimal objects
 
     def test_exactly_min_frequency_included(self):
         """Customer with frequency exactly equal to min_frequency should be included."""
@@ -1046,3 +1132,216 @@ class TestTimezoneValidation:
         assert len(df) == 1
         assert df.loc[0, "customer_id"] == "C1"
         assert df.loc[0, "frequency"] == 2  # 3 orders - 1
+
+
+class TestOverlappingPeriods:
+    """Test behavior with overlapping periods (Issue #64.14)."""
+
+    def test_overlapping_periods_aggregate_correctly(self):
+        """Overlapping periods for same customer should aggregate total orders.
+
+        Note: This test documents period-based (not transaction-based) recency calculation.
+        Recency uses period boundaries (earliest period_start to latest period_end),
+        NOT actual transaction timestamps. This is expected behavior for PeriodAggregation
+        data which doesn't track individual transaction times.
+        """
+        # Scenario: Customer has overlapping activity periods (e.g., subscription
+        # and one-time purchases tracked separately but overlapping in time)
+        periods = [
+            PeriodAggregation(
+                "C1",
+                datetime(2023, 1, 1, tzinfo=UTC),
+                datetime(2023, 2, 1, tzinfo=UTC),
+                2,
+                100.0,
+                30.0,
+                5,
+            ),
+            PeriodAggregation(
+                "C1",
+                datetime(2023, 1, 15, tzinfo=UTC),  # Overlaps with previous period
+                datetime(2023, 2, 15, tzinfo=UTC),
+                1,
+                50.0,
+                15.0,
+                2,
+            ),
+        ]
+        # Expected behavior: Sum orders, use earliest start and latest end
+        df = prepare_bg_nbd_inputs(
+            periods, datetime(2023, 1, 1, tzinfo=UTC), datetime(2023, 6, 1, tzinfo=UTC)
+        )
+        assert len(df) == 1
+        assert df.loc[0, "customer_id"] == "C1"
+        # Total orders: 2 + 1 = 3, frequency = 3 - 1 = 2
+        assert df.loc[0, "frequency"] == 2
+        # Recency: from 2023-01-01 (earliest start) to 2023-02-15 (latest end)
+        expected_recency = (
+            datetime(2023, 2, 15, tzinfo=UTC) - datetime(2023, 1, 1, tzinfo=UTC)
+        ).days
+        assert df.loc[0, "recency"] == pytest.approx(expected_recency, abs=1.0)
+
+    def test_overlapping_periods_gamma_gamma(self):
+        """Overlapping periods should aggregate spend and orders for Gamma-Gamma."""
+        periods = [
+            PeriodAggregation(
+                "C1",
+                datetime(2023, 1, 1, tzinfo=UTC),
+                datetime(2023, 2, 1, tzinfo=UTC),
+                2,
+                80.0,  # $40 per order
+                24.0,
+                5,
+            ),
+            PeriodAggregation(
+                "C1",
+                datetime(2023, 1, 15, tzinfo=UTC),
+                datetime(2023, 2, 15, tzinfo=UTC),
+                1,
+                60.0,  # $60 per order
+                18.0,
+                2,
+            ),
+        ]
+        df = prepare_gamma_gamma_inputs(periods, min_frequency=2)
+        assert len(df) == 1
+        assert df.loc[0, "customer_id"] == "C1"
+        assert df.loc[0, "frequency"] == 3  # 2 + 1 = 3 orders
+        # Monetary value: (80 + 60) / 3 = 140 / 3 = 46.67 (rounded)
+        assert df.loc[0, "monetary_value"] == Decimal("46.67")
+
+    def test_completely_overlapping_periods(self):
+        """Completely overlapping periods (same dates) should aggregate correctly."""
+        # Edge case: Two records for same period (e.g., from different data sources)
+        periods = [
+            PeriodAggregation(
+                "C1",
+                datetime(2023, 1, 1, tzinfo=UTC),
+                datetime(2023, 2, 1, tzinfo=UTC),
+                1,
+                50.0,
+                15.0,
+                3,
+            ),
+            PeriodAggregation(
+                "C1",
+                datetime(2023, 1, 1, tzinfo=UTC),  # Exact same dates
+                datetime(2023, 2, 1, tzinfo=UTC),
+                1,
+                50.0,
+                15.0,
+                3,
+            ),
+        ]
+        df = prepare_bg_nbd_inputs(
+            periods, datetime(2023, 1, 1, tzinfo=UTC), datetime(2023, 6, 1, tzinfo=UTC)
+        )
+        assert len(df) == 1
+        assert df.loc[0, "frequency"] == 1  # 2 orders - 1 = 1 repeat purchase
+        # Recency: from 2023-01-01 to 2023-02-01 (same start/end)
+        expected_recency = (
+            datetime(2023, 2, 1, tzinfo=UTC) - datetime(2023, 1, 1, tzinfo=UTC)
+        ).days
+        assert df.loc[0, "recency"] == pytest.approx(expected_recency, abs=1.0)
+
+
+@pytest.mark.slow
+class TestPerformance:
+    """Performance benchmarks with large datasets (Issue #64.13)."""
+
+    def test_bg_nbd_performance_100k_customers(self):
+        """Verify acceptable performance with 100k customers (Issue #64.13)."""
+        num_customers = 100_000
+        periods = generate_large_dataset(num_customers)
+
+        start = time.time()
+        df = prepare_bg_nbd_inputs(
+            periods,
+            datetime(2023, 1, 1, tzinfo=UTC),
+            datetime(2023, 12, 31, tzinfo=UTC),
+        )
+        duration = time.time() - start
+
+        # Verify correctness
+        assert len(df) == num_customers
+        assert list(df.columns) == ["customer_id", "frequency", "recency", "T"]
+        assert df["frequency"].min() >= 0
+        assert df["recency"].min() >= 0
+        assert df["T"].min() > 0
+
+        # Log performance (no hard assertion to avoid flakiness on CI/CD)
+        # Baseline: ~0.2s on typical development hardware
+        print(f"\n✓ BG/NBD 100k customers: {duration:.2f}s (baseline: <5s)")
+        if duration >= 5.0:
+            import warnings
+
+            warnings.warn(
+                f"Performance regression detected: {duration:.2f}s (baseline: <5s)",
+                UserWarning,
+            )
+
+    def test_gamma_gamma_performance_100k_customers(self):
+        """Verify acceptable performance with 100k customers (Issue #64.13)."""
+        num_customers = 100_000
+        periods = generate_large_dataset(num_customers)
+
+        start = time.time()
+        df = prepare_gamma_gamma_inputs(periods, min_frequency=2)
+        duration = time.time() - start
+
+        # Verify correctness
+        assert len(df) > 0  # Many customers should have frequency >= 2
+        assert list(df.columns) == ["customer_id", "frequency", "monetary_value"]
+        assert df["frequency"].min() >= 2
+        assert all(isinstance(v, Decimal) for v in df["monetary_value"])
+
+        # Log performance (no hard assertion to avoid flakiness on CI/CD)
+        # Baseline: ~0.2s on typical development hardware
+        print(f"\n✓ Gamma-Gamma 100k customers: {duration:.2f}s (baseline: <5s)")
+        if duration >= 5.0:
+            import warnings
+
+            warnings.warn(
+                f"Performance regression detected: {duration:.2f}s (baseline: <5s)",
+                UserWarning,
+            )
+
+    @pytest.mark.skipif(
+        not os.getenv("RUN_SLOW_TESTS"),
+        reason="Skip 500k benchmark by default (enable with RUN_SLOW_TESTS=1)",
+    )
+    def test_bg_nbd_performance_500k_customers(self):
+        """Benchmark with 500k customers (Issue #63.10)."""
+        num_customers = 500_000
+        periods = generate_large_dataset(num_customers)
+
+        start = time.time()
+        df = prepare_bg_nbd_inputs(
+            periods,
+            datetime(2023, 1, 1, tzinfo=UTC),
+            datetime(2023, 12, 31, tzinfo=UTC),
+        )
+        duration = time.time() - start
+
+        assert len(df) == num_customers
+        print(f"\n✓ BG/NBD 500k customers: {duration:.2f}s")
+
+    @pytest.mark.skipif(
+        not os.getenv("RUN_SLOW_TESTS"),
+        reason="Skip 1M benchmark by default (enable with RUN_SLOW_TESTS=1)",
+    )
+    def test_bg_nbd_performance_1m_customers(self):
+        """Benchmark with 1M customers (Issue #63.10)."""
+        num_customers = 1_000_000
+        periods = generate_large_dataset(num_customers)
+
+        start = time.time()
+        df = prepare_bg_nbd_inputs(
+            periods,
+            datetime(2023, 1, 1, tzinfo=UTC),
+            datetime(2023, 12, 31, tzinfo=UTC),
+        )
+        duration = time.time() - start
+
+        assert len(df) == num_customers
+        print(f"\n✓ BG/NBD 1M customers: {duration:.2f}s")
