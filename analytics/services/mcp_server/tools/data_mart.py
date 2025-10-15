@@ -1,6 +1,7 @@
 """Data Mart MCP Tool - Phase 1 Foundation Service"""
 
 import json
+from datetime import datetime
 from pathlib import Path
 from typing import Literal
 
@@ -13,6 +14,7 @@ from fastmcp import Context
 from pydantic import BaseModel, Field
 
 from analytics.services.mcp_server.main import mcp
+from analytics.services.mcp_server.state import get_shared_state
 
 logger = structlog.get_logger(__name__)
 
@@ -20,7 +22,7 @@ MAX_INPUT_BYTES = 25 * 1024 * 1024  # 25 MiB cap to avoid accidental OOM
 
 
 def _load_transactions(path: Path) -> list[dict]:
-    """Load transactions from JSON file (adapted from cli.py)."""
+    """Load transactions from JSON file and parse datetime fields."""
     resolved = path.resolve()
     size = resolved.stat().st_size
     if size > MAX_INPUT_BYTES:
@@ -31,7 +33,25 @@ def _load_transactions(path: Path) -> list[dict]:
         payload = json.load(fh)
     if not isinstance(payload, list):
         raise ValueError("Expected a list of transactions in the input file")
-    return [dict(item) for item in payload]
+
+    # Parse datetime strings to datetime objects
+    transactions = []
+    for item in payload:
+        txn = dict(item)
+
+        # Parse order_ts or event_ts if present
+        for ts_field in ["order_ts", "event_ts"]:
+            if ts_field in txn and isinstance(txn[ts_field], str):
+                try:
+                    txn[ts_field] = datetime.fromisoformat(txn[ts_field])
+                except (ValueError, TypeError) as e:
+                    raise ValueError(
+                        f"Failed to parse {ts_field} as datetime: {txn[ts_field]}"
+                    ) from e
+
+        transactions.append(txn)
+
+    return transactions
 
 
 class BuildDataMartRequest(BaseModel):
@@ -91,8 +111,9 @@ async def _build_customer_data_mart_impl(
         max(dates).isoformat() if dates else "",
     )
 
-    # Store in context for reuse
-    ctx.set_state("data_mart", mart)
+    # Store in shared state for reuse across tool calls
+    shared_state = get_shared_state()
+    shared_state.set("data_mart", mart)
 
     await ctx.info("Data mart built successfully")
 

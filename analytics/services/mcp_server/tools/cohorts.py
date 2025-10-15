@@ -15,6 +15,7 @@ from fastmcp import Context
 from pydantic import BaseModel, Field
 
 from analytics.services.mcp_server.main import mcp
+from analytics.services.mcp_server.state import get_shared_state
 
 logger = structlog.get_logger(__name__)
 
@@ -49,8 +50,9 @@ async def _create_customer_cohorts_impl(
     """Implementation of cohort creation logic."""
     await ctx.info(f"Creating {request.cohort_type} cohorts")
 
-    # Get data mart from context
-    mart = ctx.get_state("data_mart")
+    # Get data mart from shared state
+    shared_state = get_shared_state()
+    mart = shared_state.get("data_mart")
     if mart is None:
         raise ValueError("Data mart not found. Run build_customer_data_mart first.")
 
@@ -97,9 +99,9 @@ async def _create_customer_cohorts_impl(
     # Assign customers
     cohort_assignments = assign_cohorts(customers, cohort_defs)
 
-    # Store in context
-    ctx.set_state("cohort_definitions", cohort_defs)
-    ctx.set_state("cohort_assignments", cohort_assignments)
+    # Store in shared state for reuse across tool calls
+    shared_state.set("cohort_definitions", cohort_defs)
+    shared_state.set("cohort_assignments", cohort_assignments)
 
     # Validate cohorts were created
     if not cohort_defs:
