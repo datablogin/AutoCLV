@@ -377,7 +377,8 @@ class TestNoFalsePositives:
             false_positive_count += sum(1 for r in results.values() if r.drift_detected)
 
         # With proper implementation, false positive rate should be very low
-        # Allow at most 3 false positives out of 30 tests (10 runs × 3 features)
-        assert false_positive_count <= 3, (
-            f"Too many false positives: {false_positive_count}/30 tests"
+        # Industry standard: 1-5% false positive rate
+        # Allow at most 2 false positives out of 30 tests (10 runs × 3 features = 6.7%)
+        assert false_positive_count <= 2, (
+            f"Too many false positives: {false_positive_count}/30 tests (>{false_positive_count / 30 * 100:.1f}% rate)"
         )

@@ -28,8 +28,9 @@ class TestCalculatePSI:
     def test_psi_stable_distributions(self):
         """PSI should be low for similar distributions (no drift)."""
         np.random.seed(42)
-        baseline = np.random.normal(0, 1, 1000)
-        current = np.random.normal(0, 1, 1000)  # Same distribution, different sample
+        baseline = np.random.normal(0, 1, 5000)  # Larger sample for stability
+        np.random.seed(43)  # Different seed for current
+        current = np.random.normal(0, 1, 5000)  # Same distribution, different sample
 
         psi = calculate_psi(baseline, current)
         assert psi < 0.1, f"Expected PSI < 0.1 for stable distributions, got {psi}"
@@ -129,8 +130,9 @@ class TestKolmogorovSmirnovTest:
     def test_ks_stable_distributions(self):
         """KS test should not detect drift for similar distributions."""
         np.random.seed(42)
-        baseline = np.random.normal(0, 1, 1000)
-        current = np.random.normal(0, 1, 1000)  # Different sample, same distribution
+        baseline = np.random.normal(0, 1, 5000)  # Larger sample for stability
+        np.random.seed(43)  # Different seed for current
+        current = np.random.normal(0, 1, 5000)  # Different sample, same distribution
 
         _, p_value, drift_detected = kolmogorov_smirnov_test(baseline, current)
 

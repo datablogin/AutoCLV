@@ -115,21 +115,24 @@ def calculate_psi(
     if len(baseline) == 0 or len(current) == 0:
         raise ValueError("Baseline and current distributions must not be empty")
 
-    if len(baseline) < bins or len(current) < bins:
-        raise ValueError(
-            f"Need at least {bins} samples in each distribution (got baseline={len(baseline)}, current={len(current)})"
-        )
-
     # Convert to numpy arrays if needed
     baseline_arr = np.asarray(baseline)
     current_arr = np.asarray(current)
 
-    # Remove NaN values
+    # Remove NaN values BEFORE size validation
+    # This ensures validation happens on actual usable data
     baseline_arr = baseline_arr[~np.isnan(baseline_arr)]
     current_arr = current_arr[~np.isnan(current_arr)]
 
     if len(baseline_arr) == 0 or len(current_arr) == 0:
         raise ValueError("Distributions contain only NaN values")
+
+    # Validate sufficient data after NaN removal
+    if len(baseline_arr) < bins or len(current_arr) < bins:
+        raise ValueError(
+            f"Need at least {bins} samples in each distribution after NaN removal "
+            f"(got baseline={len(baseline_arr)}, current={len(current_arr)})"
+        )
 
     # Create bins based on baseline distribution percentiles
     # Use quantiles to ensure roughly equal-sized bins
@@ -140,7 +143,7 @@ def calculate_psi(
     bin_edges = np.unique(bin_edges)
     if len(bin_edges) < 2:
         logger.warning(
-            f"Baseline distribution has constant values. PSI may not be meaningful."
+            "Baseline distribution has constant values. PSI may not be meaningful."
         )
         return 0.0
 
@@ -243,6 +246,7 @@ def detect_feature_drift(
     psi_threshold: float = 0.25,
     ks_alpha: float = 0.05,
     bins: int = 10,
+    psi_interpretation_thresholds: tuple[float, float] = (0.1, 0.25),
 ) -> dict[str, DriftResult]:
     """Detect drift across multiple features.
 
@@ -264,6 +268,10 @@ def detect_feature_drift(
         Significance level for KS test (default: 0.05)
     bins:
         Number of bins for PSI calculation (default: 10)
+    psi_interpretation_thresholds:
+        Tuple of (low, high) thresholds for PSI interpretation.
+        Default: (0.1, 0.25) where PSI < low = "No significant drift",
+        low ≤ PSI < high = "Small drift", PSI ≥ high = "Significant drift"
 
     Returns
     -------
@@ -320,10 +328,11 @@ def detect_feature_drift(
                 psi_score = calculate_psi(baseline_values, current_values, bins=bins)
                 drift_detected = psi_score >= psi_threshold
 
-                # Determine interpretation
-                if psi_score < 0.1:
+                # Determine interpretation using configurable thresholds
+                low_threshold, high_threshold = psi_interpretation_thresholds
+                if psi_score < low_threshold:
                     interpretation = "No significant drift"
-                elif psi_score < 0.25:
+                elif psi_score < high_threshold:
                     interpretation = "Small drift, investigation recommended"
                 else:
                     interpretation = "Significant drift, retraining recommended"
@@ -331,10 +340,10 @@ def detect_feature_drift(
                 results[f"{column}_psi"] = DriftResult(
                     metric_name=column,
                     test_type="psi",
-                    drift_score=psi_score,
+                    drift_score=float(psi_score),  # Ensure native Python float
                     p_value=None,
-                    drift_detected=drift_detected,
-                    threshold=psi_threshold,
+                    drift_detected=bool(drift_detected),  # Ensure native Python bool
+                    threshold=float(psi_threshold),  # Ensure native Python float
                     interpretation=interpretation,
                 )
             except ValueError as e:
@@ -354,10 +363,10 @@ def detect_feature_drift(
                 results[f"{column}_ks"] = DriftResult(
                     metric_name=column,
                     test_type="ks",
-                    drift_score=ks_stat,
-                    p_value=p_value,
-                    drift_detected=drift_detected,
-                    threshold=ks_alpha,
+                    drift_score=float(ks_stat),  # Ensure native Python float
+                    p_value=float(p_value),  # Ensure native Python float
+                    drift_detected=bool(drift_detected),  # Ensure native Python bool
+                    threshold=float(ks_alpha),  # Ensure native Python float
                     interpretation=interpretation,
                 )
             except ValueError as e:
@@ -374,6 +383,7 @@ def detect_prediction_drift(
     ks_alpha: float = 0.05,
     bins: int = 10,
     prediction_name: str = "prediction",
+    psi_interpretation_thresholds: tuple[float, float] = (0.1, 0.25),
 ) -> dict[str, DriftResult]:
     """Detect drift in model predictions.
 
@@ -434,4 +444,5 @@ def detect_prediction_drift(
         psi_threshold=psi_threshold,
         ks_alpha=ks_alpha,
         bins=bins,
+        psi_interpretation_thresholds=psi_interpretation_thresholds,
     )

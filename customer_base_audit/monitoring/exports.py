@@ -259,16 +259,26 @@ def get_drift_summary(results: dict[str, DriftResult]) -> dict[str, Any]:
     total_metrics = len(results)
     drifted_count = sum(1 for r in results.values() if r.drift_detected)
 
-    # Categorize severity for PSI tests
+    # Categorize severity for both PSI and KS tests
     severity_counts = {"low": 0, "medium": 0, "high": 0}
     for result in results.values():
-        if result.test_type == "psi" and result.drift_detected:
-            if result.drift_score < 0.1:
-                severity_counts["low"] += 1
-            elif result.drift_score < 0.25:
-                severity_counts["medium"] += 1
-            else:
-                severity_counts["high"] += 1
+        if result.drift_detected:
+            if result.test_type == "psi":
+                # PSI severity based on drift score
+                if result.drift_score < 0.1:
+                    severity_counts["low"] += 1
+                elif result.drift_score < 0.25:
+                    severity_counts["medium"] += 1
+                else:
+                    severity_counts["high"] += 1
+            elif result.test_type == "ks" and result.p_value is not None:
+                # KS severity based on p-value (lower p-value = higher severity)
+                if result.p_value < 0.001:
+                    severity_counts["high"] += 1  # Very strong evidence of drift
+                elif result.p_value < 0.01:
+                    severity_counts["medium"] += 1  # Strong evidence of drift
+                else:
+                    severity_counts["low"] += 1  # Moderate evidence of drift (p < 0.05)
 
     return {
         "total_metrics": total_metrics,
