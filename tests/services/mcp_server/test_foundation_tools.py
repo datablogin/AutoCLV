@@ -6,8 +6,10 @@ Tests the three foundation tools:
 3. create_customer_cohorts
 """
 
+import json
 import pytest
 from datetime import datetime, timezone
+from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock
 
 from analytics.services.mcp_server.tools.data_mart import (
@@ -351,3 +353,141 @@ async def test_single_customer_workflow():
     cohort_response = await create_customer_cohorts(cohort_request, ctx)
     assert cohort_response.customer_count == 1
     assert cohort_response.cohort_count == 1
+
+
+@pytest.mark.asyncio
+async def test_zero_revenue_customers():
+    """Test handling of customers with zero revenue (free products/refunds)."""
+    transactions = [
+        # Customer with free products (unit_price = 0)
+        {
+            "order_id": "O1",
+            "customer_id": "C1",
+            "event_ts": datetime(2023, 1, 15, 10, 0, 0, tzinfo=timezone.utc),
+            "unit_price": 0.0,
+            "quantity": 5,
+        },
+        # Normal customer for comparison
+        {
+            "order_id": "O2",
+            "customer_id": "C2",
+            "event_ts": datetime(2023, 1, 20, 10, 0, 0, tzinfo=timezone.utc),
+            "unit_price": 100.0,
+            "quantity": 1,
+        },
+    ]
+
+    ctx = create_mock_context()
+
+    # Build data mart
+    data_mart_request = BuildDataMartRequest(
+        transaction_data_path="test.json", period_granularities=["quarter"]
+    )
+    data_mart_response = await build_customer_data_mart(
+        data_mart_request, ctx, transactions=transactions
+    )
+    assert data_mart_response.customer_count == 2
+    assert data_mart_response.order_count == 2
+
+    # Calculate RFM - should handle zero monetary value
+    rfm_request = CalculateRFMRequest(
+        observation_end=datetime(2023, 6, 30, tzinfo=timezone.utc),
+        enable_parallel=False,
+        calculate_scores=True,
+    )
+    rfm_response = await calculate_rfm_metrics(rfm_request, ctx)
+    assert rfm_response.metrics_count == 2
+    assert rfm_response.score_count == 2
+
+    # Verify RFM metrics
+    shared_state = get_shared_state()
+    rfm_metrics = shared_state.get("rfm_metrics")
+    assert rfm_metrics is not None
+
+    # Find zero-revenue customer
+    zero_revenue_customer = next(m for m in rfm_metrics if m.customer_id == "C1")
+    assert zero_revenue_customer.monetary == 0
+    assert zero_revenue_customer.total_spend == 0
+
+
+@pytest.mark.asyncio
+async def test_datetime_validation():
+    """Test that datetime validation catches invalid types."""
+    from analytics.services.mcp_server.tools.data_mart import _load_transactions
+
+    # Create temp file with invalid datetime in current directory
+    transactions_with_invalid_datetime = [
+        {
+            "order_id": "O1",
+            "customer_id": "C1",
+            "event_ts": 12345,  # Invalid: integer instead of datetime
+            "unit_price": 100.0,
+            "quantity": 1,
+        }
+    ]
+
+    temp_path = Path("test_invalid_datetime.json")
+
+    try:
+        with temp_path.open("w") as f:
+            json.dump(transactions_with_invalid_datetime, f)
+
+        # Should raise TypeError for invalid datetime type
+        with pytest.raises(TypeError, match="must be a datetime or ISO format string"):
+            _load_transactions(temp_path)
+    finally:
+        if temp_path.exists():
+            temp_path.unlink()
+
+
+@pytest.mark.asyncio
+async def test_path_traversal_protection():
+    """Test that path traversal attempts are blocked."""
+    from analytics.services.mcp_server.tools.data_mart import _load_transactions
+
+    # Attempt to access file outside allowed directory
+    malicious_path = Path("../../../etc/passwd")
+
+    with pytest.raises(ValueError, match="outside allowed directory"):
+        _load_transactions(malicious_path)
+
+
+@pytest.mark.asyncio
+async def test_concurrent_tool_invocations():
+    """Test thread safety with concurrent tool invocations."""
+    import asyncio
+
+    transactions = create_sample_transactions()
+
+    async def run_workflow(customer_offset: int):
+        """Run a workflow with slight variations."""
+        ctx = create_mock_context()
+
+        # Build data mart
+        data_mart_request = BuildDataMartRequest(
+            transaction_data_path="test.json", period_granularities=["quarter"]
+        )
+        await build_customer_data_mart(
+            data_mart_request, ctx, transactions=transactions
+        )
+
+        # Calculate RFM
+        rfm_request = CalculateRFMRequest(
+            observation_end=datetime(2023, 6, 30, tzinfo=timezone.utc),
+            enable_parallel=False,
+            calculate_scores=True,
+        )
+        await calculate_rfm_metrics(rfm_request, ctx)
+
+        return True
+
+    # Run 5 concurrent workflows
+    results = await asyncio.gather(*[run_workflow(i) for i in range(5)])
+
+    # All should succeed
+    assert all(results)
+
+    # Verify SharedState is still consistent
+    shared_state = get_shared_state()
+    assert shared_state.get("data_mart") is not None
+    assert shared_state.get("rfm_metrics") is not None

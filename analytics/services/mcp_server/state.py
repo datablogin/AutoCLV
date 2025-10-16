@@ -13,9 +13,23 @@ class SharedState:
 
     Uses threading.RLock for thread-safe access to shared data.
     Implements basic size-based eviction to prevent unbounded memory growth.
+
+    Protected keys (data_mart, rfm_metrics, etc.) are only evicted as a last resort
+    when all keys in the store are protected.
     """
 
     MAX_ITEMS = 100  # Maximum number of items to store
+
+    # Critical keys that should not be evicted unless absolutely necessary
+    PROTECTED_KEYS = frozenset(
+        {
+            "data_mart",
+            "rfm_metrics",
+            "rfm_scores",
+            "cohort_definitions",
+            "cohort_assignments",
+        }
+    )
 
     def __init__(self):
         self._store: dict[str, Any] = {}
@@ -25,17 +39,27 @@ class SharedState:
         """Store a value in shared state.
 
         If MAX_ITEMS is reached, oldest items are evicted (FIFO).
+        Protected keys are only evicted if all keys in the store are protected.
 
         Args:
             key: Storage key
             value: Value to store
         """
         with self._lock:
-            # Simple eviction: if at capacity, remove first key
+            # Check if eviction is needed
             if len(self._store) >= self.MAX_ITEMS and key not in self._store:
-                # Remove oldest (first) key
-                first_key = next(iter(self._store))
-                del self._store[first_key]
+                # Try to evict non-protected key first
+                evicted = False
+                for k in self._store:
+                    if k not in self.PROTECTED_KEYS:
+                        del self._store[k]
+                        evicted = True
+                        break
+
+                # If all keys are protected, evict oldest (first) key
+                if not evicted:
+                    first_key = next(iter(self._store))
+                    del self._store[first_key]
 
             self._store[key] = value
 
