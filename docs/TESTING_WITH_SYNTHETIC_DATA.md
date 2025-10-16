@@ -287,35 +287,35 @@ def generate_test_data(scenario_config, n_customers=300):
 **Example**: Convert transactions to BG/NBD and Gamma-Gamma inputs
 
 ```python
-from collections import defaultdict
-import pandas as pd
+from customer_base_audit.foundation.data_mart import CustomerDataMartBuilder, PeriodGranularity
+from customer_base_audit.models.model_prep import prepare_bg_nbd_inputs, prepare_gamma_gamma_inputs
+from datetime import datetime
 
 def prepare_model_inputs(transactions):
     """Aggregate transactions into model inputs."""
-    customer_txns = defaultdict(
-        lambda: {"orders": set(), "spend": 0.0, "first_date": None, "last_date": None}
+    # Build data mart from transactions
+    builder = CustomerDataMartBuilder([PeriodGranularity.MONTH])
+    mart = builder.build([t.__dict__ for t in transactions])
+
+    # Prepare BG/NBD inputs
+    observation_start = datetime(2023, 1, 1)
+    observation_end = datetime(2024, 12, 31, 23, 59, 59)
+
+    bgnbd_data = prepare_bg_nbd_inputs(
+        period_aggregations=mart.periods[PeriodGranularity.MONTH],
+        observation_start=observation_start,
+        observation_end=observation_end
     )
 
-    for txn in transactions:
-        cust_data = customer_txns[txn.customer_id]
-        cust_data["orders"].add(txn.order_id)
-        cust_data["spend"] += txn.quantity * txn.unit_price
+    # Prepare Gamma-Gamma inputs
+    gg_data = prepare_gamma_gamma_inputs(
+        period_aggregations=mart.periods[PeriodGranularity.MONTH],
+        min_frequency=2
+    )
+    # Convert monetary_value from Decimal to float for model fitting
+    gg_data['monetary_value'] = gg_data['monetary_value'].astype(float)
 
-        txn_date = txn.event_ts.date() if hasattr(txn.event_ts, "date") else txn.event_ts
-        if cust_data["first_date"] is None or txn_date < cust_data["first_date"]:
-            cust_data["first_date"] = txn_date
-        if cust_data["last_date"] is None or txn_date > cust_data["last_date"]:
-            cust_data["last_date"] = txn_date
-
-    # Convert to DataFrames (example for BG/NBD)
-    observation_end = datetime(2024, 12, 31)
-    rows = []
-    for cust_id, data in customer_txns.items():
-        frequency = max(0, len(data["orders"]) - 1)
-        # ... calculate recency, T
-        rows.append({"customer_id": cust_id, "frequency": frequency, ...})
-
-    return pd.DataFrame(rows)
+    return bgnbd_data, gg_data
 ```
 
 ### Step 5: Run Your Feature
