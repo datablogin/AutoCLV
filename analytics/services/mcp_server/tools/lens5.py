@@ -4,7 +4,7 @@ Wraps Lens 5 (Overall Customer Base Health) as an MCP tool for agentic orchestra
 """
 
 from decimal import Decimal
-from datetime import datetime
+from datetime import datetime, timezone
 
 import structlog
 from customer_base_audit.analyses.lens5 import (
@@ -18,6 +18,31 @@ from analytics.services.mcp_server.main import mcp
 from analytics.services.mcp_server.state import get_shared_state
 
 logger = structlog.get_logger(__name__)
+
+
+# Health assessment thresholds for narrative generation
+# Retention thresholds (as percentages)
+STRONG_RETENTION_THRESHOLD = Decimal("80")
+GOOD_RETENTION_THRESHOLD = Decimal("75")
+ACCEPTABLE_RETENTION_THRESHOLD = Decimal("70")
+CRITICAL_LOW_RETENTION_THRESHOLD = Decimal("60")
+
+# Revenue predictability thresholds (as percentages)
+HIGH_PREDICTABILITY_THRESHOLD = Decimal("70")
+MEDIUM_PREDICTABILITY_THRESHOLD = Decimal("60")
+LOW_PREDICTABILITY_THRESHOLD = Decimal("50")
+
+# Acquisition dependence thresholds (as percentages)
+LOW_ACQUISITION_DEPENDENCE_THRESHOLD = Decimal("20")
+MEDIUM_ACQUISITION_DEPENDENCE_THRESHOLD = Decimal("35")
+HIGH_ACQUISITION_DEPENDENCE_THRESHOLD = Decimal("40")
+
+# Cohort repeat rate thresholds (as percentages)
+STRONG_REPEAT_RATE_THRESHOLD = Decimal("60")
+WEAK_REPEAT_RATE_THRESHOLD = Decimal("30")
+
+# Cohort proportion thresholds
+HIGH_REPEAT_COHORTS_PROPORTION = 0.5
 
 
 class Lens5Request(BaseModel):
@@ -133,7 +158,7 @@ def _identify_key_strengths(metrics: Lens5Metrics) -> list[str]:
     hs = metrics.health_score
     strengths = []
 
-    if hs.overall_retention_rate >= Decimal("80"):
+    if hs.overall_retention_rate >= STRONG_RETENTION_THRESHOLD:
         strengths.append(
             f"Strong customer retention at {hs.overall_retention_rate}%"
         )
@@ -141,13 +166,13 @@ def _identify_key_strengths(metrics: Lens5Metrics) -> list[str]:
     if hs.cohort_quality_trend == "improving":
         strengths.append("Cohort quality is improving over time")
 
-    if hs.revenue_predictability_pct >= Decimal("70"):
+    if hs.revenue_predictability_pct >= HIGH_PREDICTABILITY_THRESHOLD:
         strengths.append(
             f"High revenue predictability ({hs.revenue_predictability_pct}%) "
             f"from existing cohorts"
         )
 
-    if hs.acquisition_dependence_pct <= Decimal("20"):
+    if hs.acquisition_dependence_pct <= LOW_ACQUISITION_DEPENDENCE_THRESHOLD:
         strengths.append(
             f"Low acquisition dependence ({hs.acquisition_dependence_pct}%) "
             f"indicates sustainable growth"
@@ -155,11 +180,11 @@ def _identify_key_strengths(metrics: Lens5Metrics) -> list[str]:
 
     # Check cohort repeat rates
     high_repeat_cohorts = [
-        c for c in metrics.cohort_repeat_behavior if c.repeat_rate >= Decimal("60")
+        c for c in metrics.cohort_repeat_behavior if c.repeat_rate >= STRONG_REPEAT_RATE_THRESHOLD
     ]
-    if len(high_repeat_cohorts) >= len(metrics.cohort_repeat_behavior) * 0.5:
+    if len(high_repeat_cohorts) >= len(metrics.cohort_repeat_behavior) * HIGH_REPEAT_COHORTS_PROPORTION:
         strengths.append(
-            f"{len(high_repeat_cohorts)} cohorts show strong repeat purchase behavior (>60%)"
+            f"{len(high_repeat_cohorts)} cohorts show strong repeat purchase behavior (>{STRONG_REPEAT_RATE_THRESHOLD}%)"
         )
 
     if not strengths:
@@ -173,12 +198,12 @@ def _identify_key_risks(metrics: Lens5Metrics) -> list[str]:
     hs = metrics.health_score
     risks = []
 
-    if hs.overall_retention_rate < Decimal("60"):
+    if hs.overall_retention_rate < CRITICAL_LOW_RETENTION_THRESHOLD:
         risks.append(
             f"CRITICAL: Low retention rate ({hs.overall_retention_rate}%) "
             f"indicates high customer churn"
         )
-    elif hs.overall_retention_rate < Decimal("75"):
+    elif hs.overall_retention_rate < GOOD_RETENTION_THRESHOLD:
         risks.append(
             f"MEDIUM: Retention rate ({hs.overall_retention_rate}%) below optimal"
         )
@@ -188,13 +213,13 @@ def _identify_key_risks(metrics: Lens5Metrics) -> list[str]:
             "HIGH: Cohort quality is declining - newer cohorts performing worse"
         )
 
-    if hs.revenue_predictability_pct < Decimal("50"):
+    if hs.revenue_predictability_pct < LOW_PREDICTABILITY_THRESHOLD:
         risks.append(
             f"HIGH: Low revenue predictability ({hs.revenue_predictability_pct}%) "
             f"creates forecasting challenges"
         )
 
-    if hs.acquisition_dependence_pct > Decimal("40"):
+    if hs.acquisition_dependence_pct > HIGH_ACQUISITION_DEPENDENCE_THRESHOLD:
         risks.append(
             f"HIGH: High acquisition dependence ({hs.acquisition_dependence_pct}%) "
             f"indicates growth driven by new customers rather than retention"
@@ -202,11 +227,11 @@ def _identify_key_risks(metrics: Lens5Metrics) -> list[str]:
 
     # Check for weak cohorts
     weak_cohorts = [
-        c for c in metrics.cohort_repeat_behavior if c.repeat_rate < Decimal("30")
+        c for c in metrics.cohort_repeat_behavior if c.repeat_rate < WEAK_REPEAT_RATE_THRESHOLD
     ]
     if weak_cohorts:
         risks.append(
-            f"MEDIUM: {len(weak_cohorts)} cohorts show poor repeat rates (<30%)"
+            f"MEDIUM: {len(weak_cohorts)} cohorts show poor repeat rates (<{WEAK_REPEAT_RATE_THRESHOLD}%)"
         )
 
     if not risks:
@@ -221,7 +246,7 @@ def _generate_recommendations(metrics: Lens5Metrics) -> list[str]:
     recs = []
 
     # Retention recommendations
-    if hs.overall_retention_rate < Decimal("70"):
+    if hs.overall_retention_rate < ACCEPTABLE_RETENTION_THRESHOLD:
         recs.append(
             "PRIORITY 1: Implement comprehensive retention program "
             "targeting at-risk customers with personalized engagement"
@@ -240,14 +265,14 @@ def _generate_recommendations(metrics: Lens5Metrics) -> list[str]:
         )
 
     # Revenue predictability recommendations
-    if hs.revenue_predictability_pct < Decimal("60"):
+    if hs.revenue_predictability_pct < MEDIUM_PREDICTABILITY_THRESHOLD:
         recs.append(
             "PRIORITY 2: Focus on customer lifetime value optimization "
             "to increase revenue predictability"
         )
 
     # Acquisition dependence recommendations
-    if hs.acquisition_dependence_pct > Decimal("35"):
+    if hs.acquisition_dependence_pct > MEDIUM_ACQUISITION_DEPENDENCE_THRESHOLD:
         recs.append(
             "PRIORITY 2: Reduce acquisition dependence by investing in "
             "customer success, upsell, and cross-sell programs"
@@ -255,7 +280,7 @@ def _generate_recommendations(metrics: Lens5Metrics) -> list[str]:
 
     # Weak cohort recommendations
     weak_cohorts = [
-        c for c in metrics.cohort_repeat_behavior if c.repeat_rate < Decimal("30")
+        c for c in metrics.cohort_repeat_behavior if c.repeat_rate < WEAK_REPEAT_RATE_THRESHOLD
     ]
     if weak_cohorts:
         cohort_ids = [c.cohort_id for c in weak_cohorts[:3]]
@@ -306,8 +331,16 @@ async def _assess_customer_base_health_impl(
     min_date = min(all_dates)
     max_date = max(all_dates)
 
-    analysis_start = request.analysis_start_date or min_date
-    analysis_end = request.analysis_end_date or max_date
+    # Normalize timezone handling - ensure request dates are timezone-aware
+    analysis_start = request.analysis_start_date
+    if analysis_start and analysis_start.tzinfo is None:
+        analysis_start = analysis_start.replace(tzinfo=timezone.utc)
+    analysis_start = analysis_start or min_date
+
+    analysis_end = request.analysis_end_date
+    if analysis_end and analysis_end.tzinfo is None:
+        analysis_end = analysis_end.replace(tzinfo=timezone.utc)
+    analysis_end = analysis_end or max_date
 
     await ctx.report_progress(
         0.2, f"Analyzing from {analysis_start.date()} to {analysis_end.date()}..."
