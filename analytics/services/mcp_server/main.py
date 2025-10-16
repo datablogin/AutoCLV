@@ -83,10 +83,11 @@ from analytics.services.mcp_server.tools import (
     lens2,  # noqa: F401, E402
     lens3,  # noqa: F401, E402
     lens4,  # noqa: F401, E402
+    lens5,  # noqa: F401, E402
     rfm,  # noqa: F401, E402
 )
 
-logger.info("mcp_server_initialized", phase="Phase 2", tools_registered=7)
+logger.info("mcp_server_initialized", phase="Phase 2", tools_registered=8)
 
 
 if __name__ == "__main__":

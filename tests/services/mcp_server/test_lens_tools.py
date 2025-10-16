@@ -494,3 +494,254 @@ def test_lens2_growth_momentum_assessment():
 
     momentum = _assess_growth_momentum(metrics)
     assert momentum in ("strong", "moderate", "declining", "negative")
+
+
+@pytest.mark.asyncio
+async def test_lens5_customer_base_health(mock_data_mart, mock_cohort_assignments):
+    """Test Lens 5 overall customer base health analysis."""
+    from analytics.services.mcp_server.tools.lens5 import (
+        _assess_customer_base_health_impl,
+        Lens5Request,
+    )
+
+    # Set up shared state with foundation data
+    shared_state = get_shared_state()
+    # Extract period aggregations from data mart (like lens4 does)
+    first_granularity = list(mock_data_mart.periods.keys())[0]
+    period_aggregations = mock_data_mart.periods[first_granularity]
+    shared_state.set("period_aggregations", period_aggregations)
+    shared_state.set("cohort_assignments", mock_cohort_assignments)
+
+    # Create request
+    request = Lens5Request(
+        analysis_name="Q1 2024 Health Assessment",
+        analysis_start_date=datetime(2024, 1, 1, tzinfo=timezone.utc),
+        analysis_end_date=datetime(2024, 3, 31, tzinfo=timezone.utc),
+    )
+
+    ctx = MockContext()
+
+    # Run analysis
+    response = await _assess_customer_base_health_impl(request, ctx)
+
+    # Verify response structure
+    assert response.analysis_name == "Q1 2024 Health Assessment"
+    assert response.health_grade in ("A", "B", "C", "D", "F")
+    assert 0 <= response.health_score <= 100
+    assert response.total_customers > 0
+    assert response.total_active_customers > 0
+    assert response.total_active_customers <= response.total_customers
+    assert 0 <= response.overall_retention_rate <= 100
+    assert response.cohort_quality_trend in ("improving", "stable", "declining")
+    assert 0 <= response.revenue_predictability_pct <= 100
+    assert 0 <= response.acquisition_dependence_pct <= 100
+
+    # Verify summaries
+    assert response.cohort_count > 0
+    assert len(response.top_revenue_cohorts) <= 5
+    assert len(response.top_repeat_cohorts) <= 5
+
+    # Verify insights
+    assert isinstance(response.health_assessment, str)
+    assert len(response.key_strengths) > 0
+    assert len(response.key_risks) > 0
+    assert len(response.recommendations) > 0
+
+    # Verify progress reporting
+    assert len(ctx.progress_reports) > 0
+    assert len(ctx.messages) > 0
+
+
+@pytest.mark.asyncio
+async def test_lens5_without_period_aggregations_fails():
+    """Test that Lens 5 fails gracefully without period aggregations."""
+    from analytics.services.mcp_server.tools.lens5 import (
+        _assess_customer_base_health_impl,
+        Lens5Request,
+    )
+
+    # Clear shared state
+    shared_state = get_shared_state()
+    shared_state.set("cohort_assignments", {"cust_001": "2024-Q1"})
+
+    request = Lens5Request()
+    ctx = MockContext()
+
+    # Should raise ValueError
+    with pytest.raises(ValueError, match="Period aggregations not found"):
+        await _assess_customer_base_health_impl(request, ctx)
+
+
+@pytest.mark.asyncio
+async def test_lens5_without_cohort_assignments_fails():
+    """Test that Lens 5 fails gracefully without cohort assignments."""
+    from analytics.services.mcp_server.tools.lens5 import (
+        _assess_customer_base_health_impl,
+        Lens5Request,
+    )
+
+    # Create minimal period aggregations
+    periods = [
+        PeriodAggregation(
+            customer_id="cust_001",
+            period_start=datetime(2024, 1, 1, tzinfo=timezone.utc),
+            period_end=datetime(2024, 2, 1, tzinfo=timezone.utc),
+            total_orders=5,
+            total_spend=Decimal("500"),
+            total_margin=Decimal("150"),
+            total_quantity=10,
+        )
+    ]
+
+    shared_state = get_shared_state()
+    shared_state.set("period_aggregations", periods)
+
+    request = Lens5Request()
+    ctx = MockContext()
+
+    # Should raise ValueError
+    with pytest.raises(ValueError, match="Cohort assignments not found"):
+        await _assess_customer_base_health_impl(request, ctx)
+
+
+def test_lens5_health_assessment_generation():
+    """Test Lens 5 health assessment narrative generation."""
+    from analytics.services.mcp_server.tools.lens5 import _generate_health_assessment
+    from customer_base_audit.analyses.lens5 import (
+        Lens5Metrics,
+        CustomerBaseHealthScore,
+    )
+
+    # Create test health score
+    health_score = CustomerBaseHealthScore(
+        total_customers=1000,
+        total_active_customers=850,
+        overall_retention_rate=Decimal("85.00"),
+        cohort_quality_trend="improving",
+        revenue_predictability_pct=Decimal("75.00"),
+        acquisition_dependence_pct=Decimal("25.00"),
+        health_score=Decimal("82.50"),
+        health_grade="B",
+    )
+
+    # Create minimal metrics
+    metrics = Lens5Metrics(
+        cohort_revenue_contributions=[],
+        cohort_repeat_behavior=[],
+        health_score=health_score,
+        analysis_start_date=datetime(2024, 1, 1, tzinfo=timezone.utc),
+        analysis_end_date=datetime(2024, 3, 31, tzinfo=timezone.utc),
+    )
+
+    # Generate assessment
+    assessment = _generate_health_assessment(metrics)
+
+    # Verify narrative includes key metrics
+    assert isinstance(assessment, str)
+    assert len(assessment) > 0
+    assert "82.5" in assessment or "82.50" in assessment  # Score mentioned
+    # Grade is only in the function parameter, not always in the narrative
+    assert (
+        "85.00" in assessment or "85.0" in assessment or "85%" in assessment
+    )  # Retention mentioned
+    assert "improving" in assessment  # Trend mentioned
+
+
+def test_lens5_strength_identification():
+    """Test Lens 5 key strengths identification."""
+    from analytics.services.mcp_server.tools.lens5 import _identify_key_strengths
+    from customer_base_audit.analyses.lens5 import (
+        Lens5Metrics,
+        CustomerBaseHealthScore,
+        CohortRepeatBehavior,
+    )
+
+    # Create high-performing health score
+    health_score = CustomerBaseHealthScore(
+        total_customers=1000,
+        total_active_customers=900,
+        overall_retention_rate=Decimal("90.00"),
+        cohort_quality_trend="improving",
+        revenue_predictability_pct=Decimal("80.00"),
+        acquisition_dependence_pct=Decimal("10.00"),
+        health_score=Decimal("92.50"),
+        health_grade="A",
+    )
+
+    # Create cohort with strong repeat behavior
+    cohort_behavior = [
+        CohortRepeatBehavior(
+            cohort_id="2024-Q1",
+            cohort_size=100,
+            one_time_buyers=20,
+            repeat_buyers=80,
+            repeat_rate=Decimal("80.00"),
+            avg_orders_per_repeat_buyer=Decimal("5.50"),
+        )
+    ]
+
+    metrics = Lens5Metrics(
+        cohort_revenue_contributions=[],
+        cohort_repeat_behavior=cohort_behavior,
+        health_score=health_score,
+        analysis_start_date=datetime(2024, 1, 1, tzinfo=timezone.utc),
+        analysis_end_date=datetime(2024, 3, 31, tzinfo=timezone.utc),
+    )
+
+    strengths = _identify_key_strengths(metrics)
+
+    assert len(strengths) > 0
+    assert any("retention" in s.lower() for s in strengths)
+    assert any("improving" in s.lower() for s in strengths)
+    assert any("predictability" in s.lower() for s in strengths)
+
+
+def test_lens5_risk_identification():
+    """Test Lens 5 key risks identification."""
+    from analytics.services.mcp_server.tools.lens5 import _identify_key_risks
+    from customer_base_audit.analyses.lens5 import (
+        Lens5Metrics,
+        CustomerBaseHealthScore,
+        CohortRepeatBehavior,
+    )
+
+    # Create health score with issues
+    health_score = CustomerBaseHealthScore(
+        total_customers=1000,
+        total_active_customers=500,
+        overall_retention_rate=Decimal("50.00"),
+        cohort_quality_trend="declining",
+        revenue_predictability_pct=Decimal("40.00"),
+        acquisition_dependence_pct=Decimal("50.00"),
+        health_score=Decimal("45.00"),
+        health_grade="F",
+    )
+
+    # Create weak cohort
+    cohort_behavior = [
+        CohortRepeatBehavior(
+            cohort_id="2024-Q1",
+            cohort_size=100,
+            one_time_buyers=80,
+            repeat_buyers=20,
+            repeat_rate=Decimal("20.00"),
+            avg_orders_per_repeat_buyer=Decimal("2.50"),
+        )
+    ]
+
+    metrics = Lens5Metrics(
+        cohort_revenue_contributions=[],
+        cohort_repeat_behavior=cohort_behavior,
+        health_score=health_score,
+        analysis_start_date=datetime(2024, 1, 1, tzinfo=timezone.utc),
+        analysis_end_date=datetime(2024, 3, 31, tzinfo=timezone.utc),
+    )
+
+    risks = _identify_key_risks(metrics)
+
+    assert len(risks) > 0
+    assert any("retention" in r.lower() for r in risks)
+    assert any("declining" in r.lower() for r in risks)
+    assert any(
+        "predictability" in r.lower() or "acquisition" in r.lower() for r in risks
+    )

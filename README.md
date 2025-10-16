@@ -172,8 +172,8 @@ The Five Lenses provide multiple perspectives on customer base health:
 1. **Lens 1: Single Period** - Snapshot of current customer base
 2. **Lens 2: Period Comparison** - Track retention and churn
 3. **Lens 3: Cohort Evolution** - How cohorts age over time
-4. **Lens 4: Multi-Cohort Comparison** *(coming soon)*
-5. **Lens 5: Overall Health** *(coming soon)*
+4. **Lens 4: Multi-Cohort Comparison** - Compare cohorts side-by-side
+5. **Lens 5: Overall Health** - Comprehensive customer base health assessment
 
 ```python
 from customer_base_audit.analyses import lens1, lens2, lens3
@@ -495,15 +495,15 @@ This project is licensed under the MIT License - see the LICENSE file for detail
 
 ### Current Status
 - ✅ RFM Analysis
-- ✅ Lenses 1-3
+- ✅ Five Lenses Framework (Lenses 1-5)
 - ✅ BG/NBD and Gamma-Gamma Models
 - ✅ Synthetic Data Generation
 - ✅ Example Notebooks
 - ✅ Validation Framework
+- ✅ Lens 4: Multi-Cohort Comparison
+- ✅ Lens 5: Overall Customer Base Health
 
 ### Coming Soon
-- 🔜 Lens 4: Multi-Cohort Comparison
-- 🔜 Lens 5: Overall Customer Base Health
 - 🔜 Advanced Drift Detection
 - 🔜 Model Interpretability Tools
 - 🔜 REST API for CLV Predictions
