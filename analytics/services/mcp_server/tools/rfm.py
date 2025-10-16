@@ -8,6 +8,7 @@ from fastmcp import Context
 from pydantic import BaseModel, Field
 
 from analytics.services.mcp_server.main import mcp
+from analytics.services.mcp_server.state import get_shared_state
 
 logger = structlog.get_logger(__name__)
 
@@ -39,8 +40,9 @@ async def _calculate_rfm_metrics_impl(
     """Implementation of RFM calculation logic."""
     await ctx.info("Starting RFM calculation")
 
-    # Get data mart from context
-    mart = ctx.get_state("data_mart")
+    # Get data mart from shared state
+    shared_state = get_shared_state()
+    mart = shared_state.get("data_mart")
     if mart is None:
         raise ValueError("Data mart not found. Run build_customer_data_mart first.")
 
@@ -71,9 +73,9 @@ async def _calculate_rfm_metrics_impl(
             "Check that period aggregations contain customer data."
         )
 
-    # Store in context
-    ctx.set_state("rfm_metrics", rfm_metrics)
-    ctx.set_state("rfm_scores", rfm_scores)
+    # Store in shared state for reuse across tool calls
+    shared_state.set("rfm_metrics", rfm_metrics)
+    shared_state.set("rfm_scores", rfm_scores)
 
     # Extract date range
     dates = [m.observation_start for m in rfm_metrics]

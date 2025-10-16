@@ -1,6 +1,8 @@
 """Data Mart MCP Tool - Phase 1 Foundation Service"""
 
 import json
+import os
+from datetime import datetime
 from pathlib import Path
 from typing import Literal
 
@@ -13,15 +15,38 @@ from fastmcp import Context
 from pydantic import BaseModel, Field
 
 from analytics.services.mcp_server.main import mcp
+from analytics.services.mcp_server.state import get_shared_state
 
 logger = structlog.get_logger(__name__)
 
 MAX_INPUT_BYTES = 25 * 1024 * 1024  # 25 MiB cap to avoid accidental OOM
 
+# Allowed base directory for transaction data files
+# Default to current working directory, can be overridden via environment variable
+ALLOWED_BASE_DIR = Path(os.environ.get("MCP_DATA_DIR", os.getcwd())).resolve()
+
 
 def _load_transactions(path: Path) -> list[dict]:
-    """Load transactions from JSON file (adapted from cli.py)."""
+    """Load transactions from JSON file and parse datetime fields.
+
+    Validates that the resolved path is within the allowed base directory
+    to prevent path traversal attacks.
+
+    Raises:
+        ValueError: If path is outside allowed directory or file is too large
+    """
     resolved = path.resolve()
+
+    # Validate path is within allowed directory
+    try:
+        resolved.relative_to(ALLOWED_BASE_DIR)
+    except ValueError as e:
+        raise ValueError(
+            f"Path {resolved} is outside allowed directory {ALLOWED_BASE_DIR}. "
+            f"Only files within the allowed directory can be loaded."
+        ) from e
+
+    # Validate file size
     size = resolved.stat().st_size
     if size > MAX_INPUT_BYTES:
         raise ValueError(
@@ -31,7 +56,36 @@ def _load_transactions(path: Path) -> list[dict]:
         payload = json.load(fh)
     if not isinstance(payload, list):
         raise ValueError("Expected a list of transactions in the input file")
-    return [dict(item) for item in payload]
+
+    # Parse and validate datetime fields
+    transactions = []
+    for idx, item in enumerate(payload):
+        txn = dict(item)
+
+        # Parse or validate order_ts or event_ts if present
+        for ts_field in ["order_ts", "event_ts"]:
+            if ts_field in txn:
+                value = txn[ts_field]
+
+                # Parse string to datetime
+                if isinstance(value, str):
+                    try:
+                        txn[ts_field] = datetime.fromisoformat(value)
+                    except (ValueError, TypeError) as e:
+                        raise ValueError(
+                            f"Transaction {idx}: Failed to parse {ts_field} as datetime: {value}"
+                        ) from e
+
+                # Validate non-string values are datetime objects
+                elif not isinstance(value, datetime):
+                    raise TypeError(
+                        f"Transaction {idx}: {ts_field} must be a datetime or ISO format string, "
+                        f"got {type(value).__name__}"
+                    )
+
+        transactions.append(txn)
+
+    return transactions
 
 
 class BuildDataMartRequest(BaseModel):
@@ -91,8 +145,9 @@ async def _build_customer_data_mart_impl(
         max(dates).isoformat() if dates else "",
     )
 
-    # Store in context for reuse
-    ctx.set_state("data_mart", mart)
+    # Store in shared state for reuse across tool calls
+    shared_state = get_shared_state()
+    shared_state.set("data_mart", mart)
 
     await ctx.info("Data mart built successfully")
 
