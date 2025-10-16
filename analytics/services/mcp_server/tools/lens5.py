@@ -3,8 +3,8 @@
 Wraps Lens 5 (Overall Customer Base Health) as an MCP tool for agentic orchestration.
 """
 
-from decimal import Decimal
 from datetime import datetime, timezone
+from decimal import Decimal
 
 import structlog
 from customer_base_audit.analyses.lens5 import (
@@ -159,9 +159,7 @@ def _identify_key_strengths(metrics: Lens5Metrics) -> list[str]:
     strengths = []
 
     if hs.overall_retention_rate >= STRONG_RETENTION_THRESHOLD:
-        strengths.append(
-            f"Strong customer retention at {hs.overall_retention_rate}%"
-        )
+        strengths.append(f"Strong customer retention at {hs.overall_retention_rate}%")
 
     if hs.cohort_quality_trend == "improving":
         strengths.append("Cohort quality is improving over time")
@@ -180,9 +178,14 @@ def _identify_key_strengths(metrics: Lens5Metrics) -> list[str]:
 
     # Check cohort repeat rates
     high_repeat_cohorts = [
-        c for c in metrics.cohort_repeat_behavior if c.repeat_rate >= STRONG_REPEAT_RATE_THRESHOLD
+        c
+        for c in metrics.cohort_repeat_behavior
+        if c.repeat_rate >= STRONG_REPEAT_RATE_THRESHOLD
     ]
-    if len(high_repeat_cohorts) >= len(metrics.cohort_repeat_behavior) * HIGH_REPEAT_COHORTS_PROPORTION:
+    if (
+        len(high_repeat_cohorts)
+        >= len(metrics.cohort_repeat_behavior) * HIGH_REPEAT_COHORTS_PROPORTION
+    ):
         strengths.append(
             f"{len(high_repeat_cohorts)} cohorts show strong repeat purchase behavior (>{STRONG_REPEAT_RATE_THRESHOLD}%)"
         )
@@ -227,7 +230,9 @@ def _identify_key_risks(metrics: Lens5Metrics) -> list[str]:
 
     # Check for weak cohorts
     weak_cohorts = [
-        c for c in metrics.cohort_repeat_behavior if c.repeat_rate < WEAK_REPEAT_RATE_THRESHOLD
+        c
+        for c in metrics.cohort_repeat_behavior
+        if c.repeat_rate < WEAK_REPEAT_RATE_THRESHOLD
     ]
     if weak_cohorts:
         risks.append(
@@ -280,7 +285,9 @@ def _generate_recommendations(metrics: Lens5Metrics) -> list[str]:
 
     # Weak cohort recommendations
     weak_cohorts = [
-        c for c in metrics.cohort_repeat_behavior if c.repeat_rate < WEAK_REPEAT_RATE_THRESHOLD
+        c
+        for c in metrics.cohort_repeat_behavior
+        if c.repeat_rate < WEAK_REPEAT_RATE_THRESHOLD
     ]
     if weak_cohorts:
         cohort_ids = [c.cohort_id for c in weak_cohorts[:3]]
@@ -365,7 +372,9 @@ async def _assess_customer_base_health_impl(
     )[:5]
 
     top_revenue_summaries = []
-    total_revenue = sum(c.total_revenue for c in lens5_result.cohort_revenue_contributions)
+    total_revenue = sum(
+        c.total_revenue for c in lens5_result.cohort_revenue_contributions
+    )
 
     for contrib in top_revenue:
         if total_revenue > 0:

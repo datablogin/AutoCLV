@@ -610,8 +610,6 @@ def test_lens5_health_assessment_generation():
     from customer_base_audit.analyses.lens5 import (
         Lens5Metrics,
         CustomerBaseHealthScore,
-        CohortRevenuePeriod,
-        CohortRepeatBehavior,
     )
 
     # Create test health score
@@ -643,7 +641,9 @@ def test_lens5_health_assessment_generation():
     assert len(assessment) > 0
     assert "82.5" in assessment or "82.50" in assessment  # Score mentioned
     # Grade is only in the function parameter, not always in the narrative
-    assert "85.00" in assessment or "85.0" in assessment or "85%" in assessment  # Retention mentioned
+    assert (
+        "85.00" in assessment or "85.0" in assessment or "85%" in assessment
+    )  # Retention mentioned
     assert "improving" in assessment  # Trend mentioned
 
 
@@ -742,4 +742,6 @@ def test_lens5_risk_identification():
     assert len(risks) > 0
     assert any("retention" in r.lower() for r in risks)
     assert any("declining" in r.lower() for r in risks)
-    assert any("predictability" in r.lower() or "acquisition" in r.lower() for r in risks)
+    assert any(
+        "predictability" in r.lower() or "acquisition" in r.lower() for r in risks
+    )

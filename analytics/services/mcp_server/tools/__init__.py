@@ -4,9 +4,8 @@ This module exports all MCP tools for foundation services and lens analyses.
 """
 
 # Foundation services
-from .data_mart import build_customer_data_mart
-from .rfm import calculate_rfm_metrics
 from .cohorts import create_customer_cohorts
+from .data_mart import build_customer_data_mart
 
 # Lens analyses
 from .lens1 import analyze_single_period_snapshot
@@ -14,6 +13,7 @@ from .lens2 import analyze_period_to_period_comparison
 from .lens3 import analyze_cohort_lifecycle
 from .lens4 import compare_multiple_cohorts
 from .lens5 import assess_overall_customer_base_health
+from .rfm import calculate_rfm_metrics
 
 __all__ = [
     # Foundation
