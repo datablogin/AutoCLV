@@ -12,7 +12,7 @@ from analytics.services.mcp_server.main import mcp
 async def test_mcp_server_initialization():
     """Test MCP server initializes correctly."""
     assert mcp.name == "Four Lenses Analytics"
-    assert mcp.version == "0.1.0"
+    assert mcp.version == "1.1.0"
 
 
 def test_mcp_health_check():

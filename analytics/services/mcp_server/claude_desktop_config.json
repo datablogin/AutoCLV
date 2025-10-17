@@ -1,0 +1,19 @@
+{
+  "_comment": "Template config for Claude Desktop - Replace /path/to/your/AutoCLV with your actual project path",
+  "mcpServers": {
+    "four-lenses-analytics": {
+      "command": "uv",
+      "args": [
+        "--directory",
+        "/path/to/your/AutoCLV",
+        "run",
+        "fastmcp",
+        "run",
+        "analytics/services/mcp_server/main.py"
+      ],
+      "env": {
+        "PYTHONPATH": "/path/to/your/AutoCLV"
+      }
+    }
+  }
+}
