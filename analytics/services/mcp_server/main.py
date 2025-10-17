@@ -10,7 +10,7 @@ import sys
 from contextlib import asynccontextmanager
 
 import structlog
-from fastmcp import Context, FastMCP
+from fastmcp import FastMCP
 
 # Configure structlog to write to stderr, not stdout (to avoid interfering with MCP JSON protocol)
 logging.basicConfig(
@@ -44,8 +44,8 @@ async def app_lifespan(app):
     """
     logger.info(
         "mcp_server_starting",
-        version="1.1.0",
-        phase="Phase 3 - COMPLETE: ALL LENSES FULLY OPERATIONAL!",
+        version="1.2.0",
+        phase="Phase 4A - COMPLETE: Essential Observability & Resilience!",
     )
 
     # Phase 1: No resources to initialize yet
@@ -58,59 +58,21 @@ async def app_lifespan(app):
 
 
 # Initialize MCP server
-mcp = FastMCP(name="Four Lenses Analytics", version="1.1.0", lifespan=app_lifespan)
-
-
-@mcp.tool()
-async def health_check(ctx: Context) -> dict:
-    """
-    Check health of MCP server.
-
-    Returns:
-        Health status for the MCP server
-    """
-    return {
-        "status": "healthy",
-        "version": "1.1.0",
-        "phase": "Phase 3 - COMPLETE ✅🎉 ALL LENSES FULLY OPERATIONAL!",
-        "server_name": "Four Lenses Analytics",
-        "capabilities": [
-            "Load transactions from file with automatic datetime parsing",
-            "Auto-build data mart from loaded transactions",
-            "Auto-calculate RFM metrics",
-            "Auto-create customer cohorts",
-            "Orchestrated multi-lens analysis with natural language queries",
-            "Full Lens 1 support (Current Period Snapshot)",
-            "Full Lens 4 support (Multi-Cohort Comparison)",
-            "Full Lens 5 support (Overall Customer Base Health) - FULLY WORKING!",
-            "Parallel lens execution for optimal performance",
-            "Manual and automatic foundation building",
-            "Detailed error tracking per lens with specific error messages",
-        ],
-        "version_history": [
-            "v1.1.0: REALLY THE FINAL FIX! - health_score field (not overall_health_score)",
-            "v1.0.5: Lens 5 total_customers accessed from health_score object",
-            "v1.0.4: Added detailed error tracking - lens_errors shows specific error messages",
-            "v1.0.3: Fixed Lens 5 import error (_identify_key_strengths vs _format_insights)",
-            "v1.0.2: Fixed build_customer_data_mart to store period_aggregations",
-            "v1.0.1: Fixed intent parsing - 'overall health' routes to Lens 5 only",
-            "v1.0.0: Fixed Lens 5 orchestration - correct function signature",
-            "v0.6.0: Fixed datetime parsing - enables auto-foundation building",
-            "v0.5.1: Load transactions returns summary only",
-            "v0.5.0: Fixed Lens 5 period_aggregations storage",
-        ],
-    }
+mcp = FastMCP(name="Four Lenses Analytics", version="1.2.0", lifespan=app_lifespan)
 
 
 # Import Phase 1 Foundation Tools
 # Import Phase 2 Lens Tools
 # Import Phase 3 Orchestration Tool
+# Import Phase 4A Observability Tools
 # These imports MUST happen before mcp.run() is called
 # Each module registers its tools using the @mcp.tool() decorator
 from analytics.services.mcp_server.tools import (  # noqa: E402, F401
     cohorts,
     data_loader,
     data_mart,
+    execution_metrics,
+    health_check,
     lens1,
     lens2,
     lens3,
@@ -120,7 +82,12 @@ from analytics.services.mcp_server.tools import (  # noqa: E402, F401
     rfm,
 )
 
-logger.info("mcp_server_initialized", phase="Phase 3", tools_registered=11)
+logger.info(
+    "mcp_server_initialized",
+    phase="Phase 4A",
+    tools_registered=14,
+    new_tools=["health_check", "get_execution_metrics", "reset_execution_metrics"],
+)
 
 
 if __name__ == "__main__":
