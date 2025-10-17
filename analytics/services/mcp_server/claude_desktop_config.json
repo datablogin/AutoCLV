@@ -1,0 +1,18 @@
+{
+  "mcpServers": {
+    "four-lenses-analytics": {
+      "command": "uv",
+      "args": [
+        "--directory",
+        "/Users/robertwelborn/PycharmProjects/AutoCLV/.worktrees/track-a",
+        "run",
+        "fastmcp",
+        "run",
+        "analytics/services/mcp_server/main.py"
+      ],
+      "env": {
+        "PYTHONPATH": "/Users/robertwelborn/PycharmProjects/AutoCLV/.worktrees/track-a"
+      }
+    }
+  }
+}

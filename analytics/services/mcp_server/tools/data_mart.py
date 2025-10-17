@@ -149,7 +149,16 @@ async def _build_customer_data_mart_impl(
     shared_state = get_shared_state()
     shared_state.set("data_mart", mart)
 
-    await ctx.info("Data mart built successfully")
+    # Store period aggregations separately for Lens 5
+    # Use first granularity (typically quarter or month)
+    first_granularity = list(mart.periods.keys())[0]
+    period_aggregations = mart.periods[first_granularity]
+    shared_state.set("period_aggregations", period_aggregations)
+
+    await ctx.info(
+        "Data mart built successfully",
+        extra=f"Stored {len(period_aggregations)} period aggregations for Lens 5",
+    )
 
     return DataMartResponse(
         order_count=len(mart.orders),
