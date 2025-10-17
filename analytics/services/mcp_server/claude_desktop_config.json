@@ -1,17 +1,18 @@
 {
+  "_comment": "Template config for Claude Desktop - Replace /path/to/your/AutoCLV with your actual project path",
   "mcpServers": {
     "four-lenses-analytics": {
       "command": "uv",
       "args": [
         "--directory",
-        "/Users/robertwelborn/PycharmProjects/AutoCLV/.worktrees/track-a",
+        "/path/to/your/AutoCLV",
         "run",
         "fastmcp",
         "run",
         "analytics/services/mcp_server/main.py"
       ],
       "env": {
-        "PYTHONPATH": "/Users/robertwelborn/PycharmProjects/AutoCLV/.worktrees/track-a"
+        "PYTHONPATH": "/path/to/your/AutoCLV"
       }
     }
   }

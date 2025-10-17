@@ -44,7 +44,7 @@ async def app_lifespan(app):
     """
     logger.info(
         "mcp_server_starting",
-        version="1.0.5",
+        version="1.1.0",
         phase="Phase 3 - COMPLETE: ALL LENSES FULLY OPERATIONAL!",
     )
 

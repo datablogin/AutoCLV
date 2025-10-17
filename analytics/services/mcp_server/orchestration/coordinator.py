@@ -149,8 +149,7 @@ class FourLensesCoordinator:
 
         # Lens 3: Single cohort evolution
         if any(
-            kw in query
-            for kw in ["cohort evolution", "lifecycle", "lens3", "lens 3"]
+            kw in query for kw in ["cohort evolution", "lifecycle", "lens3", "lens 3"]
         ):
             intent["lenses"].append("lens3")
 
@@ -218,7 +217,10 @@ class FourLensesCoordinator:
                 )
 
                 builder = CustomerDataMartBuilder(
-                    period_granularities=(PeriodGranularity.QUARTER, PeriodGranularity.YEAR)
+                    period_granularities=(
+                        PeriodGranularity.QUARTER,
+                        PeriodGranularity.YEAR,
+                    )
                 )
                 data_mart = builder.build(transactions)
                 self.shared_state.set("data_mart", data_mart)
@@ -235,18 +237,20 @@ class FourLensesCoordinator:
                     period_count=len(period_aggregations),
                 )
             except Exception as e:
-                logger.error("data_mart_build_failed", error=str(e), error_type=type(e).__name__)
+                logger.error(
+                    "data_mart_build_failed", error=str(e), error_type=type(e).__name__
+                )
 
         # Auto-calculate RFM if data mart available
         if has_data_mart and not has_rfm:
             logger.info("auto_calculating_rfm")
             try:
                 data_mart = self.shared_state.get("data_mart")
+
                 from customer_base_audit.foundation.rfm import (
                     calculate_rfm,
                     calculate_rfm_scores,
                 )
-                from datetime import datetime
 
                 # Use latest transaction date as observation end
                 first_granularity = list(data_mart.periods.keys())[0]
@@ -265,13 +269,17 @@ class FourLensesCoordinator:
                 has_rfm = True
                 logger.info("rfm_calculated", customer_count=len(rfm_metrics))
             except Exception as e:
-                logger.error("rfm_calculation_failed", error=str(e), error_type=type(e).__name__)
+                logger.error(
+                    "rfm_calculation_failed", error=str(e), error_type=type(e).__name__
+                )
 
         # Auto-create cohorts if data mart available
         if has_data_mart and not has_cohorts:
             logger.info("auto_creating_cohorts")
             try:
                 data_mart = self.shared_state.get("data_mart")
+                from itertools import groupby
+
                 from customer_base_audit.foundation.cohorts import (
                     assign_cohorts,
                     create_quarterly_cohorts,
@@ -279,13 +287,14 @@ class FourLensesCoordinator:
                 from customer_base_audit.foundation.customer_contract import (
                     CustomerIdentifier,
                 )
-                from itertools import groupby
 
                 # Extract customer acquisition dates from data mart
                 first_granularity = list(data_mart.periods.keys())[0]
                 periods = data_mart.periods[first_granularity]
 
-                sorted_periods = sorted(periods, key=lambda p: (p.customer_id, p.period_start))
+                sorted_periods = sorted(
+                    periods, key=lambda p: (p.customer_id, p.period_start)
+                )
                 customer_first_dates = {
                     customer_id: next(group).period_start
                     for customer_id, group in groupby(
@@ -310,7 +319,9 @@ class FourLensesCoordinator:
                 has_cohorts = True
                 logger.info("cohorts_created", cohort_count=len(cohort_defs))
             except Exception as e:
-                logger.error("cohort_creation_failed", error=str(e), error_type=type(e).__name__)
+                logger.error(
+                    "cohort_creation_failed", error=str(e), error_type=type(e).__name__
+                )
 
         state["data_mart_ready"] = has_data_mart
         state["rfm_ready"] = has_rfm
@@ -332,7 +343,9 @@ class FourLensesCoordinator:
                 message="Lens 1/2 requires RFM metrics. Load transactions first with load_transactions tool.",
             )
 
-        if ("lens3" in lenses or "lens4" in lenses or "lens5" in lenses) and not has_cohorts:
+        if (
+            "lens3" in lenses or "lens4" in lenses or "lens5" in lenses
+        ) and not has_cohorts:
             logger.warning(
                 "missing_cohort_data",
                 message="Lens 3/4/5 requires cohorts. Load transactions first with load_transactions tool.",
@@ -597,9 +610,9 @@ class FourLensesCoordinator:
             from customer_base_audit.analyses.lens5 import assess_customer_base_health
 
             from analytics.services.mcp_server.tools.lens5 import (
-                _identify_key_strengths,
-                _identify_key_risks,
                 _generate_recommendations,
+                _identify_key_risks,
+                _identify_key_strengths,
             )
 
             # Get required data from shared state
@@ -667,7 +680,9 @@ class FourLensesCoordinator:
                 "total_active_customers": health_score.total_active_customers,
                 "overall_retention_rate": float(health_score.overall_retention_rate),
                 "cohort_quality_trend": health_score.cohort_quality_trend,
-                "revenue_predictability_pct": float(health_score.revenue_predictability_pct),
+                "revenue_predictability_pct": float(
+                    health_score.revenue_predictability_pct
+                ),
                 "acquisition_dependence_pct": float(
                     health_score.acquisition_dependence_pct
                 ),
@@ -753,9 +768,7 @@ class FourLensesCoordinator:
         lenses_failed = state.get("lenses_failed", [])
         execution_time = state.get("execution_time_ms", 0)
 
-        summary = (
-            f"Executed {len(lenses_executed)} lens(es) in {execution_time:.0f}ms"
-        )
+        summary = f"Executed {len(lenses_executed)} lens(es) in {execution_time:.0f}ms"
         if lenses_failed:
             summary += f" ({len(lenses_failed)} failed: {', '.join(lenses_failed)})"
 
@@ -808,6 +821,7 @@ class FourLensesCoordinator:
             "recommendations": [],
             "lenses_executed": [],
             "lenses_failed": [],
+            "lens_errors": {},
             "execution_time_ms": 0.0,
             "error": None,
         }

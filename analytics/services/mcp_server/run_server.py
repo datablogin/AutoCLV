@@ -18,18 +18,6 @@ from analytics.services.mcp_server.main import mcp
 
 # Explicitly import all tool modules to ensure registration
 # This MUST happen before mcp.run() is called
-from analytics.services.mcp_server.tools import (
-    cohorts,
-    data_loader,
-    data_mart,
-    lens1,
-    lens2,
-    lens3,
-    lens4,
-    lens5,
-    orchestrated_analysis,
-    rfm,
-)
 
 # Print confirmation of tool registration
 print(f"✓ MCP Server: {mcp.name} v{mcp.version}", file=sys.stderr)

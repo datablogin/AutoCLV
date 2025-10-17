@@ -73,6 +73,11 @@ try:
         print(f"Raw response: {response}")
 
 finally:
-    # Clean up
-    server_proc.terminate()
-    server_proc.wait(timeout=5)
+    # Clean up - terminate gracefully, kill if necessary
+    try:
+        server_proc.terminate()
+        server_proc.wait(timeout=5)
+    except subprocess.TimeoutExpired:
+        print("Warning: Server did not terminate gracefully, forcing kill...")
+        server_proc.kill()
+        server_proc.wait()

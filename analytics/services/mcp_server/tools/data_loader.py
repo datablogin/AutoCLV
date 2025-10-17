@@ -68,6 +68,22 @@ async def load_transactions(
         # analytics/services/mcp_server/tools/data_loader.py -> project root
         project_root = Path(__file__).parent.parent.parent.parent.parent
         file_path = project_root / file_path
+    else:
+        # For absolute paths, use project root as allowed base
+        project_root = Path(__file__).parent.parent.parent.parent.parent
+
+    # Resolve to absolute path and validate it stays within project directory
+    resolved_path = file_path.resolve()
+    try:
+        resolved_path.relative_to(project_root.resolve())
+    except ValueError as e:
+        raise ValueError(
+            f"Path {resolved_path} is outside allowed directory {project_root.resolve()}. "
+            f"Only files within the project directory can be loaded."
+        ) from e
+
+    # Use validated path
+    file_path = resolved_path
 
     # Check if file exists
     if not file_path.exists():
@@ -133,7 +149,9 @@ async def load_transactions(
         shared_state.set("transactions", transactions)
 
         # Calculate summary statistics
-        unique_customers = len(set(t.get("customer_id") for t in transactions if t.get("customer_id")))
+        unique_customers = len(
+            set(t.get("customer_id") for t in transactions if t.get("customer_id"))
+        )
 
         # Get date range (now working with datetime objects)
         dates = []
@@ -149,13 +167,16 @@ async def load_transactions(
             date_range = (min_date.isoformat(), max_date.isoformat())
 
         # Store metadata
-        shared_state.set("transactions_metadata", {
-            "total_count": total_count,
-            "loaded_count": len(transactions),
-            "file_path": str(file_path),
-            "customer_count": unique_customers,
-            "date_range": date_range,
-        })
+        shared_state.set(
+            "transactions_metadata",
+            {
+                "total_count": total_count,
+                "loaded_count": len(transactions),
+                "file_path": str(file_path),
+                "customer_count": unique_customers,
+                "date_range": date_range,
+            },
+        )
 
         # Create sample with datetime objects converted to strings for JSON serialization
         sample_transactions = None

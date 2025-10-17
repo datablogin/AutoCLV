@@ -50,19 +50,21 @@ Edit `~/Library/Application Support/Claude/claude_desktop_config.json`:
       "command": "uv",
       "args": [
         "--directory",
-        "/Users/robertwelborn/PycharmProjects/AutoCLV/.worktrees/track-a",
+        "/path/to/your/AutoCLV",
         "run",
         "fastmcp",
         "run",
         "analytics/services/mcp_server/main.py"
       ],
       "env": {
-        "PYTHONPATH": "/Users/robertwelborn/PycharmProjects/AutoCLV/.worktrees/track-a"
+        "PYTHONPATH": "/path/to/your/AutoCLV"
       }
     }
   }
 }
 ```
+
+**Note:** Replace `/path/to/your/AutoCLV` with your actual project path (e.g., `/Users/yourname/Projects/AutoCLV`)
 
 #### Linux
 Edit `~/.config/claude/claude_desktop_config.json` with the same content (adjust path as needed).

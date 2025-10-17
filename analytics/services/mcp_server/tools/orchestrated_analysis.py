@@ -34,9 +34,10 @@ class OrchestratedAnalysisRequest(BaseModel):
     """Request for orchestrated Four Lenses analysis."""
 
     query: str = Field(
+        max_length=1000,
         description="Natural language query describing desired analysis. "
         "Examples: 'customer health snapshot', 'compare cohorts', "
-        "'overall base health', 'lens1 and lens5'"
+        "'overall base health', 'lens1 and lens5'",
     )
 
 
