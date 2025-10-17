@@ -10,7 +10,7 @@ import sys
 from contextlib import asynccontextmanager
 
 import structlog
-from fastmcp import Context, FastMCP
+from fastmcp import FastMCP
 
 # Configure structlog to write to stderr, not stdout (to avoid interfering with MCP JSON protocol)
 logging.basicConfig(

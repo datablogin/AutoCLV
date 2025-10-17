@@ -13,7 +13,7 @@ Usage:
 """
 
 import time
-from collections import defaultdict
+from collections import defaultdict, deque
 from datetime import datetime
 from threading import Lock
 from typing import Any
@@ -71,15 +71,17 @@ class MetricsCollector:
         self._lock = Lock()
         self._start_time = time.time()
         self._total_analyses = 0
-        self._analysis_durations: list[float] = []
+        # Bounded collection: keep last 10,000 analysis durations
+        self._analysis_durations: deque = deque(maxlen=10000)
 
         # Per-lens metrics: {lens_name: {executions, successes, failures, durations, errors}}
+        # Note: durations are bounded deques (1000 per lens) created on first use
         self._lens_data: dict[str, dict[str, Any]] = defaultdict(
             lambda: {
                 "executions": 0,
                 "successes": 0,
                 "failures": 0,
-                "durations": [],
+                "durations": deque(maxlen=1000),  # Keep last 1000 durations per lens
                 "error_types": defaultdict(int),
             }
         )
@@ -162,7 +164,7 @@ class MetricsCollector:
             overall_success_rate = (
                 (total_lens_successes / total_lens_execs * 100)
                 if total_lens_execs > 0
-                else 100.0
+                else 0.0  # No data means 0% success rate (not 100%)
             )
 
             uptime = time.time() - self._start_time

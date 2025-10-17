@@ -2,7 +2,7 @@ Test the Phase 4A observability features:
 
 1. Run health_check - verify server is healthy and check what foundation data is available
 
-2. Load sample data: load_transactions with path /Users/robertwelborn/PycharmProjects/AutoCLV/tests/fixtures/synthetic_transactions_2023_2024.csv
+2. Load sample data: load_transactions with path tests/fixtures/synthetic_transactions_2023_2024.csv
 
 3. Run health_check again to see how foundation data status has changed
 

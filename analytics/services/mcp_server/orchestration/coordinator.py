@@ -15,6 +15,7 @@ Design:
 
 import asyncio
 import time
+from collections.abc import Awaitable, Callable
 from typing import Any, TypedDict
 
 import structlog
@@ -33,11 +34,16 @@ logger = structlog.get_logger(__name__)
 tracer = trace.get_tracer(__name__)
 
 # Lazy import to avoid circular dependency
+# This global function is kept for backward compatibility but coordinator now uses dependency injection
 _metrics_collector = None
 
 
 def get_metrics_collector_instance():
-    """Get metrics collector with lazy import to avoid circular dependencies."""
+    """Get metrics collector with lazy import to avoid circular dependencies.
+
+    Note: Prefer using dependency injection via FourLensesCoordinator(metrics_collector=...)
+    for better testability. This global function is kept for backward compatibility.
+    """
     global _metrics_collector
     if _metrics_collector is None:
         from analytics.services.mcp_server.tools.execution_metrics import (
@@ -89,10 +95,22 @@ class AnalysisState(TypedDict, total=False):
 class FourLensesCoordinator:
     """Orchestrates Four Lenses analysis workflow using LangGraph."""
 
-    def __init__(self):
-        """Initialize coordinator with compiled StateGraph."""
+    def __init__(self, metrics_collector=None):
+        """Initialize coordinator with compiled StateGraph.
+
+        Args:
+            metrics_collector: Optional MetricsCollector instance for testing.
+                             If None, uses the lazy-loaded singleton instance.
+        """
         self.graph = self._build_graph()
         self.shared_state = get_shared_state()
+        self._metrics_collector = metrics_collector
+
+    def _get_metrics_collector(self):
+        """Get metrics collector instance (injected or lazy-loaded singleton)."""
+        if self._metrics_collector is not None:
+            return self._metrics_collector
+        return get_metrics_collector_instance()
 
     def _build_graph(self) -> Any:
         """Build the LangGraph state graph.
@@ -405,12 +423,14 @@ class FourLensesCoordinator:
         lens_errors: dict[str, str] = {}  # Track error messages for failed lenses
 
         # Track analysis start
-        get_metrics_collector_instance().record_analysis_start()
+        self._get_metrics_collector().record_analysis_start()
 
         # Prepare parallel execution groups
         group1_tasks: dict[str, Any] = {}
 
         # Group 1: Independent lenses (Lens 1, 3, 4, 5)
+        # Note: Retry logic is available via _execute_lens_with_retry but not used in MVP
+        # to avoid complexity. Can be enabled for production use if needed.
         if "lens1" in lenses_to_run:
             group1_tasks["lens1"] = self._execute_lens1(state)
 
@@ -450,13 +470,18 @@ class FourLensesCoordinator:
                         duration_ms=duration_ms,
                     )
 
-                    # Record failure metrics
-                    get_metrics_collector_instance().record_lens_execution(
-                        lens_name=lens_name,
-                        success=False,
-                        duration_ms=duration_ms,
-                        error_type=error_type,
-                    )
+                    # Record failure metrics (with error handling)
+                    try:
+                        self._get_metrics_collector().record_lens_execution(
+                            lens_name=lens_name,
+                            success=False,
+                            duration_ms=duration_ms,
+                            error_type=error_type,
+                        )
+                    except Exception as metrics_error:
+                        logger.warning(
+                            "metrics_recording_failed", error=str(metrics_error)
+                        )
 
                     lenses_failed.append(lens_name)
                     lens_errors[lens_name] = error_msg
@@ -468,12 +493,17 @@ class FourLensesCoordinator:
                         duration_ms=duration_ms,
                     )
 
-                    # Record success metrics
-                    get_metrics_collector_instance().record_lens_execution(
-                        lens_name=lens_name,
-                        success=True,
-                        duration_ms=duration_ms,
-                    )
+                    # Record success metrics (with error handling)
+                    try:
+                        self._get_metrics_collector().record_lens_execution(
+                            lens_name=lens_name,
+                            success=True,
+                            duration_ms=duration_ms,
+                        )
+                    except Exception as metrics_error:
+                        logger.warning(
+                            "metrics_recording_failed", error=str(metrics_error)
+                        )
 
                     lenses_executed.append(lens_name)
                     state[f"{lens_name}_result"] = result
@@ -484,6 +514,7 @@ class FourLensesCoordinator:
                 logger.info("executing_lens2_with_lens1_context")
                 lens2_start_time = time.time()
                 try:
+                    # Note: Retry logic available but not used in MVP to avoid complexity
                     result = await self._execute_lens2(state)
                     lens2_duration_ms = (time.time() - lens2_start_time) * 1000
 
@@ -496,12 +527,17 @@ class FourLensesCoordinator:
                         duration_ms=lens2_duration_ms,
                     )
 
-                    # Record success metrics
-                    get_metrics_collector_instance().record_lens_execution(
-                        lens_name="lens2",
-                        success=True,
-                        duration_ms=lens2_duration_ms,
-                    )
+                    # Record success metrics (with error handling)
+                    try:
+                        self._get_metrics_collector().record_lens_execution(
+                            lens_name="lens2",
+                            success=True,
+                            duration_ms=lens2_duration_ms,
+                        )
+                    except Exception as metrics_error:
+                        logger.warning(
+                            "metrics_recording_failed", error=str(metrics_error)
+                        )
 
                 except Exception as e:
                     lens2_duration_ms = (time.time() - lens2_start_time) * 1000
@@ -516,13 +552,18 @@ class FourLensesCoordinator:
                         duration_ms=lens2_duration_ms,
                     )
 
-                    # Record failure metrics
-                    get_metrics_collector_instance().record_lens_execution(
-                        lens_name="lens2",
-                        success=False,
-                        duration_ms=lens2_duration_ms,
-                        error_type=error_type,
-                    )
+                    # Record failure metrics (with error handling)
+                    try:
+                        self._get_metrics_collector().record_lens_execution(
+                            lens_name="lens2",
+                            success=False,
+                            duration_ms=lens2_duration_ms,
+                            error_type=error_type,
+                        )
+                    except Exception as metrics_error:
+                        logger.warning(
+                            "metrics_recording_failed", error=str(metrics_error)
+                        )
 
                     lenses_failed.append("lens2")
                     lens_errors["lens2"] = error_msg
@@ -540,7 +581,7 @@ class FourLensesCoordinator:
         execution_time_ms = (time.time() - start_time) * 1000
 
         # Record overall analysis duration
-        get_metrics_collector_instance().record_analysis_duration(execution_time_ms)
+        self._get_metrics_collector().record_analysis_duration(execution_time_ms)
 
         state["lenses_executed"] = lenses_executed
         state["lenses_failed"] = lenses_failed
@@ -563,7 +604,10 @@ class FourLensesCoordinator:
         reraise=True,
     )
     async def _execute_lens_with_retry(
-        self, lens_name: str, lens_func, state: AnalysisState
+        self,
+        lens_name: str,
+        lens_func: Callable[[AnalysisState], Awaitable[dict[str, Any]]],
+        state: AnalysisState,
     ) -> dict[str, Any]:
         """Execute a lens with automatic retry on transient failures.
 
@@ -774,7 +818,9 @@ class FourLensesCoordinator:
                     raise ValueError("Cohort assignments not found in shared state")
 
                 span.set_attribute("period_count", len(period_aggregations))
-                span.set_attribute("cohort_count", len(set(cohort_assignments.values())))
+                span.set_attribute(
+                    "cohort_count", len(set(cohort_assignments.values()))
+                )
 
                 # Determine analysis window from period aggregations
                 all_dates = [p.period_start for p in period_aggregations]
