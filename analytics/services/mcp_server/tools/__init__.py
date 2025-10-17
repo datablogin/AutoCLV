@@ -17,6 +17,10 @@ from .lens5 import assess_overall_customer_base_health
 from .orchestrated_analysis import run_orchestrated_analysis
 from .rfm import calculate_rfm_metrics
 
+# Phase 4A: Observability & Resilience
+from .execution_metrics import get_execution_metrics, reset_execution_metrics
+from .health_check import health_check
+
 __all__ = [
     # Foundation
     "build_customer_data_mart",
@@ -31,4 +35,8 @@ __all__ = [
     "assess_overall_customer_base_health",
     # Orchestration (Phase 3)
     "run_orchestrated_analysis",
+    # Observability (Phase 4A)
+    "health_check",
+    "get_execution_metrics",
+    "reset_execution_metrics",
 ]
