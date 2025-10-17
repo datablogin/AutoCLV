@@ -23,8 +23,8 @@ try:
         "params": {
             "protocolVersion": "2025-06-18",
             "capabilities": {},
-            "clientInfo": {"name": "test-client", "version": "1.0.0"}
-        }
+            "clientInfo": {"name": "test-client", "version": "1.0.0"},
+        },
     }
 
     server_proc.stdin.write(json.dumps(init_request) + "\n")
@@ -35,21 +35,13 @@ try:
     print(f"Initialize response: {response}")
 
     # Send initialized notification
-    init_notif = {
-        "jsonrpc": "2.0",
-        "method": "notifications/initialized"
-    }
+    init_notif = {"jsonrpc": "2.0", "method": "notifications/initialized"}
 
     server_proc.stdin.write(json.dumps(init_notif) + "\n")
     server_proc.stdin.flush()
 
     # Send tools/list request
-    tools_request = {
-        "jsonrpc": "2.0",
-        "id": 2,
-        "method": "tools/list",
-        "params": {}
-    }
+    tools_request = {"jsonrpc": "2.0", "id": 2, "method": "tools/list", "params": {}}
 
     server_proc.stdin.write(json.dumps(tools_request) + "\n")
     server_proc.stdin.flush()
