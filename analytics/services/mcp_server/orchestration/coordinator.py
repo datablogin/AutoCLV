@@ -1,19 +1,21 @@
-"""LangGraph Coordinator for Four Lenses Analytics - Phase 3
+"""LangGraph Coordinator for Four Lenses Analytics - Phase 3 & 5
 
 This module implements the orchestration layer that:
-1. Parses user intent (which lenses to run)
+1. Parses user intent (which lenses to run) - Phase 3: rule-based, Phase 5: optional LLM
 2. Ensures foundation data is prepared (data mart, RFM, cohorts)
 3. Executes lenses in parallel where dependencies allow
-4. Aggregates results into coherent insights
+4. Aggregates results into coherent insights - Phase 3: simple, Phase 5: optional LLM synthesis
 
 Design:
-- Rule-based intent parsing (no LLM for MVP)
+- Hybrid approach: Rule-based by default, optional LLM-powered parsing/synthesis (Phase 5)
 - StateGraph for workflow management
 - Parallel execution using asyncio.gather
 - Graceful error handling with partial results
+- Cost tracking for LLM usage
 """
 
 import asyncio
+import os
 import time
 from collections.abc import Awaitable, Callable
 from typing import Any, TypedDict
@@ -83,6 +85,7 @@ class AnalysisState(TypedDict, total=False):
     # Aggregated output
     insights: list[str]
     recommendations: list[str]
+    narrative: str | None  # LLM-generated narrative (Phase 5)
 
     # Metadata
     lenses_executed: list[str]
@@ -93,18 +96,73 @@ class AnalysisState(TypedDict, total=False):
 
 
 class FourLensesCoordinator:
-    """Orchestrates Four Lenses analysis workflow using LangGraph."""
+    """Orchestrates Four Lenses analysis workflow using LangGraph.
 
-    def __init__(self, metrics_collector=None):
+    Phase 3: Rule-based intent parsing and simple result aggregation
+    Phase 5: Optional LLM-powered parsing and narrative synthesis
+
+    The coordinator supports both modes:
+    - use_llm=False (default): Fast, free, rule-based parsing
+    - use_llm=True: Claude-powered parsing and synthesis (costs ~$0.05-0.10 per analysis)
+    """
+
+    def __init__(
+        self,
+        metrics_collector=None,
+        use_llm: bool = False,
+        anthropic_api_key: str | None = None,
+    ):
         """Initialize coordinator with compiled StateGraph.
 
         Args:
             metrics_collector: Optional MetricsCollector instance for testing.
                              If None, uses the lazy-loaded singleton instance.
+            use_llm: Whether to use LLM-powered parsing and synthesis (Phase 5).
+                    Default: False (uses rule-based parsing from Phase 3)
+            anthropic_api_key: Anthropic API key for Claude (required if use_llm=True).
+                              If None, attempts to read from ANTHROPIC_API_KEY env var.
+
+        Raises:
+            ValueError: If use_llm=True but no API key provided
         """
         self.graph = self._build_graph()
         self.shared_state = get_shared_state()
         self._metrics_collector = metrics_collector
+        self.use_llm = use_llm
+
+        # Initialize LLM components if requested (Phase 5)
+        self.query_interpreter = None
+        self.result_synthesizer = None
+
+        if use_llm:
+            # Get API key from parameter or environment
+            api_key = anthropic_api_key or os.getenv("ANTHROPIC_API_KEY")
+            if not api_key:
+                raise ValueError(
+                    "Anthropic API key required when use_llm=True. "
+                    "Provide anthropic_api_key parameter or set ANTHROPIC_API_KEY env var."
+                )
+
+            # Lazy import to avoid dependency when not using LLM features
+            from analytics.services.mcp_server.orchestration.query_interpreter import (
+                QueryInterpreter,
+            )
+            from analytics.services.mcp_server.orchestration.result_synthesizer import (
+                ResultSynthesizer,
+            )
+
+            self.query_interpreter = QueryInterpreter(api_key)
+            self.result_synthesizer = ResultSynthesizer(api_key)
+
+            logger.info(
+                "coordinator_initialized_with_llm",
+                use_llm=True,
+                model="claude-3-5-sonnet-20241022",
+                query_interpreter_initialized=self.query_interpreter is not None,
+                result_synthesizer_initialized=self.result_synthesizer is not None,
+            )
+        else:
+            logger.info("coordinator_initialized_without_llm", use_llm=False)
 
     def _get_metrics_collector(self):
         """Get metrics collector instance (injected or lazy-loaded singleton)."""
@@ -141,8 +199,8 @@ class FourLensesCoordinator:
     async def _parse_intent(self, state: AnalysisState) -> AnalysisState:
         """Parse user query into structured intent.
 
-        Phase 3 MVP: Rule-based keyword matching
-        Phase 5: LLM-based parsing with Claude
+        Phase 3 MVP: Rule-based keyword matching (default)
+        Phase 5: Optional LLM-based parsing with Claude (if use_llm=True)
 
         Args:
             state: Current workflow state
@@ -150,8 +208,41 @@ class FourLensesCoordinator:
         Returns:
             Updated state with parsed intent
         """
-        query = state["query"].lower()
-        logger.info("parsing_intent", query=state["query"])
+        query = state["query"]
+        logger.info("parsing_intent", query=query, use_llm=self.use_llm)
+
+        # Phase 5: Use LLM-powered parsing if enabled
+        if self.use_llm and self.query_interpreter:
+            try:
+                parsed_intent = await self.query_interpreter.parse_query(query)
+
+                intent: dict[str, Any] = {
+                    "lenses": parsed_intent.lenses,
+                    "date_range": parsed_intent.date_range,
+                    "cohort_filter": parsed_intent.filters.get("cohort_id"),
+                    "parameters": parsed_intent.parameters,
+                }
+
+                logger.info(
+                    "intent_parsed_with_llm",
+                    lenses=intent["lenses"],
+                    lens_count=len(intent["lenses"]),
+                    reasoning=parsed_intent.reasoning[:100],  # Truncate for logging
+                )
+
+                state["intent"] = intent
+                return state
+
+            except Exception as e:
+                logger.warning(
+                    "llm_parsing_failed_falling_back_to_rules",
+                    error=str(e),
+                    error_type=type(e).__name__,
+                )
+                # Fall back to rule-based parsing if LLM fails
+
+        # Phase 3: Rule-based keyword matching (default or fallback)
+        query_lower = query.lower()
 
         intent: dict[str, Any] = {
             "lenses": [],
@@ -169,7 +260,7 @@ class FourLensesCoordinator:
             "lens5",
             "lens 5",
         ]
-        if any(kw in query for kw in lens5_keywords):
+        if any(kw in query_lower for kw in lens5_keywords):
             intent["lenses"].append("lens5")
 
         # Lens 1: Snapshot/health keywords (but not "overall health" which is Lens 5)
@@ -178,25 +269,26 @@ class FourLensesCoordinator:
         if "lens5" not in intent["lenses"]:
             lens1_keywords.append("health")
 
-        if any(kw in query for kw in lens1_keywords):
+        if any(kw in query_lower for kw in lens1_keywords):
             intent["lenses"].append("lens1")
 
         # Lens 2: Comparison/trend keywords
         if any(
-            kw in query
+            kw in query_lower
             for kw in ["compare", "comparison", "trend", "change", "lens2", "lens 2"]
         ):
             intent["lenses"].append("lens2")
 
         # Lens 3: Single cohort evolution
         if any(
-            kw in query for kw in ["cohort evolution", "lifecycle", "lens3", "lens 3"]
+            kw in query_lower
+            for kw in ["cohort evolution", "lifecycle", "lens3", "lens 3"]
         ):
             intent["lenses"].append("lens3")
 
         # Lens 4: Multi-cohort comparison
         if any(
-            kw in query
+            kw in query_lower
             for kw in [
                 "cohort comparison",
                 "cohort analysis",
@@ -210,14 +302,14 @@ class FourLensesCoordinator:
 
         # If no specific lens detected, run Lens 1 as default
         if not intent["lenses"]:
-            logger.info("no_lens_detected_defaulting_to_lens1", query=state["query"])
+            logger.info("no_lens_detected_defaulting_to_lens1", query=query)
             intent["lenses"].append("lens1")
 
         # Remove duplicates and sort
         intent["lenses"] = sorted(set(intent["lenses"]))
 
         logger.info(
-            "intent_parsed",
+            "intent_parsed_with_rules",
             lenses=intent["lenses"],
             lens_count=len(intent["lenses"]),
         )
@@ -911,8 +1003,8 @@ class FourLensesCoordinator:
     async def _synthesize_results(self, state: AnalysisState) -> AnalysisState:
         """Synthesize results from all executed lenses.
 
-        Phase 3 MVP: Simple aggregation of insights and recommendations
-        Phase 5: LLM-based narrative generation with Claude
+        Phase 3 MVP: Simple aggregation of insights and recommendations (default)
+        Phase 5: Optional LLM-based narrative generation with Claude (if use_llm=True)
 
         Args:
             state: Current workflow state
@@ -920,8 +1012,68 @@ class FourLensesCoordinator:
         Returns:
             Updated state with aggregated insights and recommendations
         """
-        logger.info("synthesizing_results")
+        logger.info(
+            "synthesizing_results",
+            use_llm=self.use_llm,
+            result_synthesizer_exists=self.result_synthesizer is not None,
+            will_attempt_llm=self.use_llm and self.result_synthesizer is not None,
+        )
 
+        # Phase 5: Use LLM-powered synthesis if enabled
+        if self.use_llm and self.result_synthesizer:
+            logger.info("attempting_llm_synthesis", query=state.get("query", ""))
+            try:
+                # Collect lens results for synthesis
+                lens_results = {
+                    "lens1": state.get("lens1_result"),
+                    "lens2": state.get("lens2_result"),
+                    "lens3": state.get("lens3_result"),
+                    "lens4": state.get("lens4_result"),
+                    "lens5": state.get("lens5_result"),
+                }
+
+                query = state.get("query", "")
+                synthesized = await self.result_synthesizer.synthesize(
+                    query, lens_results
+                )
+
+                # Add execution summary to insights
+                lenses_executed = state.get("lenses_executed", [])
+                lenses_failed = state.get("lenses_failed", [])
+                execution_time = state.get("execution_time_ms", 0)
+
+                summary = (
+                    f"Executed {len(lenses_executed)} lens(es) in {execution_time:.0f}ms"
+                )
+                if lenses_failed:
+                    summary += f" ({len(lenses_failed)} failed: {', '.join(lenses_failed)})"
+
+                # Combine LLM-generated insights with execution summary
+                all_insights = [summary, synthesized.summary] + synthesized.insights
+
+                state["insights"] = all_insights
+                state["recommendations"] = synthesized.recommendations
+                state["narrative"] = synthesized.narrative  # Add narrative to state
+
+                logger.info(
+                    "synthesis_complete_with_llm",
+                    insight_count=len(all_insights),
+                    recommendation_count=len(synthesized.recommendations),
+                    narrative_length=len(synthesized.narrative),
+                )
+
+                return state
+
+            except Exception as e:
+                logger.warning(
+                    "llm_synthesis_failed_falling_back_to_simple",
+                    error=str(e),
+                    error_type=type(e).__name__,
+                    traceback=True,
+                )
+                # Fall back to simple aggregation if LLM fails
+
+        # Phase 3: Simple aggregation of insights and recommendations (default or fallback)
         all_insights: list[str] = []
         all_recommendations: list[str] = []
 
@@ -979,7 +1131,7 @@ class FourLensesCoordinator:
         state["recommendations"] = all_recommendations
 
         logger.info(
-            "synthesis_complete",
+            "synthesis_complete_with_simple_aggregation",
             insight_count=len(all_insights),
             recommendation_count=len(all_recommendations),
         )
@@ -1022,6 +1174,7 @@ class FourLensesCoordinator:
                 "lens5_result": None,
                 "insights": [],
                 "recommendations": [],
+                "narrative": None,  # LLM-generated narrative (Phase 5)
                 "lenses_executed": [],
                 "lenses_failed": [],
                 "lens_errors": {},
