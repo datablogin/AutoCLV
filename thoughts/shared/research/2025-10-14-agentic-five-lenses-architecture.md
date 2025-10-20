@@ -6,9 +6,10 @@ branch: feature/issue-58-cohort-safety
 repository: AutoCLV (track-a worktree)
 topic: "Agentic Architecture for Independent Five Lenses Execution with BAML and Alternative Frameworks"
 tags: [research, architecture, agents, baml, langgraph, crewai, autogen, five-lenses, multi-agent]
-status: complete
-last_updated: 2025-10-14
+status: updated
+last_updated: 2025-10-16
 last_updated_by: Claude
+update_notes: "Updated to reflect Lens 5 full implementation (customer_base_audit/analyses/lens5.py - 905 lines). All 5 lenses now complete."
 ---
 
 # Research: Agentic Architecture for Independent Five Lenses Execution
@@ -25,7 +26,7 @@ Can the AutoCLV Five Lenses application be redesigned as independent agents that
 
 ## Executive Summary
 
-**Feasibility**: YES - The Five Lenses architecture is well-suited for agent-based implementation. Current lens design already exhibits significant independence (Lenses 1, 3, 4 are fully independent; Lens 2 has optional dependency on Lens 1).
+**Feasibility**: YES - The Five Lenses architecture is well-suited for agent-based implementation. **All 5 lenses are now fully implemented** with excellent independence characteristics (Lenses 1, 3, 4, 5 are fully independent; Lens 2 has optional dependency on Lens 1).
 
 **Best Framework Recommendation**: **LangGraph** emerges as the optimal choice for AutoCLV's analytical pipeline needs, offering the lowest overhead, best performance benchmarks, and excellent support for structured data workflows. BAML is highly promising but currently focuses on structured outputs rather than multi-agent orchestration (though the team indicated 2025 will bring "an answer to LangGraph").
 
@@ -52,10 +53,11 @@ Can the AutoCLV Five Lenses application be redesigned as independent agents that
 | **Lens 2** | RFMMetrics × 2 | Foundation: rfm.py<br>Optional: Lens1Metrics | ⭐⭐⭐⭐ Mostly Independent |
 | **Lens 3** | PeriodAggregation | Foundation: data_mart.py | ⭐⭐⭐⭐⭐ Fully Independent |
 | **Lens 4** | PeriodAggregation | Foundation: data_mart.py, cohorts.py | ⭐⭐⭐⭐⭐ Fully Independent |
-| **Lens 5** | (Not Implemented) | Planned: Lens 1 + Lens 4 | ⭐⭐⭐ Integrative |
+| **Lens 5** | PeriodAggregation + Cohorts | Foundation: data_mart.py, cohorts.py | ⭐⭐⭐⭐⭐ Fully Independent |
 
 **Key Architectural Insight**:
-- **3 out of 4 implemented lenses are fully independent** (Lens 1, 3, 4)
+- **All 5 lenses are now fully implemented**
+- **4 out of 5 lenses are fully independent** (Lens 1, 3, 4, 5)
 - Lens 2 can calculate its own Lens 1 metrics if not provided (optional dependency)
 - All lenses converge on shared foundation modules (RFM, data mart, cohorts) but don't directly call each other
 - **This is already an agent-ready architecture!**
@@ -65,6 +67,82 @@ Can the AutoCLV Five Lenses application be redesigned as independent agents that
 - Lens 2: `customer_base_audit/analyses/lens2.py:155` - `analyze_period_comparison()` with optional Lens1 params
 - Lens 3: `customer_base_audit/analyses/lens3.py:144` - `analyze_cohort_evolution()`
 - Lens 4: `customer_base_audit/analyses/lens4.py:585` - `compare_cohorts()`
+- Lens 5: `customer_base_audit/analyses/lens5.py:769` - `assess_customer_base_health()`
+
+#### Lens 5 Implementation Details
+
+**Module**: `customer_base_audit/analyses/lens5.py` (905 lines)
+
+**Purpose**: Overall Customer Base Health - Integrative analysis combining cohort revenue contributions, repeat purchase behavior, and health scoring.
+
+**Key Components**:
+
+1. **CohortRevenuePeriod** (lines 68-110):
+   - Tracks revenue contribution from each cohort in each calendar period
+   - Powers Customer Cohort Chart (C3) visualizations
+   - Metrics: total_revenue, pct_of_period_revenue, active_customers, avg_revenue_per_customer
+
+2. **CohortRepeatBehavior** (lines 113-161):
+   - Analyzes repeat purchase patterns by cohort
+   - Metrics: cohort_size, one_time_buyers, repeat_buyers, repeat_rate, avg_orders_per_repeat_buyer
+   - Critical for assessing cohort quality over time
+
+3. **CustomerBaseHealthScore** (lines 164-229):
+   - Composite health assessment (0-100 score + letter grade A-F)
+   - Weighted scoring formula:
+     - Retention rate: 30%
+     - Cohort quality trend: 30% (improving=80, stable=50, declining=20)
+     - Revenue predictability: 20%
+     - Acquisition independence: 20% (100 - dependence)
+   - Grade thresholds: A ≥90, B ≥80, C ≥70, D ≥60, F <60
+
+4. **Core Analysis Functions**:
+   - `assess_customer_base_health()` (lines 769-904): Main entry point
+   - `determine_cohort_quality_trend()` (lines 231-296): Compares newest vs oldest cohort repeat rates
+   - `calculate_revenue_metrics()` (lines 298-359): Optimized single-pass calculation of predictability & dependence
+   - `calculate_overall_retention_rate()` (lines 450-489): Retention across all cohorts
+   - `calculate_health_score()` (lines 492-573): Weighted composite score calculation
+
+5. **Performance Optimizations**:
+   - Single-pass revenue calculation to avoid duplicate iteration (lines 298-359)
+   - C3 data calculation with efficient grouping (lines 628-695)
+   - Repeat behavior calculation with dictionary-based aggregation (lines 698-766)
+
+**Data Flow**:
+```
+PeriodAggregation + CohortAssignments
+    ↓
+_calculate_c3_data() → CohortRevenuePeriod[]
+_calculate_repeat_behavior() → CohortRepeatBehavior[]
+    ↓
+calculate_revenue_metrics() → (predictability %, dependence %)
+determine_cohort_quality_trend() → "improving" | "stable" | "declining"
+calculate_overall_retention_rate() → retention %
+    ↓
+calculate_health_score() → (score, grade)
+    ↓
+Lens5Metrics (complete health assessment)
+```
+
+**Independence Analysis**:
+- **Fully Independent**: Takes only PeriodAggregation and cohort_assignments as input
+- No dependencies on other lenses (Lens 1-4)
+- Self-contained calculations for all health metrics
+- Can be run in parallel with other lenses
+
+**Testing**:
+- Comprehensive validation logic in `__post_init__` methods
+- Percentage validation (0-100 range)
+- Logical consistency checks (e.g., one_time_buyers + repeat_buyers = cohort_size)
+- Date range validation
+- Sorting validation for time-series data
+
+**Agent-Ready Features**:
+- Pure deterministic calculations (no randomness)
+- Immutable dataclasses (frozen=True)
+- Clear input/output contracts
+- Comprehensive error handling with descriptive messages
+- Performance-optimized for large datasets
 
 ---
 
@@ -517,22 +595,24 @@ assert isinstance(result.data, Lens1Output)  # Type-safe!
 Coordinator Agent
       ↓
    Scatter
-      ├─→ Lens 1 Agent (RFMMetrics) ──┐
-      ├─→ Lens 3 Agent (Cohort A)  ───┤
-      └─→ Lens 4 Agent (Multi-cohort)─┤
-                                       ↓
-                                   Gather
-                                       ↓
-                            Aggregate Results
-                                       ↓
-                          Unified CLV Dashboard
+      ├─→ Lens 1 Agent (RFMMetrics) ──────┐
+      ├─→ Lens 3 Agent (Cohort Evolution)─┤
+      ├─→ Lens 4 Agent (Multi-cohort) ────┤
+      └─→ Lens 5 Agent (Overall Health) ──┤
+                                           ↓
+                                       Gather
+                                           ↓
+                                Aggregate Results
+                                           ↓
+                              Unified CLV Dashboard
 ```
 
 **Benefits**:
-- Parallel execution reduces latency by 3-5×
+- Parallel execution reduces latency by 4-5× (4 independent lenses)
 - Independent lens failures don't cascade
 - Easy to add/remove lenses dynamically
 - Natural fit for AutoCLV's independent lens design
+- Lens 2 can optionally run after Lens 1 completes, or independently
 
 **Technical Implementation**:
 - AWS Step Functions for orchestration
@@ -759,16 +839,16 @@ Coordinator Agent
     └────────┬───────┘  └────────┬───────┘
              │                   │
              ↓                   ↓
-    ┌─────────────────────────────────────┐
-    │         Parallel Lens Execution     │
-    │                                     │
-    │  ┌─────────┐  ┌─────────┐  ┌─────────┐  ┌─────────┐
-    │  │ Lens 1  │  │ Lens 2  │  │ Lens 3  │  │ Lens 4  │
-    │  │ Agent   │  │ Agent   │  │ Agent   │  │ Agent   │
-    │  │(Stateless│ │(Stateless│ │(Stateless│ │(Stateless│
-    │  └─────────┘  └─────────┘  └─────────┘  └─────────┘
-    │                                     │
-    └─────────────────────────────────────┘
+    ┌────────────────────────────────────────────────────────┐
+    │              Parallel Lens Execution                   │
+    │                                                        │
+    │  ┌─────────┐  ┌─────────┐  ┌─────────┐  ┌─────────┐  ┌─────────┐
+    │  │ Lens 1  │  │ Lens 2  │  │ Lens 3  │  │ Lens 4  │  │ Lens 5  │
+    │  │ Agent   │  │ Agent   │  │ Agent   │  │ Agent   │  │ Agent   │
+    │  │(Stateless│ │(Stateless│ │(Stateless│ │(Stateless│ │(Stateless│
+    │  └─────────┘  └─────────┘  └─────────┘  └─────────┘  └─────────┘
+    │                                                        │
+    └────────────────────────────────────────────────────────┘
              │
              ↓
     ┌────────────────┐
@@ -795,7 +875,7 @@ Coordinator Agent
 - Expose via MCP server interfaces
 
 **Phase 2: Stateless Lens Agents (Week 2)**
-- Create one agent per lens (Lens 1-4)
+- Create one agent per lens (Lens 1-5) ✅ **All lenses implemented**
 - Each agent is a simple wrapper calling existing lens functions
 - Deploy as independent services (FastAPI, Lambda, or local)
 
@@ -943,7 +1023,7 @@ Coordinator Agent
 │       Existing Analytical Core (Keep As-Is)     │
 │                                                 │
 │  - RFM calculation (rfm.py)                     │
-│  - Lenses 1-4 (lens1.py - lens4.py)           │
+│  - Lenses 1-5 (lens1.py - lens5.py) ✅         │
 │  - Data mart (data_mart.py)                    │
 │  - Cohorts (cohorts.py)                        │
 │  - Pandas adapters                              │
@@ -965,6 +1045,18 @@ Coordinator Agent
        """Calculate Lens 1 single-period metrics"""
        metrics = [RFMMetrics(**m) for m in rfm_data]
        result = analyze_single_period(metrics)
+       return asdict(result)
+
+   @server.tool()
+   def run_lens5(period_data: List[dict], cohort_assignments: dict,
+                 start_date: str, end_date: str) -> dict:
+       """Calculate Lens 5 overall customer base health"""
+       periods = [PeriodAggregation(**p) for p in period_data]
+       result = assess_customer_base_health(
+           periods, cohort_assignments,
+           datetime.fromisoformat(start_date),
+           datetime.fromisoformat(end_date)
+       )
        return asdict(result)
 
    # Repeat for lens2, lens3, lens4
@@ -990,7 +1082,7 @@ Coordinator Agent
 
    workflow = StateGraph(AnalyticsState)
    workflow.add_node("interpret", interpret_query)
-   workflow.add_node("lenses", ToolNode([run_lens1, run_lens2, run_lens3, run_lens4]))
+   workflow.add_node("lenses", ToolNode([run_lens1, run_lens2, run_lens3, run_lens4, run_lens5]))
    workflow.add_node("synthesize", synthesize_results)
    ```
 
@@ -1010,6 +1102,7 @@ Coordinator Agent
 - Lens 2: `customer_base_audit/analyses/lens2.py:155-370`
 - Lens 3: `customer_base_audit/analyses/lens3.py:144-321`
 - Lens 4: `customer_base_audit/analyses/lens4.py:585-821`
+- Lens 5: `customer_base_audit/analyses/lens5.py:769-904` ✅ **Fully Implemented**
 - RFM Foundation: `customer_base_audit/foundation/rfm.py:178-384`
 - Cohorts Foundation: `customer_base_audit/foundation/cohorts.py:237-345`
 - Data Mart: `customer_base_audit/foundation/data_mart.py:126-307`
@@ -1060,7 +1153,9 @@ Coordinator Agent
 ### Can Five Lenses Be Independent Agents? **YES**
 
 The current architecture is **already agent-ready**:
-- 3 out of 4 lenses are fully independent (Lens 1, 3, 4)
+- **All 5 lenses are now fully implemented** ✅
+- **4 out of 5 lenses are fully independent** (Lens 1, 3, 4, 5)
+- Lens 2 has optional dependency on Lens 1 (can run independently)
 - Shared foundation modules can be exposed as services
 - Parallel processing capability already exists (Issue #75)
 - Clear API boundaries defined
@@ -1101,7 +1196,7 @@ For **fastest execution**: Agno (529× faster instantiation)
 **Start Simple**:
 1. Week 1: Expose Lens 1 as MCP tool
 2. Week 2: Add LangGraph coordinator for single lens
-3. Week 3: Extend to all 4 lenses
+3. Week 3: Extend to all 5 lenses (all implemented ✅)
 4. Week 4: Add observability and resilience
 5. Week 5: Natural language query interface
 
