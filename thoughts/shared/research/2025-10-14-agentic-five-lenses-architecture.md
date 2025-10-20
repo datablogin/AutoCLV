@@ -1112,8 +1112,9 @@ Coordinator Agent
 - Foundation exports: `customer_base_audit/foundation/__init__.py`
 
 **Test Coverage**:
-- Total tests: 384 passing
+- Total tests: 598 passing (384 core + 19 formatter tests + 195 other)
 - Lens-specific tests: `tests/test_lens1.py`, `tests/test_lens2.py`, `tests/test_lens3.py`, `tests/test_lens4.py`
+- Formatter tests: `tests/test_mcp_formatters.py` (19 tests)
 - Integration test: `tests/test_integration_five_lenses.py:28-317`
 
 ---

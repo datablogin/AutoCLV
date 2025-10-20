@@ -156,6 +156,7 @@ This plan merges two complementary initiatives:
 #### 2.1. Copy Formatters to Track A
 ```bash
 # From main branch
+# Note: Path verified to exist in track-a worktree (2025-10-20)
 cp -r customer_base_audit/mcp/formatters/ \
   .worktrees/track-a/analytics/services/mcp_server/formatters/
 
