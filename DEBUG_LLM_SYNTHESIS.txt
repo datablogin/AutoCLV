@@ -1,0 +1,120 @@
+=====================================================
+DEBUG LLM SYNTHESIS ISSUE
+Copy this into Claude Desktop
+=====================================================
+
+I've added debug logging to trace the LLM synthesis execution.
+
+STEP 1: RELOAD FOUNDATION DATA
+================================
+
+Load sample data:
+Run load_transactions with file_path: /Users/robertwelborn/PycharmProjects/AutoCLV/.worktrees/track-a/synthetic_transactions.json
+
+Build foundation (run in sequence):
+- build_customer_data_mart
+- calculate_rfm_metrics
+- create_customer_cohorts
+
+Verify ready:
+Run health_check
+
+
+STEP 2: RUN WITH LLM (CHECK LOGS)
+===================================
+
+Run run_orchestrated_analysis with:
+- query: "Tell me about customer health and which cohorts are performing best"
+- use_llm: true
+- use_cache: false
+
+EXPECTED DEBUG OUTPUT IN LOGS:
+------------------------------
+You should see these log entries in your MCP server logs (stderr) IN THIS ORDER:
+
+1. orchestrated_analysis_received
+   - query: "Tell me about customer health..."
+   - use_llm: true
+   - use_cache: false
+
+2. coordinator_initialized_with_llm (or coordinator_initialized_without_llm)
+   - use_llm: true (should be true!)
+   - query_interpreter_initialized: true (should be true!)
+   - result_synthesizer_initialized: true (should be true!)
+
+3. synthesizing_results
+   - use_llm: true (should be true!)
+   - result_synthesizer_exists: true (should be true!)
+   - will_attempt_llm: true (should be true!)
+
+4. attempting_llm_synthesis (only if will_attempt_llm was true)
+   - query: "Tell me about customer health..."
+
+5. synthesis_complete_with_llm (only if LLM synthesis succeeded)
+   - narrative_length: (should be > 0)
+
+OR if LLM synthesis failed:
+
+5. llm_synthesis_failed_falling_back_to_simple
+   - error: (error message)
+   - error_type: (exception type)
+
+
+WHAT TO CHECK:
+==============
+
+After running Step 2, check your Claude Desktop logs for each message:
+
+✅ Log Entry #1: orchestrated_analysis_received
+   - Did it receive use_llm: true?
+   - Did it receive use_cache: false?
+   - If NO: The parameters aren't being passed correctly from Claude Desktop
+
+✅ Log Entry #2: coordinator_initialized_with_llm
+   - Does it say "coordinator_initialized_with_llm" (not "without_llm")?
+   - Are query_interpreter_initialized and result_synthesizer_initialized both true?
+   - If NO: The API key check is failing OR use_llm is being set to False
+
+✅ Log Entry #3: synthesizing_results
+   - Is use_llm: true?
+   - Is result_synthesizer_exists: true?
+   - Is will_attempt_llm: true?
+   - If ANY are false: We've found the bug!
+
+✅ Log Entry #4: attempting_llm_synthesis
+   - Does this message appear?
+   - If NO: The condition check at line 1023 is failing (check values from #3)
+   - If YES: LLM synthesis is being attempted (good!)
+
+✅ Log Entry #5a: synthesis_complete_with_llm
+   - Does this appear?
+   - What is narrative_length? (should be > 100)
+   - If appears: SUCCESS! LLM synthesis worked!
+
+✅ Log Entry #5b: llm_synthesis_failed_falling_back_to_simple
+   - Does this appear instead of #5a?
+   - What is the error message?
+   - What is the error_type?
+   - If appears: LLM synthesis was attempted but failed (check error for reason)
+
+
+WHERE TO FIND LOGS:
+===================
+
+Claude Desktop logs are typically at:
+- macOS: ~/Library/Logs/Claude/mcp*.log
+- Look for the most recent log file
+
+Or check stderr output in Claude Desktop's MCP server output panel.
+
+
+REPORT BACK:
+============
+
+Please share:
+1. Which log messages appear (1-5 from above)
+2. The values shown in each log message
+3. Any error messages you see
+4. The response you received (especially duration and narrative field)
+
+This will tell us exactly where in the code path the LLM synthesis is failing.

@@ -12,6 +12,12 @@ from contextlib import asynccontextmanager
 import structlog
 from fastmcp import FastMCP
 
+# Version and phase constants
+VERSION = "2.0.0"
+PHASE = (
+    "Phase 5 - Natural Language Interface with LLM-powered query parsing and synthesis"
+)
+
 # Configure structlog to write to stderr, not stdout (to avoid interfering with MCP JSON protocol)
 logging.basicConfig(
     format="%(message)s",
@@ -44,8 +50,8 @@ async def app_lifespan(app):
     """
     logger.info(
         "mcp_server_starting",
-        version="1.2.0",
-        phase="Phase 4A - COMPLETE: Essential Observability & Resilience!",
+        version=VERSION,
+        phase=PHASE,
     )
 
     # Phase 1: No resources to initialize yet
@@ -58,19 +64,22 @@ async def app_lifespan(app):
 
 
 # Initialize MCP server
-mcp = FastMCP(name="Four Lenses Analytics", version="1.2.0", lifespan=app_lifespan)
+mcp = FastMCP(name="Four Lenses Analytics", version=VERSION, lifespan=app_lifespan)
 
 
 # Import Phase 1 Foundation Tools
 # Import Phase 2 Lens Tools
 # Import Phase 3 Orchestration Tool
 # Import Phase 4A Observability Tools
+# Import Phase 5 Conversational Analysis Tool
 # These imports MUST happen before mcp.run() is called
 # Each module registers its tools using the @mcp.tool() decorator
 from analytics.services.mcp_server.tools import (  # noqa: E402, F401
     cohorts,
+    conversational_analysis,
     data_loader,
     data_mart,
+    debug_env,
     execution_metrics,
     health_check,
     lens1,
@@ -84,9 +93,15 @@ from analytics.services.mcp_server.tools import (  # noqa: E402, F401
 
 logger.info(
     "mcp_server_initialized",
-    phase="Phase 4A",
-    tools_registered=14,
-    new_tools=["health_check", "get_execution_metrics", "reset_execution_metrics"],
+    phase="Phase 5",
+    tools_registered=16,
+    new_tools=[
+        "health_check",
+        "get_execution_metrics",
+        "reset_execution_metrics",
+        "run_conversational_analysis",
+        "debug_environment",
+    ],
 )
 
 

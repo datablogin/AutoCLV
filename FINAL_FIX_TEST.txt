@@ -1,0 +1,87 @@
+=====================================================
+FINAL FIX TEST - JSON Parsing Issue Resolved
+Copy this into Claude Desktop
+=====================================================
+
+ROOT CAUSE IDENTIFIED AND FIXED:
+================================
+
+The LLM was being invoked correctly, but failing with:
+"Invalid JSON in Claude response: Invalid control character at: line 18 column 403"
+
+Claude's narrative responses contain newlines and special characters that break
+strict JSON parsing. Fixed by adding `strict=False` to json.loads().
+
+
+TEST THE FIX:
+=============
+
+STEP 1: Restart Claude Desktop
+-------------------------------
+You MUST restart Claude Desktop to load the updated code!
+
+
+STEP 2: Load Foundation Data
+-----------------------------
+
+Run load_transactions with file_path: /Users/robertwelborn/PycharmProjects/AutoCLV/.worktrees/track-a/synthetic_transactions.json
+
+Build foundation (run in sequence):
+- build_customer_data_mart
+- calculate_rfm_metrics
+- create_customer_cohorts
+
+Verify ready:
+Run health_check
+
+
+STEP 3: Test LLM Synthesis (Should Work Now!)
+----------------------------------------------
+
+Run run_orchestrated_analysis with:
+- query: "Tell me about customer health and which cohorts are performing best"
+- use_llm: true
+- use_cache: false
+
+
+EXPECTED SUCCESS:
+=================
+
+✅ Duration: 2-10 seconds (LLM call)
+✅ narrative field: PRESENT and populated with detailed text (should be 500-2000 chars)
+✅ token_usage: Shows input/output tokens
+✅ cache_hit: false (first run)
+✅ No errors in logs!
+
+
+STEP 4: Test Caching
+---------------------
+
+Run the EXACT same query again with use_cache: true
+
+Expected:
+✅ Duration: <100ms (instant!)
+✅ narrative: Same as Step 3
+✅ cache_hit: true
+✅ Cost: $0.00
+
+
+SUCCESS CRITERIA:
+=================
+
+[ ] Step 3: narrative field is present and detailed
+[ ] Step 3: No "llm_synthesis_failed_falling_back_to_simple" in logs
+[ ] Step 3: Execution takes 2-10 seconds
+[ ] Step 4: Cache hit confirmed (instant response)
+[ ] No JSON parsing errors
+
+
+WHAT WAS FIXED:
+===============
+
+File: analytics/services/mcp_server/orchestration/result_synthesizer.py
+Line: 329
+Change: json.loads(content.strip()) → json.loads(content.strip(), strict=False)
+
+This allows Claude's narrative to contain newlines, tabs, and other control
+characters without breaking JSON parsing.
