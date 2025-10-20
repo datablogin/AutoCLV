@@ -1,0 +1,143 @@
+=====================================================
+PHASE 5 COMPLETE TEST (WITH FOUNDATION SETUP)
+Copy this entire prompt into Claude Desktop
+=====================================================
+
+Please run this complete Phase 5 test sequence:
+
+PART 1: SETUP FOUNDATION DATA
+==============================
+
+Step 1: Load sample data
+Run load_transactions with file_path: /Users/robertwelborn/PycharmProjects/AutoCLV/.worktrees/track-a/synthetic_transactions.json
+
+Step 2: Build foundation (run these in sequence)
+- build_customer_data_mart
+- calculate_rfm_metrics
+- create_customer_cohorts
+
+Step 3: Verify data is ready
+Run health_check
+
+
+PART 2: PHASE 5 LLM VALIDATION
+================================
+
+Step 4: Rule-based baseline (no LLM)
+Run run_orchestrated_analysis with query "customer health snapshot", use_llm false, use_cache false
+
+Step 5: First LLM query (cold - cache miss)
+Run run_orchestrated_analysis with query "Tell me about customer health and which cohorts are performing best", use_llm true, use_cache true
+
+Step 6: Cached LLM query (warm - cache hit)
+Run run_orchestrated_analysis with query "Tell me about customer health and which cohorts are performing best", use_llm true, use_cache true
+
+Step 7: Different LLM query
+Run run_orchestrated_analysis with query "What's the retention trend and overall customer base health?", use_llm true, use_cache true
+
+Step 8: Conversational analysis - Turn 1
+Run run_conversational_analysis with query "Give me a comprehensive customer base analysis", use_llm true, conversation_history null
+
+Step 9: Conversational analysis - Turn 2
+Run run_conversational_analysis with query "Now focus on which cohorts need attention", use_llm true, conversation_history [paste the conversation_history array from Step 8 result]
+
+Step 10: Final metrics
+Run get_execution_metrics
+
+
+RESULTS TO REPORT:
+==================
+
+Step 4 (Rule-based baseline):
+- Duration: ___ms (should be <100ms)
+- Has narrative field: NO (expected)
+- Insights: Simple bullet points
+
+Step 5 (First LLM - Cold):
+- Duration: ___ms (expected 2-5 seconds)
+- cache_hit: ___ (should be false)
+- Has narrative field: YES (expected)
+- token_usage.total_tokens: ___
+- Estimated cost: ~$0.05-0.10
+
+Step 6 (Cached LLM):
+- Duration: ___ms (should be <100ms - instant!)
+- cache_hit: ___ (should be true)
+- cache_stats.hit_rate: ___ (should be 0.5)
+- Estimated cost: $0.00
+
+Step 7 (Different LLM):
+- Duration: ___ms (expected 2-5 seconds)
+- cache_hit: ___ (should be false)
+- Has narrative field: YES
+- Different from Step 5: YES
+
+Step 8 (Conversation Turn 1):
+- conversation_turn: ___ (should be 1)
+- Duration: ___ms
+- Estimated cost: ~$0.05-0.10
+
+Step 9 (Conversation Turn 2):
+- conversation_turn: ___ (should be 2)
+- Context maintained: YES/NO
+- Duration: ___ms
+- Estimated cost: ~$0.05-0.10
+
+
+COMPARISON:
+===========
+
+Rule-based insights (Step 4) vs LLM narrative (Step 5):
+
+Rate the LLM narrative quality:
+- Coherence (1-5): ___
+- Business value (1-5): ___
+- Actionability (1-5): ___
+
+Is the narrative more detailed than rule-based insights? YES/NO
+Is the narrative worth the cost (~$0.05-0.10)? YES/NO
+
+
+PERFORMANCE SUMMARY:
+====================
+
+| Step | Target | Actual |
+|------|--------|--------|
+| Step 4 (Rule-based) | <100ms | ___ms |
+| Step 5 (LLM cold) | 2-5s | ___ms |
+| Step 6 (LLM cached) | <100ms | ___ms |
+
+
+COST SUMMARY:
+=============
+
+| Step | Cost |
+|------|------|
+| Step 5 | $____ |
+| Step 6 | $____ (should be $0.00) |
+| Step 7 | $____ |
+| Step 8 | $____ |
+| Step 9 | $____ |
+| **TOTAL** | $____ (target: <$0.50) |
+
+
+SUCCESS CRITERIA:
+=================
+
+Foundation Setup:
+[ ] Step 1: Data loaded successfully
+[ ] Step 2: All foundation built (data mart, RFM, cohorts)
+[ ] Step 3: Health check shows "fully available"
+
+Phase 5 LLM Features:
+[ ] Step 4: Rule-based works (baseline)
+[ ] Step 5: LLM generates narrative (no API key error!)
+[ ] Step 6: Cache hit confirmed (instant, hit_rate=0.5)
+[ ] Step 7: Different query generates different narrative
+[ ] Step 8: Conversation turn 1 works
+[ ] Step 9: Context maintained from turn 1
+[ ] Step 10: Metrics show all executions
+[ ] Total cost under $0.50
+[ ] No errors or crashes
+
+FINAL STATUS: [ ] PASS [ ] FAIL [ ] PARTIAL

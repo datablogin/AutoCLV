@@ -163,8 +163,8 @@ async def run_conversational_analysis(
         # For MVP, we pass the query as-is without reference resolution
         # Future enhancement: Analyze conversation_history to resolve "that", "last quarter", etc.
 
-        # Run analysis
-        result = await coordinator.analyze(request.query)
+        # Run analysis (with caching enabled for cost savings)
+        result = await coordinator.analyze(request.query, use_cache=True)
 
         # Report progress
         lenses_executed = result.get("lenses_executed", [])

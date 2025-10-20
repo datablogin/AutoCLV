@@ -12,6 +12,10 @@ from contextlib import asynccontextmanager
 import structlog
 from fastmcp import FastMCP
 
+# Version and phase constants
+VERSION = "2.0.0"
+PHASE = "Phase 5 - Natural Language Interface with LLM-powered query parsing and synthesis"
+
 # Configure structlog to write to stderr, not stdout (to avoid interfering with MCP JSON protocol)
 logging.basicConfig(
     format="%(message)s",
@@ -44,8 +48,8 @@ async def app_lifespan(app):
     """
     logger.info(
         "mcp_server_starting",
-        version="2.0.0",
-        phase="Phase 5 - Natural Language Interface with LLM-powered query parsing and synthesis!",
+        version=VERSION,
+        phase=PHASE,
     )
 
     # Phase 1: No resources to initialize yet
@@ -58,7 +62,7 @@ async def app_lifespan(app):
 
 
 # Initialize MCP server
-mcp = FastMCP(name="Four Lenses Analytics", version="2.0.0", lifespan=app_lifespan)
+mcp = FastMCP(name="Four Lenses Analytics", version=VERSION, lifespan=app_lifespan)
 
 
 # Import Phase 1 Foundation Tools

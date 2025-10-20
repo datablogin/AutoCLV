@@ -45,7 +45,7 @@ async def debug_environment(ctx: Context) -> DebugEnvResponse:
     response = DebugEnvResponse(
         anthropic_api_key_present=api_key is not None,
         anthropic_api_key_length=len(api_key) if api_key else None,
-        anthropic_api_key_prefix=api_key[:15] + "..." if api_key else None,
+        anthropic_api_key_prefix=api_key[:7] + "..." if api_key else None,  # Reduced from 15 to 7 chars
         python_path_set=python_path is not None,
         all_env_vars=all_vars,
     )

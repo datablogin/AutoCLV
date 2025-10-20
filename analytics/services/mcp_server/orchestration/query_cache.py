@@ -11,9 +11,9 @@ Design:
 """
 
 import hashlib
+import threading
 import time
 from collections import OrderedDict
-from threading import Lock
 from typing import Any
 
 import structlog
@@ -41,7 +41,7 @@ class QueryCache:
             ttl_seconds: Time-to-live for cache entries in seconds (default: 3600 = 1 hour)
         """
         self._cache: OrderedDict[str, dict[str, Any]] = OrderedDict()
-        self._lock = Lock()
+        self._lock = threading.Lock()
         self.max_size = max_size
         self.ttl_seconds = ttl_seconds
 
@@ -79,8 +79,11 @@ class QueryCache:
             # Check TTL
             age = time.time() - entry["timestamp"]
             if age > self.ttl_seconds:
-                # Entry expired
-                del self._cache[cache_key]
+                # Entry expired - use try/except to handle race condition
+                try:
+                    del self._cache[cache_key]
+                except KeyError:
+                    pass  # Already deleted by another thread
                 self._misses += 1
                 logger.debug(
                     "cache_expired",
@@ -192,17 +195,23 @@ class QueryCache:
         return hashlib.sha256(key_input.encode()).hexdigest()
 
 
-# Global cache instance (singleton)
+# Global cache instance (singleton) with thread-safe initialization
 _global_cache: QueryCache | None = None
+_cache_lock = threading.Lock()
 
 
 def get_query_cache() -> QueryCache:
-    """Get global query cache instance.
+    """Get global query cache instance with thread-safe initialization.
+
+    Uses double-checked locking pattern to ensure thread-safe singleton initialization.
 
     Returns:
         Global QueryCache singleton
     """
     global _global_cache
     if _global_cache is None:
-        _global_cache = QueryCache()
+        with _cache_lock:
+            # Double-check locking pattern
+            if _global_cache is None:
+                _global_cache = QueryCache()
     return _global_cache

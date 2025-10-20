@@ -11,6 +11,7 @@ Design:
 - Provides cost tracking via token usage monitoring
 """
 
+import asyncio
 import json
 from typing import Any
 
@@ -91,10 +92,14 @@ class QueryInterpreter:
         prompt = self._build_prompt(query)
 
         try:
-            response = await self.client.messages.create(
-                model=self.model,
-                max_tokens=1024,
-                messages=[{"role": "user", "content": prompt}],
+            # Add 30-second timeout to prevent indefinite hangs
+            response = await asyncio.wait_for(
+                self.client.messages.create(
+                    model=self.model,
+                    max_tokens=1024,
+                    messages=[{"role": "user", "content": prompt}],
+                ),
+                timeout=30.0,
             )
 
             # Track token usage for cost monitoring

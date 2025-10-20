@@ -238,6 +238,7 @@ class FourLensesCoordinator:
                     "llm_parsing_failed_falling_back_to_rules",
                     error=str(e),
                     error_type=type(e).__name__,
+                    exc_info=True,  # Include full traceback for debugging
                 )
                 # Fall back to rule-based parsing if LLM fails
 
@@ -1069,7 +1070,7 @@ class FourLensesCoordinator:
                     "llm_synthesis_failed_falling_back_to_simple",
                     error=str(e),
                     error_type=type(e).__name__,
-                    traceback=True,
+                    exc_info=True,  # Include full traceback for debugging
                 )
                 # Fall back to simple aggregation if LLM fails
 
@@ -1138,13 +1139,14 @@ class FourLensesCoordinator:
 
         return state
 
-    async def analyze(self, query: str) -> dict[str, Any]:
+    async def analyze(self, query: str, use_cache: bool = True) -> dict[str, Any]:
         """Run complete Four Lenses analysis from query.
 
         This is the main entry point for orchestrated analysis.
 
         Args:
             query: Natural language or structured query
+            use_cache: Whether to use query result caching (default: True)
 
         Returns:
             Complete analysis results including:
@@ -1157,6 +1159,20 @@ class FourLensesCoordinator:
             - execution_time_ms: Total execution time
             - lens results: Individual lens results (lens1_result, etc.)
         """
+        # Check cache first if enabled and using LLM
+        if use_cache and self.use_llm:
+            from analytics.services.mcp_server.orchestration.query_cache import (
+                get_query_cache,
+            )
+
+            cache = get_query_cache()
+            cached_result = cache.get(query, self.use_llm)
+            if cached_result:
+                logger.info(
+                    "returning_cached_result", query_hash=query[:50], use_llm=self.use_llm
+                )
+                return cached_result
+
         with tracer.start_as_current_span("orchestrated_analysis") as span:
             span.set_attribute("query", query[:200])  # Truncate for trace storage
             logger.info("orchestrated_analysis_starting", query=query)
@@ -1198,7 +1214,19 @@ class FourLensesCoordinator:
                 span.set_attribute("success", True)
 
                 logger.info("orchestrated_analysis_complete")
-                return dict(result)
+
+                # Cache successful results if enabled and using LLM
+                result_dict = dict(result)
+                if use_cache and self.use_llm and not result_dict.get("error"):
+                    from analytics.services.mcp_server.orchestration.query_cache import (
+                        get_query_cache,
+                    )
+
+                    cache = get_query_cache()
+                    cache.set(query, self.use_llm, result_dict)
+                    logger.debug("result_cached", query_hash=query[:50])
+
+                return result_dict
             except Exception as e:
                 # Record exception in span
                 span.record_exception(e)

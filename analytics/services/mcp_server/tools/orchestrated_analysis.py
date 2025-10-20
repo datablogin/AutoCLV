@@ -149,14 +149,14 @@ async def run_orchestrated_analysis(
             else:
                 # Cache miss - run analysis
                 coordinator = FourLensesCoordinator(use_llm=request.use_llm)
-                result = await coordinator.analyze(request.query)
+                result = await coordinator.analyze(request.query, use_cache=False)  # Cache handled at tool level
 
                 # Store in cache
                 cache.set(request.query, request.use_llm, result)
         else:
             # Caching disabled - run analysis directly
             coordinator = FourLensesCoordinator(use_llm=request.use_llm)
-            result = await coordinator.analyze(request.query)
+            result = await coordinator.analyze(request.query, use_cache=False)  # Cache disabled
 
         # Report progress
         lenses_executed = result.get("lenses_executed", [])

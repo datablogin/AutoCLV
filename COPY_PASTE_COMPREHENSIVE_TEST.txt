@@ -1,0 +1,106 @@
+=====================================================
+COMPREHENSIVE TEST: Phase 4A + Phase 5
+Copy this entire prompt into Claude Desktop
+=====================================================
+
+Please run this complete test sequence to validate observability and LLM features:
+
+PART 1: PHASE 4A - OBSERVABILITY
+=================================
+
+Step 1: Initial health check
+Run health_check
+
+Step 2: Load sample data
+Run load_transactions with path: tests/fixtures/synthetic_transactions_2023_2024.csv
+
+Step 3: Build foundation (run these in sequence)
+- build_customer_data_mart
+- calculate_rfm_metrics
+- create_customer_cohorts
+
+Step 4: Health check after data load
+Run health_check
+
+Step 5: Run three orchestrated analyses (rule-based mode)
+Analysis A: run_orchestrated_analysis with query "Give me the overall customer base health", use_llm false
+Analysis B: run_orchestrated_analysis with query "customer health snapshot", use_llm false
+Analysis C: run_orchestrated_analysis with query "customer health and overall base health", use_llm false
+
+Step 6: Check execution metrics
+Run get_execution_metrics
+
+Step 7: Final health check
+Run health_check
+
+
+PART 2: PHASE 5 - LLM FEATURES
+===============================
+
+Step 8: Rule-based baseline
+Run run_orchestrated_analysis with query "customer health snapshot", use_llm false, use_cache false
+
+Step 9: First LLM query (cold - cache miss)
+Run run_orchestrated_analysis with query "Tell me about customer health and which cohorts are performing best", use_llm true, use_cache true
+
+Step 10: Cached LLM query (warm - cache hit)
+Run EXACT same query: run_orchestrated_analysis with query "Tell me about customer health and which cohorts are performing best", use_llm true, use_cache true
+
+Step 11: Different LLM query
+Run run_orchestrated_analysis with query "What's the retention trend and overall customer base health?", use_llm true, use_cache true
+
+Step 12: Conversational analysis - Turn 1
+Run run_conversational_analysis with query "Give me a comprehensive customer base analysis", use_llm true, conversation_history null
+
+Step 13: Conversational analysis - Turn 2
+Run run_conversational_analysis with query "Now focus on which cohorts need attention", use_llm true, conversation_history [paste result from Step 12]
+
+Step 14: Final metrics check
+Run get_execution_metrics
+
+
+RESULTS TO REPORT:
+==================
+
+For Phase 4A, confirm:
+1. Health check shows foundation data status changes (not available → fully available)
+2. All 3 analyses in Step 5 succeeded
+3. Execution metrics show total analyses and 100% success rate
+4. Per-lens statistics are populated
+
+For Phase 5, confirm:
+1. Step 8 (rule-based) works fast without API key
+2. Step 9 (LLM cold) takes 2-5s and includes narrative field
+3. Step 10 (LLM cached) is instant (cache_hit: true, hit_rate: 0.5)
+4. Token usage in Steps 9-13 is reasonable (~700-1400 tokens each)
+5. Conversational analysis (Steps 12-13) maintains context across turns
+
+Please report:
+- Execution times for Steps 8, 9, 10
+- Cache statistics from Step 10 (should show hit_rate = 0.5)
+- Token usage from Step 9 (total_tokens should be ~700-1400)
+- Estimated cost for Steps 9-13 (should be ~$0.25-0.50 total)
+- Quality comparison: narrative from Step 9 vs insights from Step 8
+- Any errors or issues encountered
+
+PERFORMANCE BENCHMARKS:
+=======================
+Step 8 (Rule-based): Should be <100ms - Actual: ___ms
+Step 9 (LLM cold): Should be 2-5s - Actual: ___ms
+Step 10 (LLM cached): Should be <100ms - Actual: ___ms
+
+COST TRACKING:
+==============
+Step 9: $____
+Step 10: $____ (should be $0.00)
+Step 11: $____
+Step 12: $____
+Step 13: $____
+Total: $____ (target: <$0.50)
+
+SUCCESS CRITERIA:
+=================
+Phase 4A: [ ] Health checks working [ ] Metrics tracked [ ] All analyses succeed
+Phase 5: [ ] Rule-based works [ ] LLM generates narratives [ ] Caching works [ ] Cost reasonable
+
+FINAL STATUS: [ ] PASS [ ] FAIL [ ] PARTIAL

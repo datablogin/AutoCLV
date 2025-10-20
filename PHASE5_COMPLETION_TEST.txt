@@ -1,0 +1,106 @@
+=====================================================
+PHASE 5 COMPLETION TEST
+(Run this after fixing the API key)
+=====================================================
+
+Foundation data is already loaded from Phase 4A testing.
+This test only validates Phase 5 LLM features (Steps 9-14).
+
+Step 9: First LLM query (cold - cache miss)
+Run run_orchestrated_analysis with query "Tell me about customer health and which cohorts are performing best", use_llm true, use_cache true
+
+Step 10: Cached LLM query (warm - cache hit)
+Run run_orchestrated_analysis with query "Tell me about customer health and which cohorts are performing best", use_llm true, use_cache true
+
+Step 11: Different LLM query
+Run run_orchestrated_analysis with query "What's the retention trend and overall customer base health?", use_llm true, use_cache true
+
+Step 12: Conversational analysis - Turn 1
+Run run_conversational_analysis with query "Give me a comprehensive customer base analysis", use_llm true, conversation_history null
+
+Step 13: Conversational analysis - Turn 2
+Run run_conversational_analysis with query "Now focus on which cohorts need attention", use_llm true, conversation_history [paste the conversation_history array from Step 12 result]
+
+Step 14: Final metrics check
+Run get_execution_metrics
+
+
+EXPECTED RESULTS:
+==================
+
+Step 9 (First LLM - Cold):
+- Duration: 2-5 seconds
+- cache_hit: false
+- Should include "narrative" field
+- token_usage.total_tokens: ~700-1400
+- Cost: ~$0.05-0.10
+
+Step 10 (Cached):
+- Duration: <100ms (instant!)
+- cache_hit: true
+- cache_stats.hit_rate: 0.5 (50%)
+- Identical results to Step 9
+- Cost: $0.00
+
+Step 11 (Different Query):
+- Duration: 2-5 seconds
+- cache_hit: false
+- New narrative
+- Cost: ~$0.05-0.10
+
+Step 12 (Conversation Turn 1):
+- conversation_turn: 1
+- Duration: 2-5 seconds
+- Cost: ~$0.05-0.10
+
+Step 13 (Conversation Turn 2):
+- conversation_turn: 2
+- Context from Turn 1 maintained
+- Duration: 2-5 seconds
+- Cost: ~$0.05-0.10
+
+Step 14 (Final Metrics):
+- Should show increased total_analyses count
+- Should include all lens executions from both Phase 4A and Phase 5
+
+
+TOTAL EXPECTED COST: $0.25-0.50
+
+
+COMPARISON TO REPORT:
+=====================
+
+Compare Step 9 (LLM mode) vs Step 8 (rule-based):
+
+Step 8 (Rule-based):
+- insights: Simple bullet points
+- No narrative
+- Fast (11ms)
+- Free
+
+Step 9 (LLM mode):
+- insights: Still present
+- narrative: Rich, detailed explanation
+- Slower (2-5s cold)
+- ~$0.05-0.10
+
+Rate the narrative quality:
+- Coherence: ___/5
+- Business value: ___/5
+- Actionability: ___/5
+
+
+SUCCESS CHECKLIST:
+==================
+[ ] Step 9: LLM query works (no API key error)
+[ ] Step 9: Narrative field present and coherent
+[ ] Step 10: Cache hit confirmed (instant response)
+[ ] Step 10: cache_stats.hit_rate = 0.5
+[ ] Step 11: Different query generates different narrative
+[ ] Step 12: Conversation turn 1 works
+[ ] Step 13: Context maintained from turn 1
+[ ] Step 14: Metrics updated correctly
+[ ] Total cost under $0.50
+[ ] No errors or crashes
+
+FINAL STATUS: [ ] PASS [ ] FAIL
