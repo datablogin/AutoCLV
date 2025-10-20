@@ -38,9 +38,7 @@ class ParsedIntent(BaseModel):
     parameters: dict[str, Any] = Field(
         default_factory=dict, description="Additional analysis parameters"
     )
-    reasoning: str = Field(
-        description="Explanation of why these lenses were selected"
-    )
+    reasoning: str = Field(description="Explanation of why these lenses were selected")
 
 
 class QueryInterpreter:

@@ -1043,11 +1043,11 @@ class FourLensesCoordinator:
                 lenses_failed = state.get("lenses_failed", [])
                 execution_time = state.get("execution_time_ms", 0)
 
-                summary = (
-                    f"Executed {len(lenses_executed)} lens(es) in {execution_time:.0f}ms"
-                )
+                summary = f"Executed {len(lenses_executed)} lens(es) in {execution_time:.0f}ms"
                 if lenses_failed:
-                    summary += f" ({len(lenses_failed)} failed: {', '.join(lenses_failed)})"
+                    summary += (
+                        f" ({len(lenses_failed)} failed: {', '.join(lenses_failed)})"
+                    )
 
                 # Combine LLM-generated insights with execution summary
                 all_insights = [summary, synthesized.summary] + synthesized.insights
@@ -1169,7 +1169,9 @@ class FourLensesCoordinator:
             cached_result = cache.get(query, self.use_llm)
             if cached_result:
                 logger.info(
-                    "returning_cached_result", query_hash=query[:50], use_llm=self.use_llm
+                    "returning_cached_result",
+                    query_hash=query[:50],
+                    use_llm=self.use_llm,
                 )
                 return cached_result
 

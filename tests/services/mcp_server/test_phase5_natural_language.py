@@ -153,7 +153,7 @@ class TestResultSynthesizer:
         mock_response = Mock()
         mock_response.content = [
             Mock(
-                text='```json\n{\n'
+                text="```json\n{\n"
                 '  "summary": "Customer base shows moderate health with some concentration risk.",\n'
                 '  "insights": ["Health score is 72/100", "Top 10% contribute 65% of revenue"],\n'
                 '  "recommendations": ["Focus on retention programs", "Diversify customer base"],\n'
@@ -193,7 +193,9 @@ class TestResultSynthesizer:
                 }
             }
 
-            result = await synthesizer.synthesize("Show me customer health", lens_results)
+            result = await synthesizer.synthesize(
+                "Show me customer health", lens_results
+            )
 
         assert isinstance(result, SynthesizedResults)
         assert "health" in result.summary.lower()

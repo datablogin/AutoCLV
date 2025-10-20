@@ -14,7 +14,9 @@ from fastmcp import FastMCP
 
 # Version and phase constants
 VERSION = "2.0.0"
-PHASE = "Phase 5 - Natural Language Interface with LLM-powered query parsing and synthesis"
+PHASE = (
+    "Phase 5 - Natural Language Interface with LLM-powered query parsing and synthesis"
+)
 
 # Configure structlog to write to stderr, not stdout (to avoid interfering with MCP JSON protocol)
 logging.basicConfig(

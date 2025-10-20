@@ -157,9 +157,7 @@ class ResultSynthesizer:
             )
             raise ValueError(f"Failed to synthesize results: {str(e)}") from e
 
-    def _build_prompt(
-        self, query: str, lens_results: dict[str, dict[str, Any]]
-    ) -> str:
+    def _build_prompt(self, query: str, lens_results: dict[str, dict[str, Any]]) -> str:
         """Build prompt for Claude API.
 
         Constructs a comprehensive prompt that includes the original query
