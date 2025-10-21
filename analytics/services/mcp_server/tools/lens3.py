@@ -147,11 +147,11 @@ def _generate_lens3_recommendations(metrics: Lens3Metrics) -> list[str]:
             )
 
     # Cohort-specific insights
-    if len(metrics.periods) >= 6:
+    if len(metrics.periods) >= 3:
+        # Get last 3 periods safely
         recent_3_retention = [
-            (float(metrics.periods[i].active_customers) / metrics.cohort_size * 100)
-            for i in range(-3, 0)
-            if len(metrics.periods) > abs(i)
+            (float(p.active_customers) / metrics.cohort_size * 100)
+            for p in metrics.periods[-3:]
         ]
         if recent_3_retention and all(r < 10 for r in recent_3_retention):
             recs.append(
@@ -220,6 +220,10 @@ async def _analyze_cohort_lifecycle_impl(
             raise ValueError("Data mart not found. Run build_customer_data_mart first.")
 
         # Get period aggregations (use first granularity)
+        if not mart.periods:
+            raise ValueError(
+                "Data mart has no period aggregations. Ensure data mart was built correctly."
+            )
         first_granularity = list(mart.periods.keys())[0]
         period_aggregations = mart.periods[first_granularity]
 

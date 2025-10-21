@@ -3,7 +3,7 @@ version: '3.8'
 services:
   # Jaeger - Distributed tracing backend
   jaeger:
-    image: jaegertracing/all-in-one:latest
+    image: jaegertracing/all-in-one:1.54.0
     ports:
       - "4317:4317"   # OTLP gRPC receiver (for OpenTelemetry)
       - "16686:16686" # Jaeger UI
@@ -14,10 +14,15 @@ services:
       - LOG_LEVEL=info
     container_name: jaeger-phase4b
     restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          cpus: '0.5'
+          memory: 512M
 
   # Prometheus - Metrics collection and monitoring
   prometheus:
-    image: prom/prometheus:latest
+    image: prom/prometheus:v2.49.1
     ports:
       - "9090:9090"   # Prometheus UI
     volumes:
@@ -31,14 +36,19 @@ services:
       - '--web.enable-lifecycle'
     container_name: prometheus-phase4b
     restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          cpus: '0.5'
+          memory: 512M
 
   # Grafana - Visualization dashboard (optional)
   grafana:
-    image: grafana/grafana:latest
+    image: grafana/grafana:10.3.3
     ports:
       - "3000:3000"   # Grafana UI
     environment:
-      - GF_SECURITY_ADMIN_PASSWORD=admin
+      - GF_SECURITY_ADMIN_PASSWORD=${GRAFANA_ADMIN_PASSWORD:-changeme}
       - GF_USERS_ALLOW_SIGN_UP=false
     volumes:
       - grafana-data:/var/lib/grafana
@@ -46,6 +56,11 @@ services:
       - prometheus
     container_name: grafana-phase4b
     restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          cpus: '0.5'
+          memory: 512M
 
 volumes:
   prometheus-data:

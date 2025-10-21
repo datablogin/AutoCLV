@@ -16,6 +16,9 @@ This guide explains how to test the new Phase 4B features: Advanced Production O
 # From the project root
 cd /Users/robertwelborn/PycharmProjects/AutoCLV/.worktrees/track-a
 
+# Optional: Set Grafana admin password (defaults to 'changeme' if not set)
+export GRAFANA_ADMIN_PASSWORD=your_secure_password
+
 # Start Jaeger, Prometheus, and Grafana
 docker-compose up -d
 
@@ -26,7 +29,7 @@ docker-compose ps
 **Access URLs:**
 - Jaeger UI: http://localhost:16686 (Distributed Tracing)
 - Prometheus: http://localhost:9090 (Metrics)
-- Grafana: http://localhost:3000 (Dashboards - admin/admin)
+- Grafana: http://localhost:3000 (Dashboards - use password from GRAFANA_ADMIN_PASSWORD or 'changeme')
 
 ### 2. Restart Claude Desktop
 

@@ -13,23 +13,16 @@ global:
 scrape_configs:
   # MCP Server metrics
   - job_name: 'mcp-server'
+    metrics_path: '/metrics'
     static_configs:
       - targets: ['host.docker.internal:8000']
         labels:
           service: 'mcp-four-lenses'
           component: 'server'
 
-    # Only scrape if metrics endpoint is available
-    relabel_configs:
-      - source_labels: [__address__]
-        target_label: __param_target
-      - source_labels: [__param_target]
-        target_label: instance
-      - target_label: __address__
-        replacement: host.docker.internal:8000
-
   # Prometheus self-monitoring
   - job_name: 'prometheus'
+    metrics_path: '/metrics'
     static_configs:
       - targets: ['localhost:9090']
         labels:
