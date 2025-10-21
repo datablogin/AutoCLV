@@ -13,7 +13,7 @@ dependencies = [
     "click>=8.1.7,<9.0.0",
     "jinja2>=3.1.2,<4.0.0",
     "plotly>=5.18.0,<7.0.0",
-    "pymc-marketing>=0.3.0,<1.0.0",
+    "pymc-marketing>=0.3.0",
     "pymc>=5.10.0",
     "arviz>=0.16.0",
     # Phase 0: MCP Server & Agentic Architecture
@@ -22,14 +22,13 @@ dependencies = [
     "opentelemetry-sdk>=1.37.0",
     "opentelemetry-instrumentation>=0.58b0",
     "structlog>=25.4.0",
+    # Phase 1: Rich Formatters (Visualization)
+    "kaleido==0.2.1",
     # Phase 4: Observability & Resilience
     "tenacity>=9.0.0",
     # Phase 5: Natural Language Interface
     "anthropic>=0.39.0",
 ]
-
-[project.scripts]
-mcp-server = "analytics.services.mcp_server.main:mcp.run"
 
 [project.optional-dependencies]
 dev = [
@@ -37,6 +36,9 @@ dev = [
     "pytest-asyncio>=1.2.0",
     "ruff==0.14.1",
 ]
+
+[project.scripts]
+autoclv-mcp-server = "customer_base_audit.mcp.server:main"
 
 [tool.pytest.ini_options]
 markers = [
@@ -60,4 +62,5 @@ addopts = """
 package-dir = {"" = "."}
 
 [tool.setuptools.packages.find]
-include = ["customer_base_audit*", "analytics*"]
+include = ["customer_base_audit*"]
+exclude = ["analytics", "analytics.*"]

@@ -25,6 +25,20 @@ from .lens3 import (
     analyze_cohort_evolution,
     calculate_retention_curve,
 )
+from .lens4 import (
+    CohortDecomposition,
+    CohortComparison,
+    Lens4Metrics,
+    TimeToSecondPurchase,
+    compare_cohorts,
+)
+from .lens5 import (
+    CohortRepeatBehavior,
+    CohortRevenuePeriod,
+    CustomerBaseHealthScore,
+    Lens5Metrics,
+    assess_customer_base_health,
+)
 
 __all__ = [
     # Lens 1
@@ -40,4 +54,16 @@ __all__ = [
     "Lens3Metrics",
     "analyze_cohort_evolution",
     "calculate_retention_curve",
+    # Lens 4
+    "CohortDecomposition",
+    "CohortComparison",
+    "Lens4Metrics",
+    "TimeToSecondPurchase",
+    "compare_cohorts",
+    # Lens 5
+    "CohortRepeatBehavior",
+    "CohortRevenuePeriod",
+    "CustomerBaseHealthScore",
+    "Lens5Metrics",
+    "assess_customer_base_health",
 ]
