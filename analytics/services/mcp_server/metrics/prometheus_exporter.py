@@ -16,11 +16,16 @@ Usage:
     # Metrics available at http://localhost:8000/metrics
 """
 
-import time
 from threading import Lock
 
 import structlog
-from prometheus_client import Counter, Gauge, Histogram, generate_latest, start_http_server
+from prometheus_client import (
+    Counter,
+    Gauge,
+    Histogram,
+    generate_latest,
+    start_http_server,
+)
 
 logger = structlog.get_logger(__name__)
 
@@ -87,7 +92,10 @@ def start_metrics_server(port: int = 8000):
             logger.info("prometheus_metrics_server_started", port=port)
         except Exception as e:
             logger.error(
-                "prometheus_metrics_server_failed", port=port, error=str(e), error_type=type(e).__name__
+                "prometheus_metrics_server_failed",
+                port=port,
+                error=str(e),
+                error_type=type(e).__name__,
             )
             raise
 
@@ -184,7 +192,9 @@ def update_system_metrics():
     except ImportError:
         logger.debug("psutil_not_available_skipping_system_metrics")
     except Exception as e:
-        logger.warning("system_metrics_update_failed", error=str(e), error_type=type(e).__name__)
+        logger.warning(
+            "system_metrics_update_failed", error=str(e), error_type=type(e).__name__
+        )
 
 
 def update_circuit_breaker_state(breaker_name: str, state: str):

@@ -34,10 +34,8 @@ from analytics.services.mcp_server.state import get_shared_state
 
 # Phase 4B: Import Prometheus metrics recording
 try:
-    from analytics.services.mcp_server.metrics import (
-        record_analysis_duration,
-        record_lens_execution,
-    )
+    from analytics.services.mcp_server.metrics import record_lens_execution
+
     PROMETHEUS_AVAILABLE = True
 except ImportError:
     PROMETHEUS_AVAILABLE = False
@@ -586,7 +584,7 @@ class FourLensesCoordinator:
                             record_lens_execution(
                                 lens_name=lens_name,
                                 duration_seconds=duration_ms / 1000.0,
-                                success=False
+                                success=False,
                             )
                     except Exception as metrics_error:
                         logger.warning(
@@ -615,7 +613,7 @@ class FourLensesCoordinator:
                             record_lens_execution(
                                 lens_name=lens_name,
                                 duration_seconds=duration_ms / 1000.0,
-                                success=True
+                                success=True,
                             )
                     except Exception as metrics_error:
                         logger.warning(
@@ -656,7 +654,7 @@ class FourLensesCoordinator:
                             record_lens_execution(
                                 lens_name="lens2",
                                 duration_seconds=lens2_duration_ms / 1000.0,
-                                success=True
+                                success=True,
                             )
                     except Exception as metrics_error:
                         logger.warning(
@@ -689,7 +687,7 @@ class FourLensesCoordinator:
                             record_lens_execution(
                                 lens_name="lens2",
                                 duration_seconds=lens2_duration_ms / 1000.0,
-                                success=False
+                                success=False,
                             )
                     except Exception as metrics_error:
                         logger.warning(

@@ -19,6 +19,7 @@ from analytics.services.mcp_server.state import get_shared_state
 # Phase 4B: Import Prometheus metrics
 try:
     from analytics.services.mcp_server.metrics import record_lens_execution
+
     PROMETHEUS_AVAILABLE = True
 except ImportError:
     PROMETHEUS_AVAILABLE = False

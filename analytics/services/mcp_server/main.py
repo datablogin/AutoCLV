@@ -56,8 +56,9 @@ async def app_lifespan(app):
 
     # Phase 4A/4B: Initialize observability (OpenTelemetry tracing + metrics)
     import os
-    from analytics.services.mcp_server.observability import configure_observability
+
     from analytics.services.mcp_server.metrics import start_metrics_server
+    from analytics.services.mcp_server.observability import configure_observability
 
     otlp_endpoint = os.getenv("OTLP_ENDPOINT")
     environment = os.getenv("ENVIRONMENT", "development")
@@ -87,7 +88,9 @@ async def app_lifespan(app):
         # Server already running (e.g., during hot reload)
         logger.warning("prometheus_metrics_server_already_running", error=str(e))
     except Exception as e:
-        logger.error("prometheus_metrics_server_failed", error=str(e), port=metrics_port)
+        logger.error(
+            "prometheus_metrics_server_failed", error=str(e), port=metrics_port
+        )
 
     yield
 

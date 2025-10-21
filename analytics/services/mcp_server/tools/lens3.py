@@ -179,7 +179,9 @@ async def _analyze_cohort_lifecycle_impl(
         cohort_assignments = shared_state.get("cohort_assignments")
 
         if cohort_definitions is None or cohort_assignments is None:
-            raise ValueError("Cohort data not found. Run create_customer_cohorts first.")
+            raise ValueError(
+                "Cohort data not found. Run create_customer_cohorts first."
+            )
 
         # Find the requested cohort
         target_cohort = None
@@ -250,7 +252,9 @@ async def _analyze_cohort_lifecycle_impl(
             for p in lens3_result.periods
         }
         retention_curve = {
-            p.period_number: (float(p.active_customers) / lens3_result.cohort_size * 100)
+            p.period_number: (
+                float(p.active_customers) / lens3_result.cohort_size * 100
+            )
             for p in lens3_result.periods
         }
 
@@ -262,7 +266,10 @@ async def _analyze_cohort_lifecycle_impl(
         span.set_attribute("cohort_maturity", cohort_maturity)
         span.set_attribute("ltv_trajectory", ltv_trajectory)
         if lens3_result.periods:
-            span.set_attribute("final_activation_rate", float(lens3_result.periods[-1].cumulative_activation_rate))
+            span.set_attribute(
+                "final_activation_rate",
+                float(lens3_result.periods[-1].cumulative_activation_rate),
+            )
 
         await ctx.info(f"Lens 3 analysis complete for cohort {request.cohort_id}")
 

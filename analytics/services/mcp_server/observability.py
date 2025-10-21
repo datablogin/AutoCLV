@@ -64,7 +64,9 @@ def configure_observability(
     )
 
     # Configure tracing
-    trace_provider = TracerProvider(resource=resource, sampler=_create_sampler(sampling_rate))
+    trace_provider = TracerProvider(
+        resource=resource, sampler=_create_sampler(sampling_rate)
+    )
 
     if use_otlp:
         # Phase 4B: Production OTLP export
@@ -82,7 +84,7 @@ def configure_observability(
             # Use insecure connection for localhost (no TLS)
             otlp_exporter = OTLPSpanExporter(
                 endpoint=otlp_endpoint,
-                insecure=True  # Required for localhost without TLS
+                insecure=True,  # Required for localhost without TLS
             )
             trace_provider.add_span_processor(BatchSpanProcessor(otlp_exporter))
             logger.info("otlp_tracing_configured", endpoint=otlp_endpoint)
@@ -112,12 +114,15 @@ def configure_observability(
             # Use insecure connection for localhost (no TLS)
             otlp_metric_exporter = OTLPMetricExporter(
                 endpoint=otlp_endpoint,
-                insecure=True  # Required for localhost without TLS
+                insecure=True,  # Required for localhost without TLS
             )
             metric_reader = PeriodicExportingMetricReader(
-                otlp_metric_exporter, export_interval_millis=60000  # 60s intervals
+                otlp_metric_exporter,
+                export_interval_millis=60000,  # 60s intervals
             )
-            meter_provider = MeterProvider(resource=resource, metric_readers=[metric_reader])
+            meter_provider = MeterProvider(
+                resource=resource, metric_readers=[metric_reader]
+            )
             logger.info("otlp_metrics_configured", endpoint=otlp_endpoint)
         except ImportError:
             logger.warning(
@@ -127,14 +132,18 @@ def configure_observability(
             metric_reader = PeriodicExportingMetricReader(
                 ConsoleMetricExporter(), export_interval_millis=5000
             )
-            meter_provider = MeterProvider(resource=resource, metric_readers=[metric_reader])
+            meter_provider = MeterProvider(
+                resource=resource, metric_readers=[metric_reader]
+            )
     else:
         # Phase 4A: Development console export
         logger.info("configuring_console_metrics")
         metric_reader = PeriodicExportingMetricReader(
             ConsoleMetricExporter(), export_interval_millis=5000
         )
-        meter_provider = MeterProvider(resource=resource, metric_readers=[metric_reader])
+        meter_provider = MeterProvider(
+            resource=resource, metric_readers=[metric_reader]
+        )
 
     metrics.set_meter_provider(meter_provider)
 

@@ -23,6 +23,7 @@ from analytics.services.mcp_server.state import get_shared_state
 # Phase 4B: Import Prometheus metrics
 try:
     from analytics.services.mcp_server.metrics import record_lens_execution
+
     PROMETHEUS_AVAILABLE = True
 except ImportError:
     PROMETHEUS_AVAILABLE = False
@@ -450,7 +451,9 @@ async def _assess_customer_base_health_impl(
             health_grade=lens5_result.health_score.health_grade,
             total_customers=lens5_result.health_score.total_customers,
             total_active_customers=lens5_result.health_score.total_active_customers,
-            overall_retention_rate=float(lens5_result.health_score.overall_retention_rate),
+            overall_retention_rate=float(
+                lens5_result.health_score.overall_retention_rate
+            ),
             cohort_quality_trend=lens5_result.health_score.cohort_quality_trend,
             revenue_predictability_pct=float(
                 lens5_result.health_score.revenue_predictability_pct

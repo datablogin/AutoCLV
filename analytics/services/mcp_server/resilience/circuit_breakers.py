@@ -13,10 +13,11 @@ Usage:
     >>> result = breaker.call(load_large_dataset, "/path/to/data.csv")
 """
 
-from typing import Any, Callable
+from collections.abc import Callable
+from typing import Any
 
 import structlog
-from pybreaker import CircuitBreaker, CircuitBreakerError
+from pybreaker import CircuitBreaker
 
 logger = structlog.get_logger(__name__)
 
