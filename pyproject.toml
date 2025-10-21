@@ -24,8 +24,12 @@ dependencies = [
     "structlog>=25.4.0",
     # Phase 1: Rich Formatters (Visualization)
     "kaleido==0.2.1",
-    # Phase 4: Observability & Resilience
+    # Phase 4A: Essential Observability & Resilience
     "tenacity>=9.0.0",
+    # Phase 4B: Advanced Production Observability & Resilience
+    "opentelemetry-exporter-otlp-proto-grpc>=1.27.0",
+    "pybreaker>=1.2.0",
+    "prometheus-client>=0.21.0",
     # Phase 5: Natural Language Interface
     "anthropic>=0.39.0",
 ]

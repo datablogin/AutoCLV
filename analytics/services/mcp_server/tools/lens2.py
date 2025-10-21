@@ -1,6 +1,8 @@
 """Lens 2 MCP Tool - Phase 2 Lens Service
 
 Wraps Lens 2 (Period-to-Period Comparison) as an MCP tool for agentic orchestration.
+
+Phase 4B: Added distributed tracing for Lens 2 execution
 """
 
 from decimal import Decimal
@@ -8,12 +10,14 @@ from decimal import Decimal
 import structlog
 from customer_base_audit.analyses.lens2 import Lens2Metrics, analyze_period_comparison
 from fastmcp import Context
+from opentelemetry import trace
 from pydantic import BaseModel, Field
 
 from analytics.services.mcp_server.main import mcp
 from analytics.services.mcp_server.state import get_shared_state
 
 logger = structlog.get_logger(__name__)
+tracer = trace.get_tracer(__name__)
 
 
 class Lens2Request(BaseModel):
@@ -180,79 +184,96 @@ async def _analyze_period_comparison_impl(
     request: Lens2Request, ctx: Context
 ) -> Lens2Response:
     """Implementation of Lens 2 analysis logic."""
-    shared_state = get_shared_state()
-    await ctx.info("Starting Lens 2 analysis")
+    with tracer.start_as_current_span("lens2_execution") as span:
+        shared_state = get_shared_state()
+        await ctx.info("Starting Lens 2 analysis")
 
-    # Get RFM metrics for both periods from context
-    period1_rfm = shared_state.get(request.period1_rfm_key)
-    period2_rfm = shared_state.get(request.period2_rfm_key)
+        span.set_attribute("period1_name", request.period1_name)
+        span.set_attribute("period2_name", request.period2_name)
 
-    if period1_rfm is None:
-        raise ValueError(
-            f"Period 1 RFM metrics not found in context (key: '{request.period1_rfm_key}'). "
-            f"Calculate RFM for period 1 first."
-        )
+        # Get RFM metrics for both periods from context
+        period1_rfm = shared_state.get(request.period1_rfm_key)
+        period2_rfm = shared_state.get(request.period2_rfm_key)
 
-    if period2_rfm is None:
-        raise ValueError(
-            f"Period 2 RFM metrics not found in context (key: '{request.period2_rfm_key}'). "
-            f"Calculate RFM for period 2 first."
-        )
-
-    await ctx.report_progress(0.3, "Analyzing customer migration...")
-
-    # Get customer history if reactivation analysis enabled
-    all_customer_history = None
-    if request.include_reactivation_analysis:
-        all_customer_history = shared_state.get("customer_history")
-        if all_customer_history is None:
-            logger.warning(
-                "Reactivation analysis enabled but customer_history not found in context"
+        if period1_rfm is None:
+            raise ValueError(
+                f"Period 1 RFM metrics not found in context (key: '{request.period1_rfm_key}'). "
+                f"Calculate RFM for period 1 first."
             )
 
-    # Run Lens 2 analysis
-    lens2_result = analyze_period_comparison(
-        period1_rfm=period1_rfm,
-        period2_rfm=period2_rfm,
-        all_customer_history=all_customer_history,
-    )
+        if period2_rfm is None:
+            raise ValueError(
+                f"Period 2 RFM metrics not found in context (key: '{request.period2_rfm_key}'). "
+                f"Calculate RFM for period 2 first."
+            )
 
-    await ctx.report_progress(0.7, "Generating insights...")
+        span.set_attribute("period1_rfm_count", len(period1_rfm))
+        span.set_attribute("period2_rfm_count", len(period2_rfm))
 
-    # Calculate insights
-    growth_momentum = _assess_growth_momentum(lens2_result)
-    key_drivers = _identify_key_drivers(lens2_result)
-    recommendations = _generate_lens2_recommendations(lens2_result)
+        await ctx.report_progress(0.3, "Analyzing customer migration...")
 
-    # Store in context
-    shared_state.set("lens2_result", lens2_result)
+        # Get customer history if reactivation analysis enabled
+        all_customer_history = None
+        if request.include_reactivation_analysis:
+            all_customer_history = shared_state.get("customer_history")
+            if all_customer_history is None:
+                logger.warning(
+                    "Reactivation analysis enabled but customer_history not found in context"
+                )
 
-    await ctx.info("Lens 2 analysis complete")
+        # Run Lens 2 analysis
+        with tracer.start_as_current_span("lens2_calculate"):
+            lens2_result = analyze_period_comparison(
+                period1_rfm=period1_rfm,
+                period2_rfm=period2_rfm,
+                all_customer_history=all_customer_history,
+            )
 
-    # Calculate AOV change if available
-    aov_change_pct = None
-    if lens2_result.avg_order_value_change_pct is not None:
-        aov_change_pct = float(lens2_result.avg_order_value_change_pct)
+        await ctx.report_progress(0.7, "Generating insights...")
 
-    return Lens2Response(
-        period1_name=request.period1_name,
-        period2_name=request.period2_name,
-        period1_customers=lens2_result.period1_metrics.total_customers,
-        period2_customers=lens2_result.period2_metrics.total_customers,
-        retained_customers=len(lens2_result.migration.retained),
-        churned_customers=len(lens2_result.migration.churned),
-        new_customers=len(lens2_result.migration.new),
-        reactivated_customers=len(lens2_result.migration.reactivated),
-        retention_rate=float(lens2_result.retention_rate),
-        churn_rate=float(lens2_result.churn_rate),
-        reactivation_rate=float(lens2_result.reactivation_rate),
-        customer_count_change=lens2_result.customer_count_change,
-        revenue_change_pct=float(lens2_result.revenue_change_pct),
-        avg_order_value_change_pct=aov_change_pct,
-        growth_momentum=growth_momentum,
-        key_drivers=key_drivers,
-        recommendations=recommendations,
-    )
+        # Calculate insights
+        with tracer.start_as_current_span("lens2_generate_insights"):
+            growth_momentum = _assess_growth_momentum(lens2_result)
+            key_drivers = _identify_key_drivers(lens2_result)
+            recommendations = _generate_lens2_recommendations(lens2_result)
+
+        # Store in context
+        shared_state.set("lens2_result", lens2_result)
+
+        # Add result metrics to span
+        span.set_attribute("retention_rate", float(lens2_result.retention_rate))
+        span.set_attribute("churn_rate", float(lens2_result.churn_rate))
+        span.set_attribute("growth_momentum", growth_momentum)
+        span.set_attribute("retained_customers", len(lens2_result.migration.retained))
+        span.set_attribute("churned_customers", len(lens2_result.migration.churned))
+        span.set_attribute("new_customers", len(lens2_result.migration.new))
+
+        await ctx.info("Lens 2 analysis complete")
+
+        # Calculate AOV change if available
+        aov_change_pct = None
+        if lens2_result.avg_order_value_change_pct is not None:
+            aov_change_pct = float(lens2_result.avg_order_value_change_pct)
+
+        return Lens2Response(
+            period1_name=request.period1_name,
+            period2_name=request.period2_name,
+            period1_customers=lens2_result.period1_metrics.total_customers,
+            period2_customers=lens2_result.period2_metrics.total_customers,
+            retained_customers=len(lens2_result.migration.retained),
+            churned_customers=len(lens2_result.migration.churned),
+            new_customers=len(lens2_result.migration.new),
+            reactivated_customers=len(lens2_result.migration.reactivated),
+            retention_rate=float(lens2_result.retention_rate),
+            churn_rate=float(lens2_result.churn_rate),
+            reactivation_rate=float(lens2_result.reactivation_rate),
+            customer_count_change=lens2_result.customer_count_change,
+            revenue_change_pct=float(lens2_result.revenue_change_pct),
+            avg_order_value_change_pct=aov_change_pct,
+            growth_momentum=growth_momentum,
+            key_drivers=key_drivers,
+            recommendations=recommendations,
+        )
 
 
 @mcp.tool()

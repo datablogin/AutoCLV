@@ -1,14 +1,29 @@
-"""Health Check MCP Tool - Phase 4
+"""Health Check MCP Tool - Phase 4A & 4B
 
 This tool provides system health monitoring for the MCP server and all dependencies.
+
+Phase 4A:
+- Basic health checks (MCP server, shared state, foundation data, resources)
+
+Phase 4B:
+- Liveness probe: Is the server alive?
+- Readiness probe: Can the server handle requests?
+- Deep health checks: OpenTelemetry, metrics collector, circuit breakers
+- Kubernetes-ready probe endpoints
+
 It checks:
 1. MCP server status
 2. Shared state availability
 3. Foundation data readiness
 4. Memory and system resources
+5. OpenTelemetry tracer status (Phase 4B)
+6. Metrics collector status (Phase 4B)
+7. Circuit breaker states (Phase 4B)
 
 Usage:
     Call health_check() to get current system health status
+    Call liveness_probe() for Kubernetes liveness probe
+    Call readiness_probe() for Kubernetes readiness probe
 """
 
 import time

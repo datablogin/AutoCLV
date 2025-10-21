@@ -32,6 +32,14 @@ from tenacity import (
 
 from analytics.services.mcp_server.state import get_shared_state
 
+# Phase 4B: Import Prometheus metrics recording
+try:
+    from analytics.services.mcp_server.metrics import record_lens_execution
+
+    PROMETHEUS_AVAILABLE = True
+except ImportError:
+    PROMETHEUS_AVAILABLE = False
+
 logger = structlog.get_logger(__name__)
 tracer = trace.get_tracer(__name__)
 
@@ -169,6 +177,45 @@ class FourLensesCoordinator:
         if self._metrics_collector is not None:
             return self._metrics_collector
         return get_metrics_collector_instance()
+
+    def _record_lens_metrics(
+        self,
+        lens_name: str,
+        duration_ms: float,
+        success: bool,
+        error_type: str | None = None,
+    ):
+        """Centralized metrics recording for both custom collector and Prometheus.
+
+        Args:
+            lens_name: Name of the lens being executed
+            duration_ms: Execution duration in milliseconds
+            success: Whether execution succeeded
+            error_type: Type of error if execution failed
+        """
+        try:
+            # Record to custom metrics collector
+            self._get_metrics_collector().record_lens_execution(
+                lens_name=lens_name,
+                success=success,
+                duration_ms=duration_ms,
+                error_type=error_type,
+            )
+
+            # Phase 4B: Also record to Prometheus if available
+            if PROMETHEUS_AVAILABLE:
+                record_lens_execution(
+                    lens_name=lens_name,
+                    duration_seconds=duration_ms / 1000.0,
+                    success=success,
+                )
+        except Exception as e:
+            logger.warning(
+                "metrics_recording_failed",
+                lens_name=lens_name,
+                error=str(e),
+                error_type=type(e).__name__,
+            )
 
     def _build_graph(self) -> Any:
         """Build the LangGraph state graph.
@@ -563,18 +610,13 @@ class FourLensesCoordinator:
                         duration_ms=duration_ms,
                     )
 
-                    # Record failure metrics (with error handling)
-                    try:
-                        self._get_metrics_collector().record_lens_execution(
-                            lens_name=lens_name,
-                            success=False,
-                            duration_ms=duration_ms,
-                            error_type=error_type,
-                        )
-                    except Exception as metrics_error:
-                        logger.warning(
-                            "metrics_recording_failed", error=str(metrics_error)
-                        )
+                    # Record failure metrics
+                    self._record_lens_metrics(
+                        lens_name=lens_name,
+                        duration_ms=duration_ms,
+                        success=False,
+                        error_type=error_type,
+                    )
 
                     lenses_failed.append(lens_name)
                     lens_errors[lens_name] = error_msg
@@ -586,17 +628,12 @@ class FourLensesCoordinator:
                         duration_ms=duration_ms,
                     )
 
-                    # Record success metrics (with error handling)
-                    try:
-                        self._get_metrics_collector().record_lens_execution(
-                            lens_name=lens_name,
-                            success=True,
-                            duration_ms=duration_ms,
-                        )
-                    except Exception as metrics_error:
-                        logger.warning(
-                            "metrics_recording_failed", error=str(metrics_error)
-                        )
+                    # Record success metrics
+                    self._record_lens_metrics(
+                        lens_name=lens_name,
+                        duration_ms=duration_ms,
+                        success=True,
+                    )
 
                     lenses_executed.append(lens_name)
                     state[f"{lens_name}_result"] = result
@@ -620,17 +657,12 @@ class FourLensesCoordinator:
                         duration_ms=lens2_duration_ms,
                     )
 
-                    # Record success metrics (with error handling)
-                    try:
-                        self._get_metrics_collector().record_lens_execution(
-                            lens_name="lens2",
-                            success=True,
-                            duration_ms=lens2_duration_ms,
-                        )
-                    except Exception as metrics_error:
-                        logger.warning(
-                            "metrics_recording_failed", error=str(metrics_error)
-                        )
+                    # Record success metrics
+                    self._record_lens_metrics(
+                        lens_name="lens2",
+                        duration_ms=lens2_duration_ms,
+                        success=True,
+                    )
 
                 except Exception as e:
                     lens2_duration_ms = (time.time() - lens2_start_time) * 1000
@@ -645,18 +677,13 @@ class FourLensesCoordinator:
                         duration_ms=lens2_duration_ms,
                     )
 
-                    # Record failure metrics (with error handling)
-                    try:
-                        self._get_metrics_collector().record_lens_execution(
-                            lens_name="lens2",
-                            success=False,
-                            duration_ms=lens2_duration_ms,
-                            error_type=error_type,
-                        )
-                    except Exception as metrics_error:
-                        logger.warning(
-                            "metrics_recording_failed", error=str(metrics_error)
-                        )
+                    # Record failure metrics
+                    self._record_lens_metrics(
+                        lens_name="lens2",
+                        duration_ms=lens2_duration_ms,
+                        success=False,
+                        error_type=error_type,
+                    )
 
                     lenses_failed.append("lens2")
                     lens_errors["lens2"] = error_msg

@@ -1,0 +1,40 @@
+# Prometheus configuration for MCP Server Phase 4B monitoring
+
+global:
+  scrape_interval: 15s      # How frequently to scrape targets
+  evaluation_interval: 15s   # How frequently to evaluate rules
+
+  # Attach these labels to any time series or alerts
+  external_labels:
+    monitor: 'mcp-four-lenses-monitor'
+    environment: 'development'
+
+# Scrape configurations
+scrape_configs:
+  # MCP Server metrics
+  - job_name: 'mcp-server'
+    metrics_path: '/metrics'
+    static_configs:
+      - targets: ['host.docker.internal:8000']
+        labels:
+          service: 'mcp-four-lenses'
+          component: 'server'
+
+  # Prometheus self-monitoring
+  - job_name: 'prometheus'
+    metrics_path: '/metrics'
+    static_configs:
+      - targets: ['localhost:9090']
+        labels:
+          service: 'prometheus'
+          component: 'monitoring'
+
+# Alerting rules (optional - can be expanded)
+rule_files:
+  # - "alert_rules.yml"
+
+# Alertmanager configuration (optional)
+# alerting:
+#   alertmanagers:
+#     - static_configs:
+#         - targets: ['localhost:9093']
