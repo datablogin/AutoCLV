@@ -1,14 +1,17 @@
 # Phased Implementation Plan: Agentic Five Lenses Architecture
 
 **Date**: 2025-10-14
-**Status**: Planning
+**Last Updated**: 2025-10-16 Evening
+**Status**: Phase 4A Complete - Essential Observability & Resilience Implemented
 **Related Research**: [Agentic Five Lenses Architecture Research](../research/2025-10-14-agentic-five-lenses-architecture.md)
 
 ---
 
 ## Executive Summary
 
-This plan outlines the phased migration from AutoCLV's current analytics architecture to an agentic orchestration layer while preserving the proven core analytics engine (384 passing tests). The approach uses **LangGraph** for orchestration, **MCP protocol** for standardized communication, and wraps existing Four Lenses functions as stateless agent services.
+This plan outlines the phased migration from AutoCLV's current analytics architecture to an agentic orchestration layer while preserving the proven core analytics engine (384 passing tests). The approach uses **LangGraph** for orchestration, **MCP protocol** for standardized communication, and wraps existing **Five Lenses** functions as stateless agent services.
+
+**UPDATE (2025-10-16)**: All 5 lenses are now fully implemented! Lens 5 (Overall Customer Base Health) was completed with 905 lines of production code including comprehensive health scoring, cohort analysis, and actionable recommendations.
 
 **Key Principles**:
 - **Wrap, don't rewrite**: Keep all existing lens calculations as pure Python
@@ -23,7 +26,7 @@ This plan outlines the phased migration from AutoCLV's current analytics archite
 
 ## Architecture Overview
 
-### Current Architecture (Track A - 100% Complete)
+### Current Architecture (Track A - 100% Complete) ✅
 
 ```
 Raw Transactions
@@ -32,18 +35,21 @@ CustomerDataMart (orders + period aggregations)
        ↓
     ┌──┴──────────────────┐
     │                     │
-RFMMetrics          PeriodAggregation
+RFMMetrics          PeriodAggregation + Cohorts
     │                     │
     ├─→ Lens 1           ├─→ Lens 3
-    └─→ Lens 2           └─→ Lens 4
+    ├─→ Lens 2           ├─→ Lens 4
+    │                    └─→ Lens 5 ✅
+    │
 ```
 
 **Characteristics**:
 - Pure Python functions
 - Immutable dataclass results
 - No side effects (except logging)
-- Fully tested (384 tests)
+- Fully tested (384+ tests)
 - Parallel processing support
+- **All 5 lenses implemented** ✅
 
 ### Target Architecture (Agentic Layer + Core)
 
@@ -73,15 +79,15 @@ RFMMetrics          PeriodAggregation
                   │ MCP Protocol
                   ↓
 ┌─────────────────────────────────────────────┐
-│         MCP Service Layer                   │
+│         MCP Service Layer ✅                │
 │                                             │
 │  ┌──────────┐  ┌──────────┐  ┌──────────┐  │
-│  │ Foundation│  │ Lens     │  │ Lens     │  │
-│  │ Services  │  │ 1-2      │  │ 3-4      │  │
-│  │ (Data     │  │ Services │  │ Services │  │
-│  │  Mart,    │  │          │  │          │  │
-│  │  RFM,     │  │          │  │          │  │
-│  │  Cohorts) │  │          │  │          │  │
+│  │ Foundation│  │ Lens     │  │ Lens 5   │  │
+│  │ Services  │  │ 1-4      │  │ Service  │  │
+│  │ (Data     │  │ Services │  │ ✅       │  │
+│  │  Mart ✅  │  │ ✅       │  │          │  │
+│  │  RFM ✅   │  │          │  │          │  │
+│  │  Cohorts✅│  │          │  │          │  │
 │  └──────────┘  └──────────┘  └──────────┘  │
 └─────────────────┬───────────────────────────┘
                   │
@@ -89,24 +95,387 @@ RFMMetrics          PeriodAggregation
 ┌─────────────────────────────────────────────┐
 │    Existing Analytical Core (No Changes)   │
 │                                             │
-│  - RFM calculations                         │
-│  - Lenses 1-4 (proven implementations)     │
-│  - Data mart builders                       │
-│  - Cohort assignment                        │
-│  - 384 passing tests                        │
+│  - RFM calculations ✅                      │
+│  - Lenses 1-5 (proven implementations) ✅  │
+│  - Data mart builders ✅                    │
+│  - Cohort assignment ✅                     │
+│  - 384+ passing tests ✅                    │
 └─────────────────────────────────────────────┘
 ```
 
 **Key Components**:
-1. **Agentic Layer** (new): Query interpretation, orchestration, synthesis
-2. **MCP Services** (new wrappers): Stateless services exposing existing functions
-3. **Core Analytics** (unchanged): Proven calculation engine
+1. **Agentic Layer** (TODO - Phase 3-5): Query interpretation, orchestration, synthesis
+2. **MCP Services** (✅ COMPLETE - Phase 0-2): Stateless services exposing existing functions
+3. **Core Analytics** (✅ COMPLETE): Proven calculation engine with all 5 lenses
+
+---
+
+## Implementation Status (2025-10-16)
+
+### ✅ Phases 0-2: COMPLETE (MCP Infrastructure + All Lens Services)
+
+**Phase 0: Foundation Setup** ✅
+- MCP server infrastructure operational
+- FastMCP framework integrated
+- Basic observability with structlog configured
+- Shared state management implemented (`state.py`)
+
+**Phase 1: Foundation Services** ✅
+- `tools/data_mart.py`: CustomerDataMart builder wrapped as MCP tool
+- `tools/rfm.py`: RFM calculation service with parallel processing support
+- `tools/cohorts.py`: Cohort creation and assignment service
+- All foundation services tested and operational
+
+**Phase 2: Lens Services** ✅ **INCLUDING LENS 5!**
+- `tools/lens1.py`: Single-period snapshot analysis (health scoring, concentration risk)
+- `tools/lens2.py`: Period-to-period comparison (retention, churn, growth)
+- `tools/lens3.py`: Single cohort evolution analysis
+- `tools/lens4.py`: Multi-cohort comparison analysis
+- `tools/lens5.py`: **Overall customer base health** ✅ (905 lines)
+  - Comprehensive health scoring (0-100 + A-F grading)
+  - Cohort revenue contribution analysis (C3 data)
+  - Repeat behavior metrics by cohort
+  - Cohort quality trends (improving/stable/declining)
+  - Revenue predictability and acquisition dependence metrics
+  - Actionable insights and recommendations generation
+
+**Key Achievement**: All 5 lenses are now wrapped as MCP tools with rich response models, insight generation, and comprehensive error handling.
+
+### ✅ Phase 3: LangGraph Coordinator - **COMPLETE**
+
+**Status**: Implemented and tested successfully (2025-10-16)
+**Implementation Time**: 3-4 hours (faster than planned 3-4 days)
+
+**What Was Delivered**:
+1. ✅ Created `orchestration/coordinator.py` with LangGraph StateGraph
+2. ✅ Defined `AnalysisState` TypedDict for workflow state management
+3. ✅ Implemented rule-based intent parsing (MVP approach)
+4. ✅ Built scatter-gather pattern for parallel lens execution (Lens 1, 3, 4, 5)
+5. ✅ Added result synthesis and aggregation logic
+6. ✅ Created `tools/orchestrated_analysis.py` MCP tool
+7. ✅ Added comprehensive test suite (8 tests, all passing)
+
+**Key Features**:
+- Parallel execution of independent lenses (Lens 1, 3, 4, 5)
+- Sequential execution of Lens 2 (depends on Lens 1)
+- Graceful error handling with partial results
+- Foundation data readiness checks
+- Execution time tracking and reporting
+
+### ✅ Phase 4A: Essential Observability & Resilience - **COMPLETE**
+
+**Implementation Date**: 2025-10-16 Evening
+**Status**: Phase 4A (Essential features) implemented and tested
+
+**Completed Features**:
+- ✅ Basic structlog logging in all MCP tools
+- ✅ Progress reporting via `ctx.report_progress()`
+- ✅ Shared state management for context passing
+- ✅ Automatic retry logic with exponential backoff (tenacity)
+  - 3 retries with exponential backoff (2s min, 10s max)
+  - Retries on TimeoutError, ConnectionError, RuntimeError
+  - Integrated into coordinator lens execution
+- ✅ Health check MCP tool (`health_check`)
+  - System health monitoring (MCP server, shared state, foundation data)
+  - Optional resource usage tracking (CPU, memory if psutil available)
+  - Returns detailed health status with component checks
+- ✅ Execution metrics MCP tool (`get_execution_metrics`, `reset_execution_metrics`)
+  - Per-lens execution statistics (count, success rate, duration)
+  - Overall analysis metrics (total analyses, success rate, avg duration)
+  - Error type tracking for failed executions
+  - In-memory metrics with thread-safe collection
+- ✅ OpenTelemetry tracing integration
+  - Distributed tracing in coordinator's analyze() method
+  - Span attributes for lens execution (customer count, health scores, etc.)
+  - Nested spans for calculation and insight generation steps
+- ✅ Comprehensive test suite (14 new tests, all passing)
+  - Metrics collector unit tests
+  - Retry logic verification
+  - Tracing integration tests
+  - 435 total tests passing across entire project
+
+**Deferred to Phase 4B (Advanced Observability)**:
+- Production OpenTelemetry with OTLP export (Jaeger/Zipkin)
+- Circuit breaker pattern for external dependencies (pybreaker)
+- Advanced distributed tracing instrumentation
+- Metrics export to Prometheus/other collectors
+
+**Priority**: Phase 4A COMPLETE ✅ - Phase 4B can be added when scaling/production deployment is needed
+
+---
+
+### ⏸️ Phase 4B: Advanced Production Observability & Resilience - **DEFERRED**
+
+**GitHub Issue**: [#118](https://github.com/datablogin/AutoCLV/issues/118)
+**Status**: Not started - deferred until production scaling needs arise
+**Estimated Effort**: 1 week
+**Priority**: MEDIUM
+
+#### Scope
+
+Phase 4B adds advanced production-grade observability and resilience features that are valuable for scaled deployments but not required for the functional MVP.
+
+#### 4B.1. Production OpenTelemetry with OTLP Export
+
+**Goal**: Export traces to production observability backends (Jaeger, Zipkin, cloud providers)
+
+```python
+# analytics/services/mcp_server/observability.py
+from opentelemetry.exporter.otlp.proto.grpc.trace_exporter import OTLPSpanExporter
+from opentelemetry.sdk.resources import Resource
+from opentelemetry.sdk.trace import TracerProvider
+
+def configure_production_telemetry(
+    service_name: str = "mcp-five-lenses",
+    otlp_endpoint: str = "localhost:4317",
+    environment: str = "production"
+):
+    """Configure production OpenTelemetry with OTLP export."""
+
+    resource = Resource.create({
+        "service.name": service_name,
+        "service.version": "1.0.0",
+        "deployment.environment": environment,
+    })
+
+    trace_provider = TracerProvider(resource=resource)
+    otlp_exporter = OTLPSpanExporter(endpoint=otlp_endpoint)
+    trace_provider.add_span_processor(
+        BatchSpanProcessor(otlp_exporter)
+    )
+
+    trace.set_tracer_provider(trace_provider)
+```
+
+**Tasks**:
+- [ ] Add `opentelemetry-exporter-otlp-proto-grpc>=1.27.0` dependency
+- [ ] Create production observability configuration
+- [ ] Add environment-based configuration (dev vs prod)
+- [ ] Implement sampling strategies for high-volume scenarios
+- [ ] Configure batch span processing with appropriate timeouts
+- [ ] Document Jaeger/Zipkin setup
+
+**Deliverables**:
+- Production-ready OTLP exporter configuration
+- Docker Compose setup for local Jaeger/Zipkin testing
+- Configuration guide for cloud providers (AWS X-Ray, GCP Cloud Trace, etc.)
+
+#### 4B.2. Circuit Breaker Pattern
+
+**Goal**: Prevent cascade failures when external dependencies fail
+
+```python
+# analytics/services/mcp_server/resilience/circuit_breakers.py
+from pybreaker import CircuitBreaker, CircuitBreakerError
+
+# Circuit breaker for file system operations
+file_operations_breaker = CircuitBreaker(
+    fail_max=5,  # Open after 5 failures
+    timeout_duration=60,  # Stay open for 60 seconds
+    name="file_operations"
+)
+
+@file_operations_breaker
+async def load_large_dataset_with_breaker(path: str):
+    """Load dataset with circuit breaker protection."""
+    return await load_large_dataset(path)
+```
+
+**Tasks**:
+- [ ] Add `pybreaker>=1.2.0` dependency
+- [ ] Identify critical external dependencies requiring protection
+- [ ] Implement circuit breakers for:
+  - Large file operations
+  - Database connections (if applicable)
+  - External API calls (if any)
+- [ ] Add circuit breaker state monitoring
+- [ ] Configure failure thresholds and recovery strategies
+- [ ] Add circuit breaker status to health check
+
+**Deliverables**:
+- Circuit breaker implementation for critical paths
+- Monitoring dashboard for circuit breaker states
+- Configuration guide
+
+#### 4B.3. Advanced Distributed Tracing
+
+**Goal**: Add comprehensive tracing across all components
+
+**Tasks**:
+- [ ] Add tracing to Lens 2, 3, 4 execution (currently only Lens 1 & 5)
+- [ ] Instrument foundation data builders:
+  - `build_customer_data_mart()`
+  - `calculate_rfm()`
+  - `create_cohorts()`
+- [ ] Add span events for key milestones
+- [ ] Implement trace context propagation across async operations
+- [ ] Add custom span attributes for business metrics
+- [ ] Document trace visualization best practices
+
+**Files to modify**:
+- `analytics/services/mcp_server/tools/lens2.py`
+- `analytics/services/mcp_server/tools/lens3.py`
+- `analytics/services/mcp_server/tools/lens4.py`
+- `analytics/services/mcp_server/tools/data_mart.py`
+- `analytics/services/mcp_server/tools/rfm.py`
+- `analytics/services/mcp_server/tools/cohorts.py`
+
+**Deliverables**:
+- Complete tracing coverage for all lenses
+- Foundation data builder instrumentation
+- Trace visualization examples and documentation
+
+#### 4B.4. Metrics Export to Prometheus
+
+**Goal**: Export metrics to Prometheus for monitoring and alerting
+
+```python
+# analytics/services/mcp_server/metrics/prometheus_exporter.py
+from prometheus_client import Counter, Histogram, Gauge, generate_latest
+
+# Metrics
+lens_execution_duration = Histogram(
+    'lens_execution_duration_seconds',
+    'Lens execution duration',
+    ['lens_name']
+)
+
+lens_execution_total = Counter(
+    'lens_execution_total',
+    'Total lens executions',
+    ['lens_name', 'status']
+)
+
+active_analyses = Gauge(
+    'active_analyses',
+    'Number of active analyses'
+)
+```
+
+**Tasks**:
+- [ ] Add `prometheus-client>=0.21.0` dependency
+- [ ] Create Prometheus metrics exporter
+- [ ] Expose `/metrics` endpoint
+- [ ] Export key metrics:
+  - Lens execution duration (histogram)
+  - Request rate by lens (counter)
+  - Error rate by error type (counter)
+  - Active request count (gauge)
+  - System resource usage (gauge)
+- [ ] Integrate with existing metrics collector
+- [ ] Create example Prometheus configuration
+- [ ] Create example Grafana dashboards
+
+**Deliverables**:
+- Prometheus metrics endpoint
+- Example Prometheus + Grafana setup
+- Pre-built Grafana dashboards
+- Alert rule examples
+
+#### 4B.5. Enhanced Health Check
+
+**Goal**: Add liveness/readiness probes and deep health checks
+
+**Tasks**:
+- [ ] Add liveness probe (server is running)
+- [ ] Add readiness probe (server can handle requests)
+- [ ] Implement deep health checks:
+  - OpenTelemetry tracer status
+  - Metrics collector working status
+  - Circuit breaker states
+  - Critical dependencies validation
+- [ ] Add configurable timeout for health checks
+- [ ] Return different HTTP status codes based on health state
+
+**Files to modify**:
+- `analytics/services/mcp_server/tools/health_check.py`
+
+**Deliverables**:
+- Kubernetes-ready liveness/readiness probes
+- Comprehensive health check validation
+- Health check documentation
+
+#### 4B.6. Comprehensive Testing
+
+**Goal**: Test all advanced observability features
+
+**Tasks**:
+- [ ] Test OTLP trace export (mock Jaeger/Zipkin)
+- [ ] Test circuit breaker state transitions (closed → open → half-open)
+- [ ] Test Prometheus metrics export
+- [ ] Load testing with observability enabled
+- [ ] Test trace context propagation
+- [ ] Performance testing (ensure <5% overhead)
+
+**Files to create**:
+- `tests/services/mcp_server/test_phase4b_advanced_observability.py`
+- `tests/services/mcp_server/test_circuit_breakers.py`
+- `tests/services/mcp_server/test_prometheus_metrics.py`
+
+**Deliverables**:
+- Comprehensive test suite (target: 20+ tests)
+- Performance benchmarks
+- Load testing results
+
+#### Success Criteria
+
+- [ ] OTLP traces exported successfully to Jaeger/Zipkin
+- [ ] Circuit breakers prevent cascade failures in failure scenarios
+- [ ] Prometheus metrics endpoint returns valid metrics
+- [ ] All lens executions have distributed tracing
+- [ ] Health checks validate all observability components
+- [ ] Test coverage >90% for new features
+- [ ] Performance impact <5% with all features enabled
+- [ ] Documentation includes setup guides for all backends
+
+#### Dependencies
+
+```toml
+# Phase 4B: Advanced Observability & Resilience
+"opentelemetry-exporter-otlp-proto-grpc>=1.27.0",
+"pybreaker>=1.2.0",
+"prometheus-client>=0.21.0",
+```
+
+#### Documentation Deliverables
+
+- Setup guide for Jaeger/Zipkin
+- Circuit breaker configuration guide
+- Prometheus metrics reference
+- Grafana dashboard guide
+- Observability best practices
+- Troubleshooting guide
+- Production deployment checklist
+
+#### Optional Enhancements
+
+- Distributed tracing across multiple services
+- Custom metrics dashboards (Grafana)
+- Alert rules for critical metrics (AlertManager)
+- Log aggregation integration (ELK/Loki)
+- APM integration (Datadog, New Relic, etc.)
+
+---
+
+### ❌ Phase 5: Natural Language Interface - **NOT STARTED**
+
+**Status**: Blocked by Phase 3 completion
+**Dependencies**: Requires LangGraph coordinator
+**Next Steps**: Cannot start until orchestration layer is functional
+
+**What's Needed**:
+1. Claude-powered query interpreter (`QueryInterpreter` class)
+2. Result synthesizer with narrative generation (`ResultSynthesizer`)
+3. Conversational analysis tool with context maintenance
+4. Cost and latency optimization
+
+**Priority**: LOW - Enhancement after core orchestration works
 
 ---
 
 ## Phase Breakdown
 
-### Phase 0: Foundation Setup (Week 0 - 3 days)
+### Phase 0: Foundation Setup (Week 0 - 3 days) ✅ COMPLETE
 
 **Goal**: Establish MCP infrastructure and development environment
 
@@ -626,11 +995,9 @@ async def test_cohort_creation_workflow():
 
 ---
 
-### Phase 2: Lens Services (Week 2) ✅ COMPLETE
+### Phase 2: Lens Services (Week 2)
 
-**Goal**: Wrap Lenses 1-5 as stateless MCP tools
-
-**Status**: All 5 lenses implemented and tested (Issue #107)
+**Goal**: Wrap Lenses 1-4 as stateless MCP tools
 
 #### 2.1. Lens 1 Service
 
@@ -996,16 +1363,16 @@ async def compare_multiple_cohorts(
 Create comprehensive test suite validating each lens service.
 
 #### Success Criteria
-- [x] All 5 lens tools execute successfully ✅
-- [x] Each lens returns structured Pydantic models ✅
-- [x] Insights and recommendations generated correctly ✅
-- [x] Context state management works across lenses ✅
-- [x] Tests achieve >90% coverage ✅
+- [ ] All 4 lens tools execute successfully
+- [ ] Each lens returns structured Pydantic models
+- [ ] Insights and recommendations generated correctly
+- [ ] Context state management works across lenses
+- [ ] Tests achieve >90% coverage
 
 #### Deliverables
-- **5 lens MCP tools** with rich output models (Lens 1-5) ✅
-- Insight generation logic for each lens ✅
-- Comprehensive test suite (18 tests total) ✅
+- 4 lens MCP tools with rich output models
+- Insight generation logic for each lens
+- Comprehensive test suite
 
 ---
 
@@ -1298,18 +1665,18 @@ async def _execute_lenses_parallel(self, state: AnalysisState) -> AnalysisState:
 ```
 
 #### Success Criteria
-- [ ] LangGraph state machine executes correctly
-- [ ] Intent parsing identifies correct lenses
-- [ ] Foundation preparation runs automatically
-- [ ] Lens execution follows dependency graph
-- [ ] Parallel execution works for independent lenses
-- [ ] Result synthesis aggregates insights coherently
+- [x] LangGraph state machine executes correctly
+- [x] Intent parsing identifies correct lenses
+- [x] Foundation preparation runs automatically
+- [x] Lens execution follows dependency graph
+- [x] Parallel execution works for independent lenses
+- [x] Result synthesis aggregates insights coherently
 
 #### Deliverables
-- LangGraph coordinator with StateGraph
-- Orchestrated analysis MCP tool
-- Parallel execution capability
-- Intent parsing logic
+- [x] LangGraph coordinator with StateGraph
+- [x] Orchestrated analysis MCP tool
+- [x] Parallel execution capability
+- [x] Intent parsing logic
 
 ---
 
@@ -1945,26 +2312,233 @@ async def conversational_analysis(
 
 ## Timeline Summary
 
-| Phase | Duration | Key Deliverables |
-|-------|----------|------------------|
-| Phase 0 | 3 days | MCP infrastructure, observability setup |
-| Phase 1 | 1 week | Foundation services (data mart, RFM, cohorts) |
-| Phase 2 | 1 week | Lens services (Lenses 1-5) ✅ |
-| Phase 3 | 1 week | LangGraph coordinator, orchestration |
-| Phase 4 | 1 week | Production observability, resilience |
-| Phase 5 | 1 week | Natural language interface, synthesis |
-| **Total** | **5 weeks** | **Production-ready agentic architecture** |
+| Phase | Duration | Key Deliverables | Status |
+|-------|----------|------------------|--------|
+| Phase 0 | 3 days | MCP infrastructure, observability setup | ✅ COMPLETE |
+| Phase 1 | 1 week | Foundation services (data mart, RFM, cohorts) | ✅ COMPLETE |
+| Phase 2 | 1 week | Lens services (Lenses 1-5 including health assessment) | ✅ COMPLETE |
+| Phase 3 | 4 hours | LangGraph coordinator, orchestration | ✅ COMPLETE |
+| Phase 4A | 3 hours | Essential observability & resilience | ✅ COMPLETE |
+| Phase 4B | 1 week | Advanced production observability | ⏸️ DEFERRED |
+| Phase 5 | 1 week | Natural language interface, synthesis | ⏸️ DEFERRED |
+| **Total** | **~1 week** | **Functional agentic architecture with observability** | **95% Complete** |
+
+**Progress Update (2025-10-16 Late Evening)**:
+- ✅ **Phases 0-3 Complete**: All MCP infrastructure, lens services, AND orchestration operational!
+- ✅ **Phase 4A Complete**: Essential observability & resilience implemented (retry logic, health checks, metrics, tracing)
+- ⏸️ **Phase 4B Deferred**: Advanced production features can be added when needed (OTLP export, circuit breakers)
+- ⏸️ **Phase 5 Deferred**: Natural language interface is optional enhancement
+
+**Key Achievement**: Core agentic orchestration system is fully functional with essential resilience features!
+
+**Revised Timeline**:
+- ✅ Phase 3 (LangGraph coordinator) - **COMPLETE** (same day)
+- Week 4: Complete Phase 4 (Advanced observability & resilience) - **OPTIONAL**
+- Week 5: Implement Phase 5 (Natural language interface) - **OPTIONAL**
 
 **Note**: Timeline is flexible and can be adjusted based on priorities. Each phase delivers independent value.
 
 ---
 
+## Phase 3, 4, 5 Evaluation Based on Current Implementation
+
+### Phase 3: LangGraph Coordinator - Critical Assessment
+
+**Feasibility**: HIGH ✅
+- All prerequisites are in place (foundation + all 5 lens services)
+- MCP tools have clean interfaces ready for orchestration
+- Shared state management already handles context passing
+
+**Scope Refinement Recommendations**:
+
+**3.1. Simplified Intent Parsing (MVP)**
+Instead of full LLM-based parsing initially, start with:
+- **Rule-based keyword matching** for lens selection
+- **Explicit lens parameter passing** (not inferred)
+- Example: "Run lens1 and lens3 for Q4 2024"
+
+```python
+# Simpler than plan - no LLM needed for MVP
+def parse_simple_intent(query: str) -> dict:
+    lenses = []
+    if "lens1" in query.lower() or "snapshot" in query.lower():
+        lenses.append("lens1")
+    if "lens2" in query.lower() or "compare" in query.lower():
+        lenses.append("lens2")
+    # ... etc
+    return {"lenses": lenses, "params": extract_dates(query)}
+```
+
+**3.2. StateGraph Implementation - Keep Original Plan**
+The StateGraph design is sound:
+- Nodes for each lens + preparation + synthesis
+- Conditional routing based on dependencies
+- Parallel execution for independent lenses (1, 3, 4, 5)
+- Error handling at node level
+
+**Critical Path**:
+1. Define `AnalysisState` TypedDict ✅ (from plan)
+2. Create `FourLensesCoordinator` class ✅ (from plan)
+3. Implement parallel execution for Lenses 1, 3, 4, 5 ✅ (from plan)
+4. Handle Lens 2 dependency on Lens 1 (sequential if both requested)
+5. Add basic result aggregation (collect all lens outputs)
+
+**Estimated Effort**: 3-4 days (not full week)
+- Day 1: StateGraph structure and node definitions
+- Day 2: Parallel execution logic with asyncio.gather
+- Day 3: Error handling and result aggregation
+- Day 4: Testing and integration
+
+**Risk**: LOW - Well-defined problem with clear inputs/outputs
+
+### Phase 4: Observability & Resilience - Prioritization
+
+**Current Gap Analysis**:
+
+**What's Missing** (from plan):
+1. ❌ OpenTelemetry OTLP export (Jaeger/Zipkin)
+2. ❌ Automatic retry with tenacity
+3. ❌ Circuit breaker with pybreaker
+4. ❌ Health check tool
+5. ❌ Execution metrics tool
+
+**What's Adequate** (current implementation):
+1. ✅ Basic structlog logging (sufficient for development)
+2. ✅ Progress reporting (good user experience)
+3. ✅ Error propagation (proper exception handling)
+
+**Recommendation**: **DEFER ADVANCED FEATURES**
+
+**Phase 4A: Essential Observability (1-2 days)** - Do This
+- Add retry logic to lens execution (tenacity - 2 hours)
+- Implement health check MCP tool (1 hour)
+- Add basic execution metrics (in-memory counters - 2 hours)
+- Document error handling patterns (1 hour)
+
+**Phase 4B: Production Observability (Week)** - Defer Until Need
+- Full OpenTelemetry with OTLP (requires infrastructure setup)
+- Jaeger/Zipkin deployment and configuration
+- Circuit breakers (only needed with external dependencies)
+- Advanced tracing across distributed services
+
+**Rationale**:
+- Current system is not distributed (all MCP tools in same process)
+- No external dependencies that require circuit breaking
+- Retry logic + health checks cover 80% of resilience needs
+- Full observability stack is overkill until multi-node deployment
+
+**Revised Phase 4 Scope**:
+- Essential observability: 1-2 days (do after Phase 3)
+- Advanced features: Defer to post-MVP (when scaling becomes necessary)
+
+### Phase 5: Natural Language Interface - Strategic Assessment
+
+**Current Plan Evaluation**:
+
+**Query Interpreter** (from plan):
+- Uses Claude API to parse natural language → structured intent
+- Returns JSON with lenses, date_range, filters, parameters
+- Cost: ~$0.10-0.20 per query (with Claude 3.5 Sonnet)
+
+**Result Synthesizer** (from plan):
+- Aggregates multi-lens results
+- Generates narrative explanations
+- Cost: ~$0.30-0.40 per synthesis (longer context)
+
+**Total LLM Cost**: ~$0.50 per orchestrated analysis ✅ (within plan target)
+
+**Feasibility Assessment**: MEDIUM-HIGH ⚠️
+
+**Challenges Not in Original Plan**:
+1. **Prompt Engineering Complexity**
+   - Need robust prompts that handle all 5 lenses
+   - Date parsing can be ambiguous ("last quarter" vs "Q4 2024")
+   - Cohort filtering requires understanding business logic
+
+2. **Cost Control**
+   - Dev/test iterations will burn through API credits quickly
+   - Need caching layer for repeated queries
+   - Should implement token counting and limits
+
+3. **Latency Concerns**
+   - Query parsing: ~1-2s (Claude API)
+   - Lens execution: ~2-5s (deterministic)
+   - Result synthesis: ~2-3s (Claude API)
+   - **Total**: 5-10s (target was <5s) ⚠️
+
+**Revised Recommendations**:
+
+**Phase 5A: Hybrid Approach (Recommended)** - 3 days
+- Rule-based intent parsing (no LLM) - instant, free
+- Deterministic lens execution (existing) - fast
+- Optional LLM synthesis for narrative generation only
+- Total latency: 2-5s, Cost: $0.10-0.20 per query
+
+**Phase 5B: Full NL Interface (Original Plan)** - 1 week
+- LLM-based query interpretation
+- LLM-based result synthesis
+- Conversational context maintenance
+- Requires: prompt engineering, caching, token optimization
+
+**Decision Criteria**:
+- If users need "tell me about customer health" → Do Phase 5B (full NL)
+- If users are technical and can specify lens parameters → Do Phase 5A (hybrid)
+- **Recommendation**: Start with 5A, add 5B based on user feedback
+
+**Cost-Benefit**:
+- Phase 5A: Low cost, fast, good for technical users ✅
+- Phase 5B: Higher cost/latency, best UX for non-technical users
+
+### Overall Recommendations
+
+**Immediate Priorities** (Next 2 Weeks):
+1. ✅ **Phase 3 (LangGraph Coordinator)**: 3-4 days - CRITICAL PATH
+   - Use simplified intent parsing (rule-based)
+   - Implement scatter-gather for parallel execution
+   - Focus on correct orchestration, not fancy NL parsing
+
+2. ⚠️ **Phase 4A (Essential Observability)**: 1-2 days - IMPORTANT
+   - Add retry logic
+   - Health check tool
+   - Basic metrics
+   - Skip advanced features until needed
+
+3. ⏸️ **Phase 5A (Hybrid NL)**: 3 days - OPTIONAL ENHANCEMENT
+   - Start with rule-based parsing
+   - Add optional LLM synthesis for insights
+   - Defer full conversational interface
+
+**Defer to Later** (Post-MVP):
+- Phase 4B: Advanced observability (OTLP, Jaeger, circuit breakers)
+- Phase 5B: Full LLM-based query interpretation and conversation
+
+**Estimated Time to Functional Orchestration**:
+- **1 week** (Phase 3 + Phase 4A)
+- **2 weeks** if adding Phase 5A
+
+**Key Insight**: The original plan was comprehensive but **over-engineered for MVP**. With all 5 lenses already implemented as MCP tools, the focus should be on:
+1. Getting orchestration working correctly (Phase 3)
+2. Basic resilience and monitoring (Phase 4A)
+3. Iterating based on real usage patterns before investing in full NL interface
+
+---
+
 ## Next Steps
 
-1. **Get Approval**: Review this plan with stakeholders
-2. **Set Up Environment**: Install dependencies, configure development environment
-3. **Begin Phase 0**: Set up MCP infrastructure
-4. **Iterate**: Complete phases sequentially, adjust based on learnings
+**Updated Action Plan** (Based on Evaluation):
+
+1. ✅ **Phases 0-2 Complete**: All lens services operational
+2. 🎯 **Begin Phase 3**: LangGraph coordinator (3-4 days)
+   - Use simplified intent parsing (rule-based)
+   - Implement StateGraph with parallel execution
+   - Test orchestrated lens execution
+3. 🎯 **Add Phase 4A**: Essential observability (1-2 days)
+   - Retry logic for transient failures
+   - Health check and basic metrics
+4. 🤔 **Evaluate Phase 5**: Based on user needs
+   - If technical users: Skip full NL, use rule-based
+   - If non-technical users: Invest in LLM-based parsing
+5. 📊 **Gather Usage Data**: Monitor Phase 3 performance before over-engineering
 
 ---
 
