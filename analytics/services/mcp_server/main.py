@@ -43,7 +43,7 @@ async def app_lifespan(app):
     """Initialize and cleanup MCP server resources.
 
     Phase 1: Minimal lifespan management (startup/shutdown logging only).
-    Phase 4: Will add observability initialization, resource pooling, and graceful shutdown.
+    Phase 4A/4B: Observability initialization with OpenTelemetry and metrics.
 
     Note: AppContext was removed as it's not accessed by tools in Phase 1.
     Configuration will be reintroduced in Phase 4 when needed for observability setup.
@@ -54,8 +54,40 @@ async def app_lifespan(app):
         phase=PHASE,
     )
 
-    # Phase 1: No resources to initialize yet
-    # Phase 4: Initialize observability, database pools, config, etc.
+    # Phase 4A/4B: Initialize observability (OpenTelemetry tracing + metrics)
+    import os
+    from analytics.services.mcp_server.observability import configure_observability
+    from analytics.services.mcp_server.metrics import start_metrics_server
+
+    otlp_endpoint = os.getenv("OTLP_ENDPOINT")
+    environment = os.getenv("ENVIRONMENT", "development")
+    sampling_rate = float(os.getenv("SAMPLING_RATE", "1.0"))
+    metrics_port = int(os.getenv("PROMETHEUS_METRICS_PORT", "8000"))
+
+    tracer, meter = configure_observability(
+        service_name="mcp-four-lenses",
+        environment=environment,
+        otlp_endpoint=otlp_endpoint,
+        sampling_rate=sampling_rate,
+    )
+
+    logger.info(
+        "observability_initialized",
+        otlp_enabled=otlp_endpoint is not None,
+        otlp_endpoint=otlp_endpoint,
+        environment=environment,
+        sampling_rate=sampling_rate,
+    )
+
+    # Phase 4B: Start Prometheus metrics HTTP server
+    try:
+        start_metrics_server(port=metrics_port)
+        logger.info("prometheus_metrics_server_started", port=metrics_port)
+    except RuntimeError as e:
+        # Server already running (e.g., during hot reload)
+        logger.warning("prometheus_metrics_server_already_running", error=str(e))
+    except Exception as e:
+        logger.error("prometheus_metrics_server_failed", error=str(e), port=metrics_port)
 
     yield
 

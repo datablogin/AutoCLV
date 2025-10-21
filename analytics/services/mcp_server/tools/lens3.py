@@ -1,17 +1,21 @@
 """Lens 3 MCP Tool - Phase 2 Lens Service
 
 Wraps Lens 3 (Single Cohort Evolution) as an MCP tool for agentic orchestration.
+
+Phase 4B: Added distributed tracing for Lens 3 execution
 """
 
 import structlog
 from customer_base_audit.analyses.lens3 import Lens3Metrics, analyze_cohort_evolution
 from fastmcp import Context
+from opentelemetry import trace
 from pydantic import BaseModel, Field
 
 from analytics.services.mcp_server.main import mcp
 from analytics.services.mcp_server.state import get_shared_state
 
 logger = structlog.get_logger(__name__)
+tracer = trace.get_tracer(__name__)
 
 
 class Lens3Request(BaseModel):
@@ -164,101 +168,116 @@ async def _analyze_cohort_lifecycle_impl(
     request: Lens3Request, ctx: Context
 ) -> Lens3Response:
     """Implementation of Lens 3 analysis logic."""
-    shared_state = get_shared_state()
-    await ctx.info(f"Starting Lens 3 analysis for cohort {request.cohort_id}")
+    with tracer.start_as_current_span("lens3_execution") as span:
+        shared_state = get_shared_state()
+        await ctx.info(f"Starting Lens 3 analysis for cohort {request.cohort_id}")
 
-    # Get cohort data from context
-    cohort_definitions = shared_state.get("cohort_definitions")
-    cohort_assignments = shared_state.get("cohort_assignments")
+        span.set_attribute("cohort_id", request.cohort_id)
 
-    if cohort_definitions is None or cohort_assignments is None:
-        raise ValueError("Cohort data not found. Run create_customer_cohorts first.")
+        # Get cohort data from context
+        cohort_definitions = shared_state.get("cohort_definitions")
+        cohort_assignments = shared_state.get("cohort_assignments")
 
-    # Find the requested cohort
-    target_cohort = None
-    for cohort_def in cohort_definitions:
-        if cohort_def.cohort_id == request.cohort_id:
-            target_cohort = cohort_def
-            break
+        if cohort_definitions is None or cohort_assignments is None:
+            raise ValueError("Cohort data not found. Run create_customer_cohorts first.")
 
-    if target_cohort is None:
-        available_cohorts = [c.cohort_id for c in cohort_definitions]
-        raise ValueError(
-            f"Cohort '{request.cohort_id}' not found. "
-            f"Available cohorts: {available_cohorts}"
+        # Find the requested cohort
+        target_cohort = None
+        for cohort_def in cohort_definitions:
+            if cohort_def.cohort_id == request.cohort_id:
+                target_cohort = cohort_def
+                break
+
+        if target_cohort is None:
+            available_cohorts = [c.cohort_id for c in cohort_definitions]
+            raise ValueError(
+                f"Cohort '{request.cohort_id}' not found. "
+                f"Available cohorts: {available_cohorts}"
+            )
+
+        # Get customer IDs for this cohort
+        cohort_customer_ids = [
+            cust_id
+            for cust_id, assigned_cohort in cohort_assignments.items()
+            if assigned_cohort == request.cohort_id
+        ]
+
+        # Validate cohort has customers assigned
+        if not cohort_customer_ids:
+            raise ValueError(
+                f"No customers assigned to cohort '{request.cohort_id}'. "
+                f"Cohort may be empty or cohort assignments may be incorrect."
+            )
+
+        span.set_attribute("cohort_size", len(cohort_customer_ids))
+        span.set_attribute("acquisition_date", target_cohort.start_date.isoformat())
+
+        # Get data mart from context
+        mart = shared_state.get("data_mart")
+        if mart is None:
+            raise ValueError("Data mart not found. Run build_customer_data_mart first.")
+
+        # Get period aggregations (use first granularity)
+        first_granularity = list(mart.periods.keys())[0]
+        period_aggregations = mart.periods[first_granularity]
+
+        await ctx.report_progress(0.3, "Analyzing cohort evolution...")
+
+        # Run Lens 3 analysis
+        with tracer.start_as_current_span("lens3_calculate"):
+            lens3_result = analyze_cohort_evolution(
+                cohort_name=request.cohort_id,
+                acquisition_date=target_cohort.start_date,
+                period_aggregations=period_aggregations,
+                cohort_customer_ids=cohort_customer_ids,
+            )
+
+        await ctx.report_progress(0.7, "Generating insights...")
+
+        # Calculate insights
+        with tracer.start_as_current_span("lens3_generate_insights"):
+            cohort_maturity = _assess_cohort_maturity(lens3_result)
+            ltv_trajectory = _assess_ltv_trajectory(lens3_result)
+            recommendations = _generate_lens3_recommendations(lens3_result)
+
+        # Build metric curves
+        activation_curve = {
+            p.period_number: float(p.cumulative_activation_rate)
+            for p in lens3_result.periods
+        }
+        revenue_curve = {
+            p.period_number: float(p.avg_revenue_per_cohort_member)
+            for p in lens3_result.periods
+        }
+        retention_curve = {
+            p.period_number: (float(p.active_customers) / lens3_result.cohort_size * 100)
+            for p in lens3_result.periods
+        }
+
+        # Store in context
+        shared_state.set("lens3_result", lens3_result)
+
+        # Add result metrics to span
+        span.set_attribute("periods_analyzed", len(lens3_result.periods))
+        span.set_attribute("cohort_maturity", cohort_maturity)
+        span.set_attribute("ltv_trajectory", ltv_trajectory)
+        if lens3_result.periods:
+            span.set_attribute("final_activation_rate", float(lens3_result.periods[-1].cumulative_activation_rate))
+
+        await ctx.info(f"Lens 3 analysis complete for cohort {request.cohort_id}")
+
+        return Lens3Response(
+            cohort_id=request.cohort_id,
+            cohort_size=lens3_result.cohort_size,
+            acquisition_date=lens3_result.acquisition_date.isoformat(),
+            periods_analyzed=len(lens3_result.periods),
+            activation_curve=activation_curve,
+            revenue_curve=revenue_curve,
+            retention_curve=retention_curve,
+            cohort_maturity=cohort_maturity,
+            ltv_trajectory=ltv_trajectory,
+            recommendations=recommendations,
         )
-
-    # Get customer IDs for this cohort
-    cohort_customer_ids = [
-        cust_id
-        for cust_id, assigned_cohort in cohort_assignments.items()
-        if assigned_cohort == request.cohort_id
-    ]
-
-    # Validate cohort has customers assigned
-    if not cohort_customer_ids:
-        raise ValueError(
-            f"No customers assigned to cohort '{request.cohort_id}'. "
-            f"Cohort may be empty or cohort assignments may be incorrect."
-        )
-
-    # Get data mart from context
-    mart = shared_state.get("data_mart")
-    if mart is None:
-        raise ValueError("Data mart not found. Run build_customer_data_mart first.")
-
-    # Get period aggregations (use first granularity)
-    first_granularity = list(mart.periods.keys())[0]
-    period_aggregations = mart.periods[first_granularity]
-
-    await ctx.report_progress(0.3, "Analyzing cohort evolution...")
-
-    # Run Lens 3 analysis
-    lens3_result = analyze_cohort_evolution(
-        cohort_name=request.cohort_id,
-        acquisition_date=target_cohort.start_date,
-        period_aggregations=period_aggregations,
-        cohort_customer_ids=cohort_customer_ids,
-    )
-
-    await ctx.report_progress(0.7, "Generating insights...")
-
-    # Calculate insights
-    cohort_maturity = _assess_cohort_maturity(lens3_result)
-    ltv_trajectory = _assess_ltv_trajectory(lens3_result)
-    recommendations = _generate_lens3_recommendations(lens3_result)
-
-    # Build metric curves
-    activation_curve = {
-        p.period_number: float(p.cumulative_activation_rate)
-        for p in lens3_result.periods
-    }
-    revenue_curve = {
-        p.period_number: float(p.avg_revenue_per_cohort_member)
-        for p in lens3_result.periods
-    }
-    retention_curve = {
-        p.period_number: (float(p.active_customers) / lens3_result.cohort_size * 100)
-        for p in lens3_result.periods
-    }
-
-    # Store in context
-    shared_state.set("lens3_result", lens3_result)
-
-    await ctx.info(f"Lens 3 analysis complete for cohort {request.cohort_id}")
-
-    return Lens3Response(
-        cohort_id=request.cohort_id,
-        cohort_size=lens3_result.cohort_size,
-        acquisition_date=lens3_result.acquisition_date.isoformat(),
-        periods_analyzed=len(lens3_result.periods),
-        activation_curve=activation_curve,
-        revenue_curve=revenue_curve,
-        retention_curve=retention_curve,
-        cohort_maturity=cohort_maturity,
-        ltv_trajectory=ltv_trajectory,
-        recommendations=recommendations,
-    )
 
 
 @mcp.tool()

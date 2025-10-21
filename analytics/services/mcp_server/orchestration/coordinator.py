@@ -32,6 +32,16 @@ from tenacity import (
 
 from analytics.services.mcp_server.state import get_shared_state
 
+# Phase 4B: Import Prometheus metrics recording
+try:
+    from analytics.services.mcp_server.metrics import (
+        record_analysis_duration,
+        record_lens_execution,
+    )
+    PROMETHEUS_AVAILABLE = True
+except ImportError:
+    PROMETHEUS_AVAILABLE = False
+
 logger = structlog.get_logger(__name__)
 tracer = trace.get_tracer(__name__)
 
@@ -571,6 +581,13 @@ class FourLensesCoordinator:
                             duration_ms=duration_ms,
                             error_type=error_type,
                         )
+                        # Phase 4B: Also record to Prometheus
+                        if PROMETHEUS_AVAILABLE:
+                            record_lens_execution(
+                                lens_name=lens_name,
+                                duration_seconds=duration_ms / 1000.0,
+                                success=False
+                            )
                     except Exception as metrics_error:
                         logger.warning(
                             "metrics_recording_failed", error=str(metrics_error)
@@ -593,6 +610,13 @@ class FourLensesCoordinator:
                             success=True,
                             duration_ms=duration_ms,
                         )
+                        # Phase 4B: Also record to Prometheus
+                        if PROMETHEUS_AVAILABLE:
+                            record_lens_execution(
+                                lens_name=lens_name,
+                                duration_seconds=duration_ms / 1000.0,
+                                success=True
+                            )
                     except Exception as metrics_error:
                         logger.warning(
                             "metrics_recording_failed", error=str(metrics_error)
@@ -627,6 +651,13 @@ class FourLensesCoordinator:
                             success=True,
                             duration_ms=lens2_duration_ms,
                         )
+                        # Phase 4B: Also record to Prometheus
+                        if PROMETHEUS_AVAILABLE:
+                            record_lens_execution(
+                                lens_name="lens2",
+                                duration_seconds=lens2_duration_ms / 1000.0,
+                                success=True
+                            )
                     except Exception as metrics_error:
                         logger.warning(
                             "metrics_recording_failed", error=str(metrics_error)
@@ -653,6 +684,13 @@ class FourLensesCoordinator:
                             duration_ms=lens2_duration_ms,
                             error_type=error_type,
                         )
+                        # Phase 4B: Also record to Prometheus
+                        if PROMETHEUS_AVAILABLE:
+                            record_lens_execution(
+                                lens_name="lens2",
+                                duration_seconds=lens2_duration_ms / 1000.0,
+                                success=False
+                            )
                     except Exception as metrics_error:
                         logger.warning(
                             "metrics_recording_failed", error=str(metrics_error)

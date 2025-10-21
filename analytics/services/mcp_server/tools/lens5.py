@@ -1,8 +1,11 @@
 """Lens 5 MCP Tool - Phase 2 Lens Service
 
 Wraps Lens 5 (Overall Customer Base Health) as an MCP tool for agentic orchestration.
+
+Phase 4B: Added Prometheus metrics recording
 """
 
+import time
 from datetime import datetime, timezone
 from decimal import Decimal
 
@@ -16,6 +19,13 @@ from pydantic import BaseModel, Field
 
 from analytics.services.mcp_server.main import mcp
 from analytics.services.mcp_server.state import get_shared_state
+
+# Phase 4B: Import Prometheus metrics
+try:
+    from analytics.services.mcp_server.metrics import record_lens_execution
+    PROMETHEUS_AVAILABLE = True
+except ImportError:
+    PROMETHEUS_AVAILABLE = False
 
 logger = structlog.get_logger(__name__)
 
@@ -316,141 +326,154 @@ async def _assess_customer_base_health_impl(
     request: Lens5Request, ctx: Context
 ) -> Lens5Response:
     """Implementation of Lens 5 analysis logic."""
-    shared_state = get_shared_state()
-    await ctx.info("Starting Lens 5: Overall Customer Base Health Analysis")
+    start_time = time.time()
+    success = False
 
-    # Get period aggregations and cohort assignments from context
-    period_aggregations = shared_state.get("period_aggregations")
-    cohort_assignments = shared_state.get("cohort_assignments")
+    try:
+        shared_state = get_shared_state()
+        await ctx.info("Starting Lens 5: Overall Customer Base Health Analysis")
 
-    if period_aggregations is None:
-        raise ValueError(
-            "Period aggregations not found. Run build_customer_data_mart first."
-        )
+        # Get period aggregations and cohort assignments from context
+        period_aggregations = shared_state.get("period_aggregations")
+        cohort_assignments = shared_state.get("cohort_assignments")
 
-    if cohort_assignments is None:
-        raise ValueError(
-            "Cohort assignments not found. Run create_customer_cohorts first."
-        )
-
-    # Determine analysis window
-    all_dates = [p.period_start for p in period_aggregations]
-    min_date = min(all_dates)
-    max_date = max(all_dates)
-
-    # Normalize timezone handling - ensure request dates are timezone-aware
-    analysis_start = request.analysis_start_date
-    if analysis_start and analysis_start.tzinfo is None:
-        analysis_start = analysis_start.replace(tzinfo=timezone.utc)
-    analysis_start = analysis_start or min_date
-
-    analysis_end = request.analysis_end_date
-    if analysis_end and analysis_end.tzinfo is None:
-        analysis_end = analysis_end.replace(tzinfo=timezone.utc)
-    analysis_end = analysis_end or max_date
-
-    await ctx.report_progress(
-        0.2, f"Analyzing from {analysis_start.date()} to {analysis_end.date()}..."
-    )
-
-    # Run Lens 5 analysis
-    lens5_result = assess_customer_base_health(
-        period_aggregations=period_aggregations,
-        cohort_assignments=cohort_assignments,
-        analysis_start_date=analysis_start,
-        analysis_end_date=analysis_end,
-    )
-
-    await ctx.report_progress(0.6, "Calculating cohort summaries...")
-
-    # Generate summaries
-    # Top revenue cohorts
-    top_revenue = sorted(
-        lens5_result.cohort_revenue_contributions,
-        key=lambda x: x.total_revenue,
-        reverse=True,
-    )[:5]
-
-    top_revenue_summaries = []
-    total_revenue = sum(
-        c.total_revenue for c in lens5_result.cohort_revenue_contributions
-    )
-
-    for contrib in top_revenue:
-        if total_revenue > 0:
-            pct = (float(contrib.total_revenue) / float(total_revenue)) * 100
-        else:
-            pct = 0.0
-
-        top_revenue_summaries.append(
-            CohortRevenueSummary(
-                cohort_id=contrib.cohort_id,
-                total_revenue=float(contrib.total_revenue),
-                pct_of_total_revenue=pct,
-                active_customers=contrib.active_customers,
+        if period_aggregations is None:
+            raise ValueError(
+                "Period aggregations not found. Run build_customer_data_mart first."
             )
+
+        if cohort_assignments is None:
+            raise ValueError(
+                "Cohort assignments not found. Run create_customer_cohorts first."
+            )
+
+        # Determine analysis window
+        all_dates = [p.period_start for p in period_aggregations]
+        min_date = min(all_dates)
+        max_date = max(all_dates)
+
+        # Normalize timezone handling - ensure request dates are timezone-aware
+        analysis_start = request.analysis_start_date
+        if analysis_start and analysis_start.tzinfo is None:
+            analysis_start = analysis_start.replace(tzinfo=timezone.utc)
+        analysis_start = analysis_start or min_date
+
+        analysis_end = request.analysis_end_date
+        if analysis_end and analysis_end.tzinfo is None:
+            analysis_end = analysis_end.replace(tzinfo=timezone.utc)
+        analysis_end = analysis_end or max_date
+
+        await ctx.report_progress(
+            0.2, f"Analyzing from {analysis_start.date()} to {analysis_end.date()}..."
         )
 
-    # Top repeat behavior cohorts
-    top_repeat = sorted(
-        lens5_result.cohort_repeat_behavior,
-        key=lambda x: x.repeat_rate,
-        reverse=True,
-    )[:5]
-
-    top_repeat_summaries = [
-        CohortBehaviorSummary(
-            cohort_id=c.cohort_id,
-            cohort_size=c.cohort_size,
-            repeat_rate=float(c.repeat_rate),
-            avg_orders_per_repeat_buyer=float(c.avg_orders_per_repeat_buyer),
+        # Run Lens 5 analysis
+        lens5_result = assess_customer_base_health(
+            period_aggregations=period_aggregations,
+            cohort_assignments=cohort_assignments,
+            analysis_start_date=analysis_start,
+            analysis_end_date=analysis_end,
         )
-        for c in top_repeat
-    ]
 
-    await ctx.report_progress(0.8, "Generating insights and recommendations...")
+        await ctx.report_progress(0.6, "Calculating cohort summaries...")
 
-    # Generate insights
-    health_assessment = _generate_health_assessment(lens5_result)
-    key_strengths = _identify_key_strengths(lens5_result)
-    key_risks = _identify_key_risks(lens5_result)
-    recommendations = _generate_recommendations(lens5_result)
+        # Generate summaries
+        # Top revenue cohorts
+        top_revenue = sorted(
+            lens5_result.cohort_revenue_contributions,
+            key=lambda x: x.total_revenue,
+            reverse=True,
+        )[:5]
 
-    # Store in context
-    shared_state.set("lens5_result", lens5_result)
+        top_revenue_summaries = []
+        total_revenue = sum(
+            c.total_revenue for c in lens5_result.cohort_revenue_contributions
+        )
 
-    await ctx.info(
-        f"Lens 5 analysis complete - "
-        f"Grade: {lens5_result.health_score.health_grade}, "
-        f"Score: {float(lens5_result.health_score.health_score):.1f}/100"
-    )
+        for contrib in top_revenue:
+            if total_revenue > 0:
+                pct = (float(contrib.total_revenue) / float(total_revenue)) * 100
+            else:
+                pct = 0.0
 
-    return Lens5Response(
-        analysis_name=request.analysis_name,
-        date_range=(
-            analysis_start.isoformat(),
-            analysis_end.isoformat(),
-        ),
-        health_score=float(lens5_result.health_score.health_score),
-        health_grade=lens5_result.health_score.health_grade,
-        total_customers=lens5_result.health_score.total_customers,
-        total_active_customers=lens5_result.health_score.total_active_customers,
-        overall_retention_rate=float(lens5_result.health_score.overall_retention_rate),
-        cohort_quality_trend=lens5_result.health_score.cohort_quality_trend,
-        revenue_predictability_pct=float(
-            lens5_result.health_score.revenue_predictability_pct
-        ),
-        acquisition_dependence_pct=float(
-            lens5_result.health_score.acquisition_dependence_pct
-        ),
-        cohort_count=len(lens5_result.cohort_repeat_behavior),
-        top_revenue_cohorts=top_revenue_summaries,
-        top_repeat_cohorts=top_repeat_summaries,
-        health_assessment=health_assessment,
-        key_strengths=key_strengths,
-        key_risks=key_risks,
-        recommendations=recommendations,
-    )
+            top_revenue_summaries.append(
+                CohortRevenueSummary(
+                    cohort_id=contrib.cohort_id,
+                    total_revenue=float(contrib.total_revenue),
+                    pct_of_total_revenue=pct,
+                    active_customers=contrib.active_customers,
+                )
+            )
+
+        # Top repeat behavior cohorts
+        top_repeat = sorted(
+            lens5_result.cohort_repeat_behavior,
+            key=lambda x: x.repeat_rate,
+            reverse=True,
+        )[:5]
+
+        top_repeat_summaries = [
+            CohortBehaviorSummary(
+                cohort_id=c.cohort_id,
+                cohort_size=c.cohort_size,
+                repeat_rate=float(c.repeat_rate),
+                avg_orders_per_repeat_buyer=float(c.avg_orders_per_repeat_buyer),
+            )
+            for c in top_repeat
+        ]
+
+        await ctx.report_progress(0.8, "Generating insights and recommendations...")
+
+        # Generate insights
+        health_assessment = _generate_health_assessment(lens5_result)
+        key_strengths = _identify_key_strengths(lens5_result)
+        key_risks = _identify_key_risks(lens5_result)
+        recommendations = _generate_recommendations(lens5_result)
+
+        # Store in context
+        shared_state.set("lens5_result", lens5_result)
+
+        await ctx.info(
+            f"Lens 5 analysis complete - "
+            f"Grade: {lens5_result.health_score.health_grade}, "
+            f"Score: {float(lens5_result.health_score.health_score):.1f}/100"
+        )
+
+        success = True
+        return Lens5Response(
+            analysis_name=request.analysis_name,
+            date_range=(
+                analysis_start.isoformat(),
+                analysis_end.isoformat(),
+            ),
+            health_score=float(lens5_result.health_score.health_score),
+            health_grade=lens5_result.health_score.health_grade,
+            total_customers=lens5_result.health_score.total_customers,
+            total_active_customers=lens5_result.health_score.total_active_customers,
+            overall_retention_rate=float(lens5_result.health_score.overall_retention_rate),
+            cohort_quality_trend=lens5_result.health_score.cohort_quality_trend,
+            revenue_predictability_pct=float(
+                lens5_result.health_score.revenue_predictability_pct
+            ),
+            acquisition_dependence_pct=float(
+                lens5_result.health_score.acquisition_dependence_pct
+            ),
+            cohort_count=len(lens5_result.cohort_repeat_behavior),
+            top_revenue_cohorts=top_revenue_summaries,
+            top_repeat_cohorts=top_repeat_summaries,
+            health_assessment=health_assessment,
+            key_strengths=key_strengths,
+            key_risks=key_risks,
+            recommendations=recommendations,
+        )
+    finally:
+        # Phase 4B: Record Prometheus metrics regardless of success/failure
+        duration_seconds = time.time() - start_time
+        if PROMETHEUS_AVAILABLE:
+            try:
+                record_lens_execution("lens5", duration_seconds, success)
+            except Exception as e:
+                logger.warning("prometheus_metrics_recording_failed", error=str(e))
 
 
 @mcp.tool()
