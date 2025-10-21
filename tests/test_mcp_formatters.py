@@ -82,20 +82,32 @@ class TestMarkdownTables:
     def test_format_lens2_table(self):
         """Lens2 table should show migration and changes."""
         p1 = Lens1Metrics(
-            100, 40, Decimal("40.00"), Decimal("10000.00"),
-            Decimal("45.00"), Decimal("62.00"), Decimal("2.50"),
-            Decimal("100.00"), {}
+            100,
+            40,
+            Decimal("40.00"),
+            Decimal("10000.00"),
+            Decimal("45.00"),
+            Decimal("62.00"),
+            Decimal("2.50"),
+            Decimal("100.00"),
+            {},
         )
         p2 = Lens1Metrics(
-            120, 50, Decimal("41.67"), Decimal("12000.00"),
-            Decimal("47.00"), Decimal("64.00"), Decimal("2.80"),
-            Decimal("100.00"), {}
+            120,
+            50,
+            Decimal("41.67"),
+            Decimal("12000.00"),
+            Decimal("47.00"),
+            Decimal("64.00"),
+            Decimal("2.80"),
+            Decimal("100.00"),
+            {},
         )
         migration = CustomerMigration(
             retained=frozenset(["C1", "C2"]),
             churned=frozenset(["C3"]),
             new=frozenset(["C4", "C5", "C6"]),
-            reactivated=frozenset(["C5"])
+            reactivated=frozenset(["C5"]),
         )
         metrics = Lens2Metrics(
             period1_metrics=p1,
@@ -106,7 +118,7 @@ class TestMarkdownTables:
             reactivation_rate=Decimal("33.33"),
             customer_count_change=20,
             revenue_change_pct=Decimal("20.00"),
-            avg_order_value_change_pct=Decimal("5.00")
+            avg_order_value_change_pct=Decimal("5.00"),
         )
 
         table = format_lens2_table(metrics)
@@ -130,7 +142,7 @@ class TestMarkdownTables:
             total_revenue=Decimal("15000.00"),
             aov=Decimal("100.00"),
             margin=Decimal("100.00"),
-            revenue=Decimal("15000.00")
+            revenue=Decimal("15000.00"),
         )
         ttsp = TimeToSecondPurchase(
             cohort_id="2023-Q1",
@@ -138,13 +150,13 @@ class TestMarkdownTables:
             repeat_rate=Decimal("60.00"),
             median_days=Decimal("30.00"),
             mean_days=Decimal("35.00"),
-            cumulative_repeat_by_period={}
+            cumulative_repeat_by_period={},
         )
         metrics = Lens4Metrics(
             cohort_decompositions=[decomp],
             time_to_second_purchase=[ttsp],
             cohort_comparisons=[],
-            alignment_type="left-aligned"
+            alignment_type="left-aligned",
         )
 
         table = format_lens4_decomposition_table(metrics)
@@ -164,14 +176,14 @@ class TestMarkdownTables:
             revenue_predictability_pct=Decimal("85.00"),
             acquisition_dependence_pct=Decimal("15.00"),
             health_score=Decimal("82.50"),
-            health_grade="B"
+            health_grade="B",
         )
         metrics = Lens5Metrics(
             cohort_revenue_contributions=[],
             cohort_repeat_behavior=[],
             health_score=health,
             analysis_start_date=datetime(2023, 1, 1, tzinfo=timezone.utc),
-            analysis_end_date=datetime(2023, 12, 31, tzinfo=timezone.utc)
+            analysis_end_date=datetime(2023, 12, 31, tzinfo=timezone.utc),
         )
 
         table = format_lens5_health_summary_table(metrics)
@@ -196,7 +208,7 @@ class TestPlotlyCharts:
                 CohortPeriodMetrics(0, 100, 1.0, 1.5, 50.0, 1.5, 50.0, 5000.0),
                 CohortPeriodMetrics(1, 80, 0.9, 1.2, 40.0, 0.96, 32.0, 3200.0),
                 CohortPeriodMetrics(2, 60, 0.85, 1.0, 35.0, 0.60, 21.0, 2100.0),
-            ]
+            ],
         )
 
         chart = create_retention_trend_chart(metrics)
@@ -240,14 +252,14 @@ class TestPlotlyCharts:
             revenue_predictability_pct=Decimal("85.00"),
             acquisition_dependence_pct=Decimal("15.00"),
             health_score=Decimal("82.50"),
-            health_grade="B"
+            health_grade="B",
         )
         metrics = Lens5Metrics(
             cohort_revenue_contributions=[],
             cohort_repeat_behavior=[],
             health_score=health,
             analysis_start_date=datetime(2023, 1, 1, tzinfo=timezone.utc),
-            analysis_end_date=datetime(2023, 12, 31, tzinfo=timezone.utc)
+            analysis_end_date=datetime(2023, 12, 31, tzinfo=timezone.utc),
         )
 
         chart = create_health_score_gauge(metrics)
@@ -279,14 +291,14 @@ class TestPlotlyCharts:
             revenue_predictability_pct=Decimal("85.00"),
             acquisition_dependence_pct=Decimal("15.00"),
             health_score=Decimal("82.50"),
-            health_grade="B"
+            health_grade="B",
         )
         lens5 = Lens5Metrics(
             cohort_revenue_contributions=[],
             cohort_repeat_behavior=[],
             health_score=health,
             analysis_start_date=datetime(2023, 1, 1, tzinfo=timezone.utc),
-            analysis_end_date=datetime(2023, 12, 31, tzinfo=timezone.utc)
+            analysis_end_date=datetime(2023, 12, 31, tzinfo=timezone.utc),
         )
 
         dashboard = create_executive_dashboard(lens1, lens5)
@@ -310,14 +322,14 @@ class TestExecutiveSummaries:
             revenue_predictability_pct=Decimal("90.00"),
             acquisition_dependence_pct=Decimal("10.00"),
             health_score=Decimal("92.00"),
-            health_grade="A"
+            health_grade="A",
         )
         metrics = Lens5Metrics(
             cohort_revenue_contributions=[],
             cohort_repeat_behavior=[],
             health_score=health,
             analysis_start_date=datetime(2023, 1, 1, tzinfo=timezone.utc),
-            analysis_end_date=datetime(2023, 12, 31, tzinfo=timezone.utc)
+            analysis_end_date=datetime(2023, 12, 31, tzinfo=timezone.utc),
         )
 
         summary = generate_health_summary(metrics)
@@ -337,14 +349,14 @@ class TestExecutiveSummaries:
             revenue_predictability_pct=Decimal("65.00"),
             acquisition_dependence_pct=Decimal("35.00"),
             health_score=Decimal("75.00"),
-            health_grade="C"
+            health_grade="C",
         )
         metrics = Lens5Metrics(
             cohort_revenue_contributions=[],
             cohort_repeat_behavior=[],
             health_score=health,
             analysis_start_date=datetime(2023, 1, 1, tzinfo=timezone.utc),
-            analysis_end_date=datetime(2023, 12, 31, tzinfo=timezone.utc)
+            analysis_end_date=datetime(2023, 12, 31, tzinfo=timezone.utc),
         )
 
         summary = generate_health_summary(metrics)
@@ -356,20 +368,32 @@ class TestExecutiveSummaries:
     def test_generate_retention_insights(self):
         """Retention insights should analyze migration patterns."""
         p1 = Lens1Metrics(
-            100, 40, Decimal("40.00"), Decimal("10000.00"),
-            Decimal("45.00"), Decimal("62.00"), Decimal("2.50"),
-            Decimal("100.00"), {}
+            100,
+            40,
+            Decimal("40.00"),
+            Decimal("10000.00"),
+            Decimal("45.00"),
+            Decimal("62.00"),
+            Decimal("2.50"),
+            Decimal("100.00"),
+            {},
         )
         p2 = Lens1Metrics(
-            120, 50, Decimal("41.67"), Decimal("12000.00"),
-            Decimal("47.00"), Decimal("64.00"), Decimal("2.80"),
-            Decimal("100.00"), {}
+            120,
+            50,
+            Decimal("41.67"),
+            Decimal("12000.00"),
+            Decimal("47.00"),
+            Decimal("64.00"),
+            Decimal("2.80"),
+            Decimal("100.00"),
+            {},
         )
         migration = CustomerMigration(
             retained=frozenset(["C1", "C2"]),
             churned=frozenset(["C3"]),
             new=frozenset(["C4", "C5", "C6"]),
-            reactivated=frozenset(["C5"])
+            reactivated=frozenset(["C5"]),
         )
         metrics = Lens2Metrics(
             period1_metrics=p1,
@@ -380,7 +404,7 @@ class TestExecutiveSummaries:
             reactivation_rate=Decimal("33.33"),
             customer_count_change=20,
             revenue_change_pct=Decimal("20.00"),
-            avg_order_value_change_pct=Decimal("5.00")
+            avg_order_value_change_pct=Decimal("5.00"),
         )
 
         insights = generate_retention_insights(metrics)
@@ -402,7 +426,7 @@ class TestExecutiveSummaries:
             total_revenue=Decimal("15000.00"),
             aov=Decimal("100.00"),
             margin=Decimal("100.00"),
-            revenue=Decimal("15000.00")
+            revenue=Decimal("15000.00"),
         )
         ttsp = TimeToSecondPurchase(
             cohort_id="2023-Q1",
@@ -410,13 +434,13 @@ class TestExecutiveSummaries:
             repeat_rate=Decimal("60.00"),
             median_days=Decimal("30.00"),
             mean_days=Decimal("35.00"),
-            cumulative_repeat_by_period={}
+            cumulative_repeat_by_period={},
         )
         metrics = Lens4Metrics(
             cohort_decompositions=[decomp],
             time_to_second_purchase=[ttsp],
             cohort_comparisons=[],
-            alignment_type="left-aligned"
+            alignment_type="left-aligned",
         )
 
         summary = generate_cohort_comparison(metrics)
@@ -471,7 +495,7 @@ class TestEdgeCases:
             cohort_size=100,
             periods=[
                 CohortPeriodMetrics(0, 100, 1.0, 1.5, 50.0, 1.5, 50.0, 5000.0),
-            ]
+            ],
         )
 
         chart = create_retention_trend_chart(metrics)
@@ -485,9 +509,15 @@ class TestFormatConsistency:
         """All markdown tables should have proper table structure."""
         # Create sample metrics
         lens1 = Lens1Metrics(
-            100, 30, Decimal("30.00"), Decimal("10000.00"),
-            Decimal("45.00"), Decimal("62.00"), Decimal("2.50"),
-            Decimal("100.00"), {}
+            100,
+            30,
+            Decimal("30.00"),
+            Decimal("10000.00"),
+            Decimal("45.00"),
+            Decimal("62.00"),
+            Decimal("2.50"),
+            Decimal("100.00"),
+            {},
         )
 
         table = format_lens1_table(lens1)
@@ -499,9 +529,15 @@ class TestFormatConsistency:
     def test_plotly_charts_have_required_fields(self):
         """All Plotly charts should have data and layout."""
         lens1 = Lens1Metrics(
-            100, 30, Decimal("30.00"), Decimal("10000.00"),
-            Decimal("45.00"), Decimal("62.00"), Decimal("2.50"),
-            Decimal("100.00"), {}
+            100,
+            30,
+            Decimal("30.00"),
+            Decimal("10000.00"),
+            Decimal("45.00"),
+            Decimal("62.00"),
+            Decimal("2.50"),
+            Decimal("100.00"),
+            {},
         )
 
         chart = create_revenue_concentration_pie(lens1)
@@ -514,14 +550,21 @@ class TestFormatConsistency:
     def test_summaries_are_non_empty(self):
         """All summaries should produce non-empty strings."""
         health = CustomerBaseHealthScore(
-            1000, 800, Decimal("80.00"), "improving",
-            Decimal("85.00"), Decimal("15.00"), Decimal("82.50"), "B"
+            1000,
+            800,
+            Decimal("80.00"),
+            "improving",
+            Decimal("85.00"),
+            Decimal("15.00"),
+            Decimal("82.50"),
+            "B",
         )
         metrics = Lens5Metrics(
-            [], [],
+            [],
+            [],
             health,
             datetime(2023, 1, 1, tzinfo=timezone.utc),
-            datetime(2023, 12, 31, tzinfo=timezone.utc)
+            datetime(2023, 12, 31, tzinfo=timezone.utc),
         )
 
         summary = generate_health_summary(metrics)

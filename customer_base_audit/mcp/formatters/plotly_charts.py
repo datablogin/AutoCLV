@@ -391,7 +391,9 @@ def create_executive_dashboard(
     ]
     scores = [
         float(health.overall_retention_rate),
-        80 if health.cohort_quality_trend == "improving" else (50 if health.cohort_quality_trend == "stable" else 20),
+        80
+        if health.cohort_quality_trend == "improving"
+        else (50 if health.cohort_quality_trend == "stable" else 20),
         float(health.revenue_predictability_pct),
         100 - float(health.acquisition_dependence_pct),
     ]

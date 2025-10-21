@@ -68,20 +68,32 @@ def create_sample_lens1() -> Lens1Metrics:
 def create_sample_lens2() -> Lens2Metrics:
     """Create sample Lens 2 data for testing."""
     p1 = Lens1Metrics(
-        1000, 400, Decimal("40.00"), Decimal("400000.00"),
-        Decimal("45.00"), Decimal("65.00"), Decimal("3.00"),
-        Decimal("400.00"), {}
+        1000,
+        400,
+        Decimal("40.00"),
+        Decimal("400000.00"),
+        Decimal("45.00"),
+        Decimal("65.00"),
+        Decimal("3.00"),
+        Decimal("400.00"),
+        {},
     )
     p2 = Lens1Metrics(
-        1100, 420, Decimal("38.18"), Decimal("462000.00"),
-        Decimal("47.50"), Decimal("66.50"), Decimal("3.15"),
-        Decimal("420.00"), {}
+        1100,
+        420,
+        Decimal("38.18"),
+        Decimal("462000.00"),
+        Decimal("47.50"),
+        Decimal("66.50"),
+        Decimal("3.15"),
+        Decimal("420.00"),
+        {},
     )
     migration = CustomerMigration(
         retained=frozenset([f"C{i}" for i in range(750)]),
         churned=frozenset([f"C{i}" for i in range(750, 1000)]),
         new=frozenset([f"C{i}" for i in range(1000, 1350)]),
-        reactivated=frozenset([f"C{i}" for i in range(1000, 1050)])
+        reactivated=frozenset([f"C{i}" for i in range(1000, 1050)]),
     )
     return Lens2Metrics(
         period1_metrics=p1,
@@ -92,7 +104,7 @@ def create_sample_lens2() -> Lens2Metrics:
         reactivation_rate=Decimal("14.29"),
         customer_count_change=100,
         revenue_change_pct=Decimal("15.50"),
-        avg_order_value_change_pct=Decimal("5.00")
+        avg_order_value_change_pct=Decimal("5.00"),
     )
 
 
@@ -108,7 +120,7 @@ def create_sample_lens3() -> Lens3Metrics:
             CohortPeriodMetrics(2, 320, 0.90, 1.2, 42.0, 0.768, 26.88, 13440.0),
             CohortPeriodMetrics(3, 275, 0.88, 1.15, 40.0, 0.6325, 22.0, 11000.0),
             CohortPeriodMetrics(4, 250, 0.86, 1.1, 38.0, 0.55, 19.0, 9500.0),
-        ]
+        ],
     )
 
 
@@ -126,7 +138,7 @@ def create_sample_lens4() -> Lens4Metrics:
             total_revenue=Decimal("60000.00"),
             aov=Decimal("100.00"),
             margin=Decimal("100.00"),
-            revenue=Decimal("60000.00")
+            revenue=Decimal("60000.00"),
         ),
         CohortDecomposition(
             cohort_id="2023-Q2",
@@ -139,7 +151,7 @@ def create_sample_lens4() -> Lens4Metrics:
             total_revenue=Decimal("75600.00"),
             aov=Decimal("105.00"),
             margin=Decimal("100.00"),
-            revenue=Decimal("75600.00")
+            revenue=Decimal("75600.00"),
         ),
         CohortDecomposition(
             cohort_id="2023-Q3",
@@ -152,7 +164,7 @@ def create_sample_lens4() -> Lens4Metrics:
             total_revenue=Decimal("93500.00"),
             aov=Decimal("110.00"),
             margin=Decimal("100.00"),
-            revenue=Decimal("93500.00")
+            revenue=Decimal("93500.00"),
         ),
     ]
 
@@ -163,7 +175,7 @@ def create_sample_lens4() -> Lens4Metrics:
             repeat_rate=Decimal("60.00"),
             median_days=Decimal("35.00"),
             mean_days=Decimal("42.00"),
-            cumulative_repeat_by_period={}
+            cumulative_repeat_by_period={},
         ),
         TimeToSecondPurchase(
             cohort_id="2023-Q2",
@@ -171,7 +183,7 @@ def create_sample_lens4() -> Lens4Metrics:
             repeat_rate=Decimal("66.00"),
             median_days=Decimal("30.00"),
             mean_days=Decimal("38.00"),
-            cumulative_repeat_by_period={}
+            cumulative_repeat_by_period={},
         ),
         TimeToSecondPurchase(
             cohort_id="2023-Q3",
@@ -179,7 +191,7 @@ def create_sample_lens4() -> Lens4Metrics:
             repeat_rate=Decimal("70.00"),
             median_days=Decimal("28.00"),
             mean_days=Decimal("35.00"),
-            cumulative_repeat_by_period={}
+            cumulative_repeat_by_period={},
         ),
     ]
 
@@ -187,7 +199,7 @@ def create_sample_lens4() -> Lens4Metrics:
         cohort_decompositions=decomps,
         time_to_second_purchase=ttsp,
         cohort_comparisons=[],
-        alignment_type="left-aligned"
+        alignment_type="left-aligned",
     )
 
 
@@ -201,7 +213,7 @@ def create_sample_lens5() -> Lens5Metrics:
         revenue_predictability_pct=Decimal("88.00"),
         acquisition_dependence_pct=Decimal("12.00"),
         health_score=Decimal("84.50"),
-        health_grade="B"
+        health_grade="B",
     )
 
     cohort_behavior = [
@@ -211,7 +223,7 @@ def create_sample_lens5() -> Lens5Metrics:
             one_time_buyers=160,
             repeat_buyers=240,
             repeat_rate=Decimal("60.00"),
-            avg_orders_per_repeat_buyer=Decimal("4.20")
+            avg_orders_per_repeat_buyer=Decimal("4.20"),
         ),
         CohortRepeatBehavior(
             cohort_id="2023-Q2",
@@ -219,7 +231,7 @@ def create_sample_lens5() -> Lens5Metrics:
             one_time_buyers=153,
             repeat_buyers=297,
             repeat_rate=Decimal("66.00"),
-            avg_orders_per_repeat_buyer=Decimal("4.50")
+            avg_orders_per_repeat_buyer=Decimal("4.50"),
         ),
         CohortRepeatBehavior(
             cohort_id="2023-Q3",
@@ -227,7 +239,7 @@ def create_sample_lens5() -> Lens5Metrics:
             one_time_buyers=150,
             repeat_buyers=350,
             repeat_rate=Decimal("70.00"),
-            avg_orders_per_repeat_buyer=Decimal("4.80")
+            avg_orders_per_repeat_buyer=Decimal("4.80"),
         ),
     ]
 
@@ -236,7 +248,7 @@ def create_sample_lens5() -> Lens5Metrics:
         cohort_repeat_behavior=cohort_behavior,
         health_score=health,
         analysis_start_date=datetime(2023, 1, 1, tzinfo=timezone.utc),
-        analysis_end_date=datetime(2023, 12, 31, tzinfo=timezone.utc)
+        analysis_end_date=datetime(2023, 12, 31, tzinfo=timezone.utc),
     )
 
 
@@ -275,13 +287,29 @@ def test_plotly_charts() -> str:
 
     output = "# Plotly Chart Generators Test\n\n"
     output += "## Retention Trend Chart (Lens 3)\n\n"
-    output += "```json\n" + json.dumps(create_retention_trend_chart(lens3), indent=2) + "\n```\n\n"
+    output += (
+        "```json\n"
+        + json.dumps(create_retention_trend_chart(lens3), indent=2)
+        + "\n```\n\n"
+    )
     output += "## Revenue Concentration Pie (Lens 1)\n\n"
-    output += "```json\n" + json.dumps(create_revenue_concentration_pie(lens1), indent=2) + "\n```\n\n"
+    output += (
+        "```json\n"
+        + json.dumps(create_revenue_concentration_pie(lens1), indent=2)
+        + "\n```\n\n"
+    )
     output += "## Health Score Gauge (Lens 5)\n\n"
-    output += "```json\n" + json.dumps(create_health_score_gauge(lens5), indent=2) + "\n```\n\n"
+    output += (
+        "```json\n"
+        + json.dumps(create_health_score_gauge(lens5), indent=2)
+        + "\n```\n\n"
+    )
     output += "## Executive Dashboard (Lens 1 + 5)\n\n"
-    output += "```json\n" + json.dumps(create_executive_dashboard(lens1, lens5), indent=2) + "\n```\n"
+    output += (
+        "```json\n"
+        + json.dumps(create_executive_dashboard(lens1, lens5), indent=2)
+        + "\n```\n"
+    )
 
     return output
 
@@ -322,7 +350,9 @@ def test_all_formatters() -> str:
     lens5 = create_sample_lens5()
 
     output = "# Complete Formatter Test Suite\n\n"
-    output += "This demonstrates all formatter capabilities with sample customer data.\n\n"
+    output += (
+        "This demonstrates all formatter capabilities with sample customer data.\n\n"
+    )
     output += "---\n\n"
 
     # Markdown tables
@@ -343,11 +373,21 @@ def test_all_formatters() -> str:
     # Charts (JSON format)
     output += "# Part 3: Interactive Plotly Charts\n\n"
     output += "## Retention Trend Chart\n\n"
-    output += "```json\n" + json.dumps(create_retention_trend_chart(lens3), indent=2) + "\n```\n\n"
+    output += (
+        "```json\n"
+        + json.dumps(create_retention_trend_chart(lens3), indent=2)
+        + "\n```\n\n"
+    )
     output += "## Revenue Concentration Pie\n\n"
-    output += "```json\n" + json.dumps(create_revenue_concentration_pie(lens1), indent=2) + "\n```\n\n"
+    output += (
+        "```json\n"
+        + json.dumps(create_revenue_concentration_pie(lens1), indent=2)
+        + "\n```\n\n"
+    )
     output += "## Health Score Gauge\n\n"
-    output += "```json\n" + json.dumps(create_health_score_gauge(lens5), indent=2) + "\n```\n"
+    output += (
+        "```json\n" + json.dumps(create_health_score_gauge(lens5), indent=2) + "\n```\n"
+    )
 
     return output
 
@@ -427,7 +467,7 @@ def show_all_charts() -> str:
     output += "## 3. Health Score Gauge\n"
     output += "Use `show_health_gauge` to see the overall health score (84.5/100, Grade B).\n\n"
     output += "---\n\n"
-    output += "**Try**: \"Show the retention chart\" or \"Show the health gauge\"\n"
+    output += '**Try**: "Show the retention chart" or "Show the health gauge"\n'
 
     return output
 

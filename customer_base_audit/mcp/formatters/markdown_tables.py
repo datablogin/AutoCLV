@@ -149,7 +149,9 @@ def format_lens2_table(metrics: Lens2Metrics) -> str:
     return table
 
 
-def format_lens4_decomposition_table(metrics: Lens4Metrics, max_cohorts: int = 10) -> str:
+def format_lens4_decomposition_table(
+    metrics: Lens4Metrics, max_cohorts: int = 10
+) -> str:
     """Format Lens 4 cohort decomposition as markdown tables.
 
     Parameters
@@ -288,11 +290,7 @@ def format_lens5_health_summary_table(metrics: Lens5Metrics) -> str:
     health = metrics.health_score
 
     # Determine trend emoji
-    trend_indicators = {
-        "improving": "📈",
-        "stable": "➡️",
-        "declining": "📉"
-    }
+    trend_indicators = {"improving": "📈", "stable": "➡️", "declining": "📉"}
     trend_emoji = trend_indicators.get(health.cohort_quality_trend, "")
 
     table = f"""## Lens 5: Customer Base Health Score

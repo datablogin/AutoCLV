@@ -107,29 +107,45 @@ Your customer base health is **{grade_desc}**. {grade_advice.capitalize()}.
 
 ### Key Findings
 
-**Retention**: {health.overall_retention_rate}% of your historical customer base remains active.
-This represents {health.total_active_customers:,} active customers out of {health.total_customers:,} total.
+**Retention**: {
+        health.overall_retention_rate
+    }% of your historical customer base remains active.
+This represents {health.total_active_customers:,} active customers out of {
+        health.total_customers:,} total.
 
 **Cohort Quality**: Your cohorts are {trend_text}. This trend accounts for 30% of your
 overall health score and directly impacts long-term revenue sustainability.
 
-**Revenue Stability**: {health.revenue_predictability_pct}% of revenue is predictable from
-established cohorts, indicating a {predictability_text}. Only {health.acquisition_dependence_pct}%
+**Revenue Stability**: {
+        health.revenue_predictability_pct
+    }% of revenue is predictable from
+established cohorts, indicating a {predictability_text}. Only {
+        health.acquisition_dependence_pct
+    }%
 depends on the newest cohort.{dependence_warning}
 
 ### Recommended Actions
 
-1. **Retention Focus**: With {health.overall_retention_rate}% retention, prioritize strategies
+1. **Retention Focus**: With {
+        health.overall_retention_rate
+    }% retention, prioritize strategies
    to re-engage inactive customers and prevent churn in active cohorts.
 
-2. **Cohort Quality**: {"Continue investing in initiatives that improve new customer quality"
-   if health.cohort_quality_trend == "improving" else
-   ("Monitor cohort performance closely for early warning signs" if health.cohort_quality_trend == "stable"
-    else "Investigate root causes of declining cohort quality immediately")}.
+2. **Cohort Quality**: {
+        "Continue investing in initiatives that improve new customer quality"
+        if health.cohort_quality_trend == "improving"
+        else (
+            "Monitor cohort performance closely for early warning signs"
+            if health.cohort_quality_trend == "stable"
+            else "Investigate root causes of declining cohort quality immediately"
+        )
+    }.
 
-3. **Revenue Diversification**: {"Maintain current balance between retention and acquisition"
-   if health.acquisition_dependence_pct < 20 else
-   "Reduce acquisition dependence by improving retention and expansion revenue"}.
+3. **Revenue Diversification**: {
+        "Maintain current balance between retention and acquisition"
+        if health.acquisition_dependence_pct < 20
+        else "Reduce acquisition dependence by improving retention and expansion revenue"
+    }.
 """
 
     # Add cohort-specific insights if available
@@ -138,7 +154,9 @@ depends on the newest cohort.{dependence_warning}
         avg_repeat_rate = sum(repeat_rates) / len(repeat_rates)
 
         summary += "\n### Cohort Behavior Insights\n\n"
-        summary += f"Average repeat purchase rate across cohorts: {avg_repeat_rate:.1f}%\n\n"
+        summary += (
+            f"Average repeat purchase rate across cohorts: {avg_repeat_rate:.1f}%\n\n"
+        )
 
         # Identify best and worst cohorts
         sorted_cohorts = sorted(
@@ -150,12 +168,8 @@ depends on the newest cohort.{dependence_warning}
         if len(sorted_cohorts) >= 2:
             best = sorted_cohorts[0]
             worst = sorted_cohorts[-1]
-            summary += (
-                f"**Best Performing**: {best.cohort_id} ({best.repeat_rate}% repeat rate)\n"
-            )
-            summary += (
-                f"**Needs Attention**: {worst.cohort_id} ({worst.repeat_rate}% repeat rate)\n"
-            )
+            summary += f"**Best Performing**: {best.cohort_id} ({best.repeat_rate}% repeat rate)\n"
+            summary += f"**Needs Attention**: {worst.cohort_id} ({worst.repeat_rate}% repeat rate)\n"
 
     return summary
 
@@ -247,16 +261,26 @@ Your customer base {growth_text}, with {retention_assessment}.
 - **Retained**: {len(lens2.migration.retained):,} customers ({lens2.retention_rate}%)
 - **Churned**: {len(lens2.migration.churned):,} customers ({lens2.churn_rate}%)
 - **New**: {len(lens2.migration.new):,} customers
-- **Reactivated**: {len(lens2.migration.reactivated):,} customers ({lens2.reactivation_rate}% of new){reactivation_note}
+- **Reactivated**: {len(lens2.migration.reactivated):,} customers ({
+        lens2.reactivation_rate
+    }% of new){reactivation_note}
 
 ### Revenue Impact
 
-Revenue {"increased" if lens2.revenue_change_pct > 0 else "decreased"} by {abs(lens2.revenue_change_pct)}%
-(${lens2.period1_metrics.total_revenue:,.2f} → ${lens2.period2_metrics.total_revenue:,.2f}).
+Revenue {"increased" if lens2.revenue_change_pct > 0 else "decreased"} by {
+        abs(lens2.revenue_change_pct)
+    }%
+(${lens2.period1_metrics.total_revenue:,.2f} → ${
+        lens2.period2_metrics.total_revenue:,.2f}).
 
-Average order value {"increased" if lens2.avg_order_value_change_pct > 0 else "decreased"} by
-{abs(lens2.avg_order_value_change_pct)}%, indicating {"improved customer spend patterns"
-if lens2.avg_order_value_change_pct > 0 else "pricing pressure or customer downgrading"}.
+Average order value {
+        "increased" if lens2.avg_order_value_change_pct > 0 else "decreased"
+    } by
+{abs(lens2.avg_order_value_change_pct)}%, indicating {
+        "improved customer spend patterns"
+        if lens2.avg_order_value_change_pct > 0
+        else "pricing pressure or customer downgrading"
+    }.
 
 ### Strategic Recommendations
 
@@ -264,12 +288,16 @@ if lens2.avg_order_value_change_pct > 0 else "pricing pressure or customer downg
 
     # Add targeted recommendations
     if lens2.retention_rate < 60:
-        insights += "1. **Urgent**: Implement churn prevention program for at-risk customers\n"
+        insights += (
+            "1. **Urgent**: Implement churn prevention program for at-risk customers\n"
+        )
         insights += "2. Conduct exit surveys to understand churn drivers\n"
         insights += "3. Create win-back campaigns for recently churned customers\n"
     elif lens2.retention_rate < 80:
         insights += "1. Analyze characteristics of churned customers to identify at-risk patterns\n"
-        insights += "2. Implement proactive engagement for customers showing churn signals\n"
+        insights += (
+            "2. Implement proactive engagement for customers showing churn signals\n"
+        )
         insights += "3. Strengthen onboarding and early-lifecycle experience\n"
     else:
         insights += "1. Maintain current retention programs that are driving strong performance\n"
@@ -289,7 +317,9 @@ if lens2.avg_order_value_change_pct > 0 else "pricing pressure or customer downg
             ) * 100
 
             insights += f"**{lens3.cohort_name}** cohort retention:\n"
-            insights += f"- Started with {period_0.active_customers:,} active customers\n"
+            insights += (
+                f"- Started with {period_0.active_customers:,} active customers\n"
+            )
             insights += f"- Now has {latest.active_customers:,} active customers (Period {latest.period_number})\n"
             insights += f"- Cumulative activation rate: {latest.cumulative_activation_rate * 100:.1f}%\n"
 
@@ -406,11 +436,15 @@ Comparing **{len(cohort_ids)}** cohorts using **{metrics.alignment_type}** analy
     if metrics.time_to_second_purchase:
         summary += "\n### Time to Second Purchase\n\n"
 
-        ttsp_data = [t for t in metrics.time_to_second_purchase if t.cohort_id in cohort_ids]
+        ttsp_data = [
+            t for t in metrics.time_to_second_purchase if t.cohort_id in cohort_ids
+        ]
 
         if ttsp_data:
             # Sort by repeat rate
-            sorted_by_repeat = sorted(ttsp_data, key=lambda t: t.repeat_rate, reverse=True)
+            sorted_by_repeat = sorted(
+                ttsp_data, key=lambda t: t.repeat_rate, reverse=True
+            )
 
             summary += "| Cohort | Repeat Rate | Median Days | Mean Days |\n"
             summary += "|--------|-------------|-------------|----------|\n"
@@ -424,14 +458,18 @@ Comparing **{len(cohort_ids)}** cohorts using **{metrics.alignment_type}** analy
             # Identify best performer
             best = sorted_by_repeat[0]
             summary += f"\n**Best Performer**: {best.cohort_id} with {best.repeat_rate}% repeat rate "
-            summary += f"and median time to second purchase of {best.median_days} days.\n"
+            summary += (
+                f"and median time to second purchase of {best.median_days} days.\n"
+            )
 
     # Key insights from comparisons
     if metrics.cohort_comparisons:
         summary += "\n### Cohort Quality Trends\n\n"
 
         # Analyze if newer cohorts are better or worse
-        pct_active_changes = [c.pct_active_change_pct for c in metrics.cohort_comparisons]
+        pct_active_changes = [
+            c.pct_active_change_pct for c in metrics.cohort_comparisons
+        ]
         aov_changes = [c.aov_change_pct for c in metrics.cohort_comparisons]
 
         avg_pct_active_change = sum(pct_active_changes) / len(pct_active_changes)
@@ -460,10 +498,16 @@ Comparing **{len(cohort_ids)}** cohorts using **{metrics.alignment_type}** analy
     if metrics.cohort_comparisons and avg_pct_active_change < -5:
         summary += "1. **Urgent**: Investigate declining cohort quality - this threatens long-term growth\n"
         summary += "2. Compare acquisition channels, onboarding, and early experience across cohorts\n"
-        summary += "3. Consider pausing underperforming channels until quality improves\n"
+        summary += (
+            "3. Consider pausing underperforming channels until quality improves\n"
+        )
     else:
         summary += "1. Continue monitoring cohort performance to detect early quality degradation\n"
-        summary += "2. Document and replicate success patterns from best-performing cohorts\n"
-        summary += "3. Optimize for long-term customer value, not just acquisition volume\n"
+        summary += (
+            "2. Document and replicate success patterns from best-performing cohorts\n"
+        )
+        summary += (
+            "3. Optimize for long-term customer value, not just acquisition volume\n"
+        )
 
     return summary
