@@ -1,0 +1,86 @@
+=====================================================
+QUICK PHASE 5 RETEST (After Bug Fix)
+Copy this into Claude Desktop
+=====================================================
+
+Please run this sequence to validate the narrative fix:
+
+STEP 1: RELOAD FOUNDATION DATA
+================================
+
+Load sample data:
+Run load_transactions with file_path: /Users/robertwelborn/PycharmProjects/AutoCLV/.worktrees/track-a/synthetic_transactions.json
+
+Build foundation (run in sequence):
+- build_customer_data_mart
+- calculate_rfm_metrics
+- create_customer_cohorts
+
+Verify ready:
+Run health_check
+
+
+STEP 2: TEST LLM NARRATIVE (FIRST QUERY - COLD)
+=================================================
+
+Run run_orchestrated_analysis with:
+- query: "Tell me about customer health and which cohorts are performing best"
+- use_llm: true
+- use_cache: false
+
+EXPECTED RESULT:
+- ✅ narrative field should be PRESENT (not null!)
+- ✅ narrative should be a detailed paragraph
+- ✅ Duration: 2-5 seconds (LLM call)
+- ✅ token_usage should show usage
+- ✅ cache_hit: false
+
+
+STEP 3: TEST CACHING (SECOND QUERY - WARM)
+============================================
+
+Run EXACT same query:
+Run run_orchestrated_analysis with:
+- query: "Tell me about customer health and which cohorts are performing best"
+- use_llm: true
+- use_cache: true
+
+EXPECTED RESULT:
+- ✅ narrative: Same as Step 2
+- ✅ Duration: <100ms (instant!)
+- ✅ cache_hit: true
+- ✅ cache_stats.hit_rate: 0.5 (50%)
+- ✅ Cost: $0.00 (no API call)
+
+
+RESULTS TO REPORT:
+==================
+
+Step 2 (First Query - Cold):
+- Has narrative field: YES/NO
+- narrative content (first 100 chars): ___________
+- Duration: ___ms
+- token_usage.total_tokens: ___
+- cache_hit: false
+
+Step 3 (Second Query - Cached):
+- Has narrative field: YES/NO
+- narrative same as Step 2: YES/NO
+- Duration: ___ms (should be <100ms)
+- cache_hit: ___ (should be true)
+- cache_stats.hit_rate: ___ (should be 0.5)
+- Cost: $0.00
+
+
+SUCCESS CRITERIA:
+==================
+
+[ ] Step 2: narrative field is present (not null)
+[ ] Step 2: narrative is detailed and coherent
+[ ] Step 2: Duration is 2-5 seconds
+[ ] Step 3: Response is instant (<100ms)
+[ ] Step 3: cache_hit is true
+[ ] Step 3: hit_rate is 0.5
+[ ] Narrative quality exceeds rule-based insights
+
+If all pass: PHASE 5 FULLY VALIDATED! ✅

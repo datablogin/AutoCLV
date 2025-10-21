@@ -1,0 +1,23 @@
+Test the Phase 4A observability features:
+
+1. Run health_check - verify server is healthy and check what foundation data is available
+
+2. Load sample data: load_transactions with path tests/fixtures/synthetic_transactions_2023_2024.csv
+
+3. Run health_check again to see how foundation data status has changed
+
+4. Run orchestrated analysis: run_orchestrated_analysis with query "Give me the overall customer base health"
+
+5. Run another analysis: run_orchestrated_analysis with query "customer health snapshot"
+
+6. Run multi-lens analysis: run_orchestrated_analysis with query "customer health and overall base health"
+
+7. Check performance metrics: get_execution_metrics - review the statistics for all lens executions
+
+8. Run final health_check to see updated system status
+
+Please report:
+- Health status before and after loading data
+- Execution metrics summary (total analyses, success rate, per-lens statistics)
+- Any interesting insights from the analyses
+- Any issues or errors encountered

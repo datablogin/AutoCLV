@@ -1,5 +1,6 @@
 {
   "_comment": "Template config for Claude Desktop - Replace /path/to/your/AutoCLV with your actual project path",
+  "_comment2": "Phase 5: Add ANTHROPIC_API_KEY to enable LLM-powered query parsing and synthesis",
   "mcpServers": {
     "four-lenses-analytics": {
       "command": "uv",
@@ -12,7 +13,8 @@
         "analytics/services/mcp_server/main.py"
       ],
       "env": {
-        "PYTHONPATH": "/path/to/your/AutoCLV"
+        "PYTHONPATH": "/path/to/your/AutoCLV",
+        "ANTHROPIC_API_KEY": "your-api-key-here"
       }
     }
   }

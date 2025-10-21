@@ -8,6 +8,10 @@ from .cohorts import create_customer_cohorts
 from .data_loader import load_transactions
 from .data_mart import build_customer_data_mart
 
+# Phase 4A: Observability & Resilience
+from .execution_metrics import get_execution_metrics, reset_execution_metrics
+from .health_check import health_check
+
 # Lens analyses
 from .lens1 import analyze_single_period_snapshot
 from .lens2 import analyze_period_to_period_comparison
@@ -31,4 +35,8 @@ __all__ = [
     "assess_overall_customer_base_health",
     # Orchestration (Phase 3)
     "run_orchestrated_analysis",
+    # Observability (Phase 4A)
+    "health_check",
+    "get_execution_metrics",
+    "reset_execution_metrics",
 ]
