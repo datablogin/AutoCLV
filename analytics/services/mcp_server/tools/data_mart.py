@@ -135,22 +135,27 @@ async def _build_customer_data_mart_impl(
         transactions = _load_transactions(Path(request.transaction_data_path))
 
     # Filter transactions by max_transaction_date if specified
+    # Prefer order_ts if available, otherwise use event_ts for consistency
     if request.max_transaction_date is not None:
         original_count = len(transactions)
         transactions = [
             txn
             for txn in transactions
             if (
+                # Prefer order_ts if available
                 ("order_ts" in txn and txn["order_ts"] <= request.max_transaction_date)
                 or (
-                    "event_ts" in txn
+                    # Use event_ts only if order_ts not present
+                    "order_ts" not in txn
+                    and "event_ts" in txn
                     and txn["event_ts"] <= request.max_transaction_date
                 )
             )
         ]
         filtered_count = len(transactions)
         await ctx.info(
-            f"Filtered transactions by max_transaction_date: {filtered_count} of {original_count} transactions retained"
+            f"Filtered transactions by max_transaction_date: {filtered_count} of {original_count} transactions retained "
+            f"(preferring order_ts over event_ts for consistency)"
         )
 
     await ctx.report_progress(0.3, "Aggregating orders...")

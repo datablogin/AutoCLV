@@ -577,6 +577,9 @@ class FourLensesCoordinator:
         if "lens3" in lenses_to_run:
             group1_tasks["lens3"] = self._execute_lens3(state)
 
+        if "lens2" in lenses_to_run:
+            group1_tasks["lens2"] = self._execute_lens2(state)
+
         if "lens4" in lenses_to_run:
             group1_tasks["lens4"] = self._execute_lens4(state)
 
@@ -637,57 +640,6 @@ class FourLensesCoordinator:
 
                     lenses_executed.append(lens_name)
                     state[f"{lens_name}_result"] = result
-
-        # Group 2: Lens 2 (period-to-period comparison)
-        # Note: Lens 2 no longer depends on Lens 1 - it requires two separate RFM calculations
-        if "lens2" in lenses_to_run:
-            logger.info("executing_lens2")
-            lens2_start_time = time.time()
-            try:
-                # Note: Retry logic available but not used in MVP to avoid complexity
-                result = await self._execute_lens2(state)
-                lens2_duration_ms = (time.time() - lens2_start_time) * 1000
-
-                lenses_executed.append("lens2")
-                state["lens2_result"] = result
-
-                logger.info(
-                    "lens_execution_succeeded",
-                    lens="lens2",
-                    duration_ms=lens2_duration_ms,
-                )
-
-                # Record success metrics
-                self._record_lens_metrics(
-                    lens_name="lens2",
-                    duration_ms=lens2_duration_ms,
-                    success=True,
-                )
-
-            except Exception as e:
-                lens2_duration_ms = (time.time() - lens2_start_time) * 1000
-                error_msg = f"{type(e).__name__}: {str(e)}"
-                error_type = type(e).__name__
-
-                logger.error(
-                    "lens_execution_failed",
-                    lens="lens2",
-                    error=str(e),
-                    error_type=error_type,
-                    duration_ms=lens2_duration_ms,
-                )
-
-                # Record failure metrics
-                self._record_lens_metrics(
-                    lens_name="lens2",
-                    duration_ms=lens2_duration_ms,
-                    success=False,
-                    error_type=error_type,
-                )
-
-                lenses_failed.append("lens2")
-                lens_errors["lens2"] = error_msg
-                state["lens2_result"] = None
 
         execution_time_ms = (time.time() - start_time) * 1000
 
@@ -967,9 +919,15 @@ class FourLensesCoordinator:
                     "Run create_customer_cohorts first."
                 )
 
-            # Get the first cohort to analyze
+            # Validate cohort data is not empty
             if not cohort_definitions:
                 raise ValueError("No cohorts defined. Cannot execute Lens 3.")
+
+            if not cohort_assignments:
+                raise ValueError(
+                    "No cohort assignments found. Cohorts may not have any customers assigned. "
+                    "Verify customer data was provided when creating cohorts."
+                )
 
             first_cohort = cohort_definitions[0]
             cohort_id = first_cohort.cohort_id

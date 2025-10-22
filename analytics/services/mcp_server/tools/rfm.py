@@ -52,6 +52,12 @@ async def _calculate_rfm_metrics_impl(
     if mart is None:
         raise ValueError("Data mart not found. Run build_customer_data_mart first.")
 
+    # Validate data mart has period data
+    if not mart.periods:
+        raise ValueError(
+            "Data mart has no period data. Rebuild with valid transactions."
+        )
+
     # Get period aggregations (use first granularity)
     first_granularity = list(mart.periods.keys())[0]
     period_aggregations = mart.periods[first_granularity]
@@ -83,12 +89,13 @@ async def _calculate_rfm_metrics_impl(
     # Use custom storage key if provided (enables Lens 2 with two periods)
     shared_state.set(request.storage_key, rfm_metrics)
 
-    # Store scores with matching suffix if custom key used
-    if request.storage_key != "rfm_metrics":
-        scores_key = request.storage_key.replace("_metrics", "_scores")
-        shared_state.set(scores_key, rfm_scores)
-    else:
-        shared_state.set("rfm_scores", rfm_scores)
+    # Store scores with matching suffix (always use consistent pattern)
+    scores_key = (
+        request.storage_key.replace("_metrics", "_scores")
+        if "_metrics" in request.storage_key
+        else f"{request.storage_key}_scores"
+    )
+    shared_state.set(scores_key, rfm_scores)
 
     # Extract date range
     dates = [m.observation_start for m in rfm_metrics]
