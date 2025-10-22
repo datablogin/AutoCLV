@@ -845,8 +845,7 @@ class FourLensesCoordinator:
                     message="Period 1 RFM metrics not found in shared state",
                 )
                 raise ValueError(
-                    "Period 1 RFM metrics not found. "
-                    "Calculate RFM for period 1 first."
+                    "Period 1 RFM metrics not found. Calculate RFM for period 1 first."
                 )
 
             if period2_rfm is None:
@@ -909,7 +908,9 @@ class FourLensesCoordinator:
             span.set_attribute("retention_rate", float(lens2_result.retention_rate))
             span.set_attribute("churn_rate", float(lens2_result.churn_rate))
             span.set_attribute("growth_momentum", growth_momentum)
-            span.set_attribute("retained_customers", len(lens2_result.migration.retained))
+            span.set_attribute(
+                "retained_customers", len(lens2_result.migration.retained)
+            )
             span.set_attribute("churned_customers", len(lens2_result.migration.churned))
             span.set_attribute("new_customers", len(lens2_result.migration.new))
 
