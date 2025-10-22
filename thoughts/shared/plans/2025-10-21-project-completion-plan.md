@@ -358,9 +358,9 @@ Manual Verification:
 **Success Criteria**:
 
 Automated Verification:
-- [ ] Formatter tests pass: `pytest tests/test_mcp_formatters.py::test_enhanced_*`
-- [ ] Type checking passes: `make type-check`
-- [ ] Plotly JSON validates correctly
+- [x] Formatter tests pass: `pytest tests/test_mcp_formatters.py::test_enhanced_*`
+- [x] Type checking passes: `make type-check`
+- [x] Plotly JSON validates correctly
 
 Manual Verification:
 - [ ] Executive dashboard displays all 4 panels correctly in Claude Desktop
@@ -391,9 +391,9 @@ Manual Verification:
 **Success Criteria**:
 
 Automated Verification:
-- [ ] Chart size tests pass: `pytest tests/test_mcp_formatters.py::test_chart_size_*`
-- [ ] Charts use <50% of current token count
-- [ ] Quality remains acceptable (validated by test assertions)
+- [x] Chart size tests pass: `pytest tests/test_mcp_formatters.py::test_chart_size_*`
+- [x] Charts use <50% of current token count
+- [x] Quality remains acceptable (validated by test assertions)
 
 Manual Verification:
 - [ ] Multiple charts can be displayed in single Claude Desktop conversation

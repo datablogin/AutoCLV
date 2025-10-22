@@ -2,6 +2,9 @@
 
 Creates interactive Plotly charts in JSON format for display in
 Claude Desktop and other visualization tools.
+
+Charts are optimized for token efficiency by default (800x400px).
+Use ChartConfig to adjust size/quality tradeoffs.
 """
 
 from __future__ import annotations
@@ -10,8 +13,50 @@ from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
     from customer_base_audit.analyses.lens1 import Lens1Metrics
+    from customer_base_audit.analyses.lens2 import Lens2Metrics
     from customer_base_audit.analyses.lens3 import Lens3Metrics
+    from customer_base_audit.analyses.lens4 import Lens4Metrics
     from customer_base_audit.analyses.lens5 import Lens5Metrics
+
+
+def _get_default_height(base_height: int | None = None) -> int:
+    """Get default height from chart config.
+
+    Parameters
+    ----------
+    base_height:
+        Optional override height
+
+    Returns
+    -------
+    int:
+        Height in pixels
+    """
+    if base_height is not None:
+        return base_height
+    from customer_base_audit.mcp.formatters import get_chart_config
+
+    return get_chart_config().height
+
+
+def _get_default_width(base_width: int | None = None) -> int:
+    """Get default width from chart config.
+
+    Parameters
+    ----------
+    base_width:
+        Optional override width
+
+    Returns
+    -------
+    int:
+        Width in pixels
+    """
+    if base_width is not None:
+        return base_width
+    from customer_base_audit.mcp.formatters import get_chart_config
+
+    return get_chart_config().width
 
 
 def create_retention_trend_chart(metrics: Lens3Metrics) -> dict[str, Any]:
@@ -260,7 +305,7 @@ def create_health_score_gauge(metrics: Lens5Metrics) -> dict[str, Any]:
             "x": 0.5,
             "xanchor": "center",
         },
-        "height": 400,
+        "height": _get_default_height(),
     }
 
     return {"data": [gauge_trace], "layout": layout}
@@ -423,7 +468,7 @@ def create_executive_dashboard(
             "anchor": "x2",
             "range": [0, 100],
         },
-        "height": 800,
+        "height": _get_default_height(800),  # Larger dashboard, but configurable
         "showlegend": False,
     }
 
@@ -438,3 +483,286 @@ def create_executive_dashboard(
         ],
         "layout": layout,
     }
+
+
+def create_cohort_heatmap(metrics: Lens4Metrics) -> dict[str, Any]:
+    """Create cohort performance heatmap from Lens 4 data.
+
+    Visualizes cohort performance over periods using a color-coded heatmap.
+    Shows retention rates or revenue per customer across cohorts and periods.
+
+    Parameters
+    ----------
+    metrics:
+        Lens 4 multi-cohort comparison results
+
+    Returns
+    -------
+    dict:
+        Plotly figure specification as JSON-serializable dict
+
+    Examples
+    --------
+    >>> from decimal import Decimal
+    >>> from customer_base_audit.analyses.lens4 import (
+    ...     Lens4Metrics, CohortDecomposition
+    ... )
+    >>> decomp1 = CohortDecomposition(
+    ...     cohort_id="2023-Q1",
+    ...     period_number=0,
+    ...     cohort_size=100,
+    ...     active_customers=100,
+    ...     pct_active=Decimal("100.00"),
+    ...     total_orders=150,
+    ...     aof=Decimal("1.50"),
+    ...     total_revenue=Decimal("15000.00"),
+    ...     aov=Decimal("100.00"),
+    ...     margin=Decimal("100.00"),
+    ...     revenue=Decimal("15000.00")
+    ... )
+    >>> decomp2 = CohortDecomposition(
+    ...     cohort_id="2023-Q1",
+    ...     period_number=1,
+    ...     cohort_size=100,
+    ...     active_customers=80,
+    ...     pct_active=Decimal("80.00"),
+    ...     total_orders=120,
+    ...     aof=Decimal("1.50"),
+    ...     total_revenue=Decimal("12000.00"),
+    ...     aov=Decimal("100.00"),
+    ...     margin=Decimal("100.00"),
+    ...     revenue=Decimal("12000.00")
+    ... )
+    >>> metrics = Lens4Metrics(
+    ...     cohort_decompositions=[decomp1, decomp2],
+    ...     time_to_second_purchase=[],
+    ...     cohort_comparisons=[],
+    ...     alignment_type="left-aligned"
+    ... )
+    >>> chart = create_cohort_heatmap(metrics)
+    >>> chart['data'][0]['type']
+    'heatmap'
+    """
+    # Group decompositions by cohort
+    cohorts_data: dict[str, list[tuple[int, float]]] = {}
+    for decomp in metrics.cohort_decompositions:
+        if decomp.cohort_id not in cohorts_data:
+            cohorts_data[decomp.cohort_id] = []
+        # Use retention rate (pct_active) as the metric
+        retention_pct = float(decomp.pct_active)
+        cohorts_data[decomp.cohort_id].append((decomp.period_number, retention_pct))
+
+    # Sort cohorts by name (chronological)
+    cohort_ids = sorted(cohorts_data.keys())
+
+    # Find max period across all cohorts
+    max_period = max(
+        period for periods in cohorts_data.values() for period, _ in periods
+    )
+
+    # Build heatmap matrix
+    z_values: list[list[float | None]] = []
+    for cohort_id in cohort_ids:
+        row: list[float | None] = [None] * (max_period + 1)
+        for period, retention in cohorts_data[cohort_id]:
+            row[period] = retention
+        z_values.append(row)
+
+    # Create heatmap
+    heatmap_trace = {
+        "type": "heatmap",
+        "z": z_values,
+        "x": list(range(max_period + 1)),
+        "y": cohort_ids,
+        "colorscale": [
+            [0.0, "rgb(220, 20, 60)"],  # Red for low retention
+            [0.5, "rgb(255, 165, 0)"],  # Orange for medium
+            [1.0, "rgb(34, 139, 34)"],  # Green for high retention
+        ],
+        "colorbar": {
+            "title": "Retention %",
+            "ticksuffix": "%",
+        },
+        "hovertemplate": (
+            "Cohort: %{y}<br>"
+            "Period: %{x}<br>"
+            "Retention: %{z:.1f}%<extra></extra>"
+        ),
+        "zmin": 0,
+        "zmax": 100,
+    }
+
+    # Calculate dynamic height based on cohort count, but respect config min/max
+    base_height = _get_default_height()
+    dynamic_height = max(base_height, min(len(cohort_ids) * 30, base_height * 2))
+
+    layout = {
+        "title": {
+            "text": f"Cohort Retention Heatmap ({metrics.alignment_type.title()})",
+            "x": 0.5,
+            "xanchor": "center",
+        },
+        "xaxis": {
+            "title": "Period Number",
+            "tickmode": "linear",
+            "dtick": 1,
+        },
+        "yaxis": {
+            "title": "Cohort",
+            "autorange": "reversed",  # Newest cohorts at top
+        },
+        "height": dynamic_height,
+    }
+
+    return {"data": [heatmap_trace], "layout": layout}
+
+
+def create_sankey_diagram(metrics: Lens2Metrics) -> dict[str, Any]:
+    """Create customer migration Sankey diagram from Lens 2 data.
+
+    Visualizes customer flow between periods, showing retention, churn,
+    new acquisitions, and reactivations.
+
+    Parameters
+    ----------
+    metrics:
+        Lens 2 period comparison results
+
+    Returns
+    -------
+    dict:
+        Plotly figure specification as JSON-serializable dict
+
+    Examples
+    --------
+    >>> from decimal import Decimal
+    >>> from customer_base_audit.analyses.lens1 import Lens1Metrics
+    >>> from customer_base_audit.analyses.lens2 import (
+    ...     Lens2Metrics, CustomerMigration
+    ... )
+    >>> p1 = Lens1Metrics(
+    ...     total_customers=100,
+    ...     one_time_buyers=40,
+    ...     one_time_buyer_pct=Decimal("40.00"),
+    ...     total_revenue=Decimal("10000.00"),
+    ...     top_10pct_revenue_contribution=Decimal("45.00"),
+    ...     top_20pct_revenue_contribution=Decimal("62.00"),
+    ...     avg_orders_per_customer=Decimal("2.50"),
+    ...     median_customer_value=Decimal("100.00"),
+    ...     rfm_distribution={}
+    ... )
+    >>> p2 = Lens1Metrics(
+    ...     total_customers=120,
+    ...     one_time_buyers=50,
+    ...     one_time_buyer_pct=Decimal("41.67"),
+    ...     total_revenue=Decimal("12000.00"),
+    ...     top_10pct_revenue_contribution=Decimal("47.00"),
+    ...     top_20pct_revenue_contribution=Decimal("64.00"),
+    ...     avg_orders_per_customer=Decimal("2.80"),
+    ...     median_customer_value=Decimal("100.00"),
+    ...     rfm_distribution={}
+    ... )
+    >>> migration = CustomerMigration(
+    ...     retained=frozenset(["C1", "C2"]),
+    ...     churned=frozenset(["C3"]),
+    ...     new=frozenset(["C4", "C5"]),
+    ...     reactivated=frozenset(["C6"])
+    ... )
+    >>> metrics = Lens2Metrics(
+    ...     period1_metrics=p1,
+    ...     period2_metrics=p2,
+    ...     migration=migration,
+    ...     retention_rate=Decimal("66.67"),
+    ...     churn_rate=Decimal("33.33"),
+    ...     reactivation_rate=Decimal("16.67"),
+    ...     customer_count_change=20,
+    ...     revenue_change_pct=Decimal("20.00"),
+    ...     avg_order_value_change_pct=Decimal("5.00")
+    ... )
+    >>> chart = create_sankey_diagram(metrics)
+    >>> chart['data'][0]['type']
+    'sankey'
+    """
+    # Calculate customer counts
+    retained = len(metrics.migration.retained)
+    churned = len(metrics.migration.churned)
+    new = len(metrics.migration.new)
+    reactivated = len(metrics.migration.reactivated)
+
+    # Define nodes
+    # Node indices: 0=Period1, 1=Retained, 2=Churned, 3=New, 4=Reactivated, 5=Period2
+    nodes = {
+        "label": [
+            "Period 1 Customers",
+            "Retained",
+            "Churned",
+            "New Customers",
+            "Reactivated",
+            "Period 2 Customers",
+        ],
+        "color": [
+            "rgb(128, 128, 128)",  # Period 1 (gray)
+            "rgb(34, 139, 34)",  # Retained (green)
+            "rgb(220, 20, 60)",  # Churned (red)
+            "rgb(0, 128, 255)",  # New (blue)
+            "rgb(255, 165, 0)",  # Reactivated (orange)
+            "rgb(128, 128, 128)",  # Period 2 (gray)
+        ],
+    }
+
+    # Define flows (links)
+    links: dict[str, list[int | str]] = {
+        "source": [],
+        "target": [],
+        "value": [],
+        "color": [],
+    }
+
+    # Flow: Period 1 → Retained → Period 2
+    if retained > 0:
+        links["source"].extend([0, 1])
+        links["target"].extend([1, 5])
+        links["value"].extend([retained, retained])
+        links["color"].extend(
+            ["rgba(34, 139, 34, 0.4)", "rgba(34, 139, 34, 0.4)"]  # Green
+        )
+
+    # Flow: Period 1 → Churned
+    if churned > 0:
+        links["source"].append(0)
+        links["target"].append(2)
+        links["value"].append(churned)
+        links["color"].append("rgba(220, 20, 60, 0.4)")  # Red
+
+    # Flow: New → Period 2
+    if new > 0:
+        links["source"].append(3)
+        links["target"].append(5)
+        links["value"].append(new)
+        links["color"].append("rgba(0, 128, 255, 0.4)")  # Blue
+
+    # Flow: Reactivated → Period 2
+    if reactivated > 0:
+        links["source"].append(4)
+        links["target"].append(5)
+        links["value"].append(reactivated)
+        links["color"].append("rgba(255, 165, 0, 0.4)")  # Orange
+
+    sankey_trace = {
+        "type": "sankey",
+        "node": nodes,
+        "link": links,
+        "textfont": {"size": 12},
+    }
+
+    layout = {
+        "title": {
+            "text": "Customer Migration Flow",
+            "x": 0.5,
+            "xanchor": "center",
+        },
+        "font": {"size": 10},
+        "height": _get_default_height(500),
+    }
+
+    return {"data": [sankey_trace], "layout": layout}

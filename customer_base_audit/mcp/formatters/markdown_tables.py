@@ -150,7 +150,7 @@ def format_lens2_table(metrics: Lens2Metrics) -> str:
 
 
 def format_lens4_decomposition_table(
-    metrics: Lens4Metrics, max_cohorts: int = 10
+    metrics: Lens4Metrics, max_cohorts: int = 10, show_detailed_periods: bool = False
 ) -> str:
     """Format Lens 4 cohort decomposition as markdown tables.
 
@@ -160,6 +160,8 @@ def format_lens4_decomposition_table(
         Lens 4 analysis results
     max_cohorts:
         Maximum number of cohorts to display (default: 10)
+    show_detailed_periods:
+        If True, show period-by-period breakdown for each cohort (default: False)
 
     Returns
     -------
@@ -202,18 +204,26 @@ def format_lens4_decomposition_table(
     >>> print(format_lens4_decomposition_table(metrics))
     """
     # Group decompositions by cohort
-    cohorts = {}
+    from customer_base_audit.analyses.lens4 import CohortDecomposition
+
+    cohorts: dict[str, list[CohortDecomposition]] = {}
     for decomp in metrics.cohort_decompositions:
         if decomp.cohort_id not in cohorts:
             cohorts[decomp.cohort_id] = []
         cohorts[decomp.cohort_id].append(decomp)
 
-    # Limit to max_cohorts
-    cohort_ids = sorted(cohorts.keys())[:max_cohorts]
+    # Sort cohorts chronologically (newest first)
+    cohort_ids = sorted(cohorts.keys(), reverse=True)
+    total_cohorts = len(cohort_ids)
+
+    # Show pagination info if truncating
+    is_truncated = total_cohorts > max_cohorts
+    cohort_ids = cohort_ids[:max_cohorts]
 
     table = f"""## Lens 4: Multi-Cohort Comparison
 
 **Alignment Type**: {metrics.alignment_type.title()}
+**Total Cohorts**: {total_cohorts}{f" (showing {max_cohorts} most recent)" if is_truncated else ""}
 
 ### Cohort Performance Overview
 
@@ -239,11 +249,29 @@ def format_lens4_decomposition_table(
         table += "| Cohort | Repeat Rate | Median Days | Mean Days |\n"
         table += "|--------|-------------|-------------|----------|\n"
 
-        for ttsp in metrics.time_to_second_purchase[:max_cohorts]:
-            table += (
-                f"| {ttsp.cohort_id} | {ttsp.repeat_rate}% | "
-                f"{ttsp.median_days} | {ttsp.mean_days} |\n"
-            )
+        for ttsp in metrics.time_to_second_purchase:
+            if ttsp.cohort_id in cohort_ids:
+                table += (
+                    f"| {ttsp.cohort_id} | {ttsp.repeat_rate}% | "
+                    f"{ttsp.median_days} | {ttsp.mean_days} |\n"
+                )
+
+    # Add detailed period-by-period breakdown if requested
+    if show_detailed_periods:
+        table += "\n### Period-by-Period Detail\n\n"
+        for cohort_id in cohort_ids[:3]:  # Show detail for top 3 cohorts only
+            table += f"\n#### {cohort_id}\n\n"
+            table += "| Period | Active % | AOF | AOV | Revenue |\n"
+            table += "|--------|----------|-----|-----|----------|\n"
+
+            # Sort periods chronologically
+            sorted_decomps = sorted(cohorts[cohort_id], key=lambda d: d.period_number)
+            for decomp in sorted_decomps[:6]:  # Show first 6 periods
+                table += (
+                    f"| {decomp.period_number} | {decomp.pct_active}% | "
+                    f"{decomp.aof} | ${decomp.aov:,.2f} | "
+                    f"${decomp.total_revenue:,.2f} |\n"
+                )
 
     return table
 

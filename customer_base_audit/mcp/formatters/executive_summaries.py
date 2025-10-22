@@ -385,7 +385,9 @@ def generate_cohort_comparison(metrics: Lens4Metrics, max_cohorts: int = 5) -> s
         return "# Cohort Comparison\n\nNo cohort data available for analysis."
 
     # Group by cohort
-    cohorts = {}
+    from customer_base_audit.analyses.lens4 import CohortDecomposition
+
+    cohorts: dict[str, list[CohortDecomposition]] = {}
     for decomp in metrics.cohort_decompositions:
         if decomp.cohort_id not in cohorts:
             cohorts[decomp.cohort_id] = []
