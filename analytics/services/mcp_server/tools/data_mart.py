@@ -95,6 +95,11 @@ class BuildDataMartRequest(BaseModel):
     period_granularities: list[Literal["month", "quarter", "year"]] = Field(
         default=["quarter", "year"], description="Period granularities to compute"
     )
+    max_transaction_date: datetime | None = Field(
+        default=None,
+        description="Optional: Filter transactions to only include those on or before this date. "
+        "Required for period-to-period comparison (Lens 2) to create period-specific data marts.",
+    )
 
 
 class DataMartResponse(BaseModel):
@@ -128,6 +133,30 @@ async def _build_customer_data_mart_impl(
     # Load transactions (or use provided ones for testing)
     if transactions is None:
         transactions = _load_transactions(Path(request.transaction_data_path))
+
+    # Filter transactions by max_transaction_date if specified
+    # Prefer order_ts if available, otherwise use event_ts for consistency
+    if request.max_transaction_date is not None:
+        original_count = len(transactions)
+        transactions = [
+            txn
+            for txn in transactions
+            if (
+                # Prefer order_ts if available
+                ("order_ts" in txn and txn["order_ts"] <= request.max_transaction_date)
+                or (
+                    # Use event_ts only if order_ts not present
+                    "order_ts" not in txn
+                    and "event_ts" in txn
+                    and txn["event_ts"] <= request.max_transaction_date
+                )
+            )
+        ]
+        filtered_count = len(transactions)
+        await ctx.info(
+            f"Filtered transactions by max_transaction_date: {filtered_count} of {original_count} transactions retained "
+            f"(preferring order_ts over event_ts for consistency)"
+        )
 
     await ctx.report_progress(0.3, "Aggregating orders...")
     mart = builder.build(transactions)
@@ -178,6 +207,13 @@ async def build_customer_data_mart(
 
     This tool aggregates raw transactions into order-level and period-level
     summaries, which are the foundation for all Four Lenses analyses.
+
+    For Lens 2 period-to-period comparison, build the data mart twice with different
+    max_transaction_date values:
+    - Period 1: max_transaction_date=<end of period 1> (e.g., 2024-03-31)
+    - Period 2: max_transaction_date=<end of period 2> (e.g., 2024-06-30)
+
+    Then calculate RFM for each period and run Lens 2 analysis.
 
     Args:
         request: Configuration for data mart build

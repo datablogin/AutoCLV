@@ -23,6 +23,11 @@ class CalculateRFMRequest(BaseModel):
     calculate_scores: bool = Field(
         default=True, description="Also calculate RFM scores (1-5 binning)"
     )
+    storage_key: str = Field(
+        default="rfm_metrics",
+        description="Key to store RFM metrics in shared state (default: 'rfm_metrics'). "
+        "Use 'rfm_metrics_period2' for second period in Lens 2 analysis.",
+    )
 
 
 class RFMResponse(BaseModel):
@@ -32,6 +37,7 @@ class RFMResponse(BaseModel):
     score_count: int
     date_range: tuple[str, str]
     parallel_enabled: bool
+    storage_key: str
 
 
 async def _calculate_rfm_metrics_impl(
@@ -45,6 +51,12 @@ async def _calculate_rfm_metrics_impl(
     mart = shared_state.get("data_mart")
     if mart is None:
         raise ValueError("Data mart not found. Run build_customer_data_mart first.")
+
+    # Validate data mart has period data
+    if not mart.periods:
+        raise ValueError(
+            "Data mart has no period data. Rebuild with valid transactions."
+        )
 
     # Get period aggregations (use first granularity)
     first_granularity = list(mart.periods.keys())[0]
@@ -74,20 +86,31 @@ async def _calculate_rfm_metrics_impl(
         )
 
     # Store in shared state for reuse across tool calls
-    shared_state.set("rfm_metrics", rfm_metrics)
-    shared_state.set("rfm_scores", rfm_scores)
+    # Use custom storage key if provided (enables Lens 2 with two periods)
+    shared_state.set(request.storage_key, rfm_metrics)
+
+    # Store scores with matching suffix (always use consistent pattern)
+    scores_key = (
+        request.storage_key.replace("_metrics", "_scores")
+        if "_metrics" in request.storage_key
+        else f"{request.storage_key}_scores"
+    )
+    shared_state.set(scores_key, rfm_scores)
 
     # Extract date range
     dates = [m.observation_start for m in rfm_metrics]
     date_range = (min(dates).isoformat(), max(dates).isoformat())
 
-    await ctx.info(f"RFM calculation complete: {len(rfm_metrics)} customers")
+    await ctx.info(
+        f"RFM calculation complete: {len(rfm_metrics)} customers stored as '{request.storage_key}'"
+    )
 
     return RFMResponse(
         metrics_count=len(rfm_metrics),
         score_count=len(rfm_scores),
         date_range=date_range,
         parallel_enabled=request.enable_parallel,
+        storage_key=request.storage_key,
     )
 
 
@@ -97,6 +120,11 @@ async def calculate_rfm_metrics(
 ) -> RFMResponse:
     """
     Calculate RFM (Recency, Frequency, Monetary) metrics.
+
+    For Lens 2 period-to-period analysis, calculate RFM twice with different
+    observation_end dates and storage_key values:
+    - Period 1: storage_key="rfm_metrics", observation_end=<end of period 1>
+    - Period 2: storage_key="rfm_metrics_period2", observation_end=<end of period 2>
 
     This tool transforms period aggregations into RFM metrics for each
     customer, which are the foundation for Lens 1 and Lens 2 analyses.

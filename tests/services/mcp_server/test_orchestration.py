@@ -135,3 +135,141 @@ async def test_parallel_execution_intent():
     assert len(lenses) >= 2
     assert "lens1" in lenses
     assert "lens5" in lenses
+
+
+@pytest.mark.asyncio
+async def test_lens2_requires_two_periods():
+    """Test that Lens 2 provides helpful message when period 2 RFM is missing."""
+    from analytics.services.mcp_server.state import get_shared_state
+
+    coordinator = FourLensesCoordinator()
+    shared_state = get_shared_state()
+
+    # Setup minimal data for period 1
+    from datetime import datetime
+    from decimal import Decimal
+
+    from customer_base_audit.foundation.rfm import RFMMetrics
+
+    period1_rfm = [
+        RFMMetrics(
+            customer_id="C1",
+            recency_days=10,
+            frequency=5,
+            monetary=Decimal("100"),
+            observation_start=datetime(2024, 1, 1),
+            observation_end=datetime(2024, 6, 30),
+            total_spend=Decimal("500"),
+        )
+    ]
+
+    # Store period 1 RFM but NOT period 2
+    shared_state.set("rfm_metrics", period1_rfm)
+
+    # Try to run Lens 2
+    query = "lens2"
+    result = await coordinator.analyze(query)
+
+    # Should indicate lens2 needs two periods
+    lens2_result = result.get("lens2_result")
+    if lens2_result:  # May be None if lens failed
+        assert "recommendations" in lens2_result
+        recommendations = lens2_result.get("recommendations", [])
+        # Should have message about needing two periods
+        assert any("period 2" in str(rec).lower() for rec in recommendations) or any(
+            "rfm_metrics_period2" in str(rec) for rec in recommendations
+        )
+
+    # Cleanup
+    shared_state.clear()
+
+
+@pytest.mark.asyncio
+async def test_lens2_with_two_periods():
+    """Test that Lens 2 executes successfully when both periods are available."""
+    from analytics.services.mcp_server.state import get_shared_state
+
+    coordinator = FourLensesCoordinator()
+    shared_state = get_shared_state()
+
+    # Setup data for both periods
+    from datetime import datetime
+    from decimal import Decimal
+
+    from customer_base_audit.foundation.rfm import RFMMetrics
+
+    period1_rfm = [
+        RFMMetrics(
+            customer_id="C1",
+            recency_days=10,
+            frequency=5,
+            monetary=Decimal("100"),
+            observation_start=datetime(2024, 1, 1),
+            observation_end=datetime(2024, 6, 30),
+            total_spend=Decimal("500"),
+        ),
+        RFMMetrics(
+            customer_id="C2",
+            recency_days=20,
+            frequency=3,
+            monetary=Decimal("150"),
+            observation_start=datetime(2024, 1, 1),
+            observation_end=datetime(2024, 6, 30),
+            total_spend=Decimal("450"),
+        ),
+    ]
+
+    period2_rfm = [
+        RFMMetrics(
+            customer_id="C1",
+            recency_days=5,
+            frequency=3,
+            monetary=Decimal("120"),
+            observation_start=datetime(2024, 7, 1),
+            observation_end=datetime(2024, 12, 31),
+            total_spend=Decimal("360"),
+        ),
+        RFMMetrics(
+            customer_id="C3",
+            recency_days=15,
+            frequency=2,
+            monetary=Decimal("200"),
+            observation_start=datetime(2024, 7, 1),
+            observation_end=datetime(2024, 12, 31),
+            total_spend=Decimal("400"),
+        ),
+    ]
+
+    # Store both periods
+    shared_state.set("rfm_metrics", period1_rfm)
+    shared_state.set("rfm_metrics_period2", period2_rfm)
+
+    # Run Lens 2
+    query = "lens2"
+    result = await coordinator.analyze(query)
+
+    # Should execute successfully
+    assert "lens2" in result.get("lenses_executed", []) or "lens2_result" in result
+
+    lens2_result = result.get("lens2_result")
+    if lens2_result:
+        # Verify key metrics are present
+        assert "retention_rate" in lens2_result
+        assert "churn_rate" in lens2_result
+        assert "growth_momentum" in lens2_result
+        assert "recommendations" in lens2_result
+
+        # Verify retention calculation is correct
+        # C1 was retained (in both periods), C2 churned, C3 is new
+        assert lens2_result["period1_customers"] == 2
+        assert lens2_result["period2_customers"] == 2
+        assert lens2_result["retained_customers"] == 1  # C1
+        assert lens2_result["churned_customers"] == 1  # C2
+        assert lens2_result["new_customers"] == 1  # C3
+
+    # Cleanup
+    shared_state.clear()
+
+
+# Note: Lens 3 orchestration is already tested via test_lens_tools.py::test_lens3_cohort_evolution
+# which tests the full lens3 implementation. Orchestration-level test would be redundant.

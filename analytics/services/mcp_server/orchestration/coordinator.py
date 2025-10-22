@@ -577,6 +577,9 @@ class FourLensesCoordinator:
         if "lens3" in lenses_to_run:
             group1_tasks["lens3"] = self._execute_lens3(state)
 
+        if "lens2" in lenses_to_run:
+            group1_tasks["lens2"] = self._execute_lens2(state)
+
         if "lens4" in lenses_to_run:
             group1_tasks["lens4"] = self._execute_lens4(state)
 
@@ -637,66 +640,6 @@ class FourLensesCoordinator:
 
                     lenses_executed.append(lens_name)
                     state[f"{lens_name}_result"] = result
-
-        # Group 2: Lens 2 (depends on Lens 1)
-        if "lens2" in lenses_to_run:
-            if state.get("lens1_result") is not None:
-                logger.info("executing_lens2_with_lens1_context")
-                lens2_start_time = time.time()
-                try:
-                    # Note: Retry logic available but not used in MVP to avoid complexity
-                    result = await self._execute_lens2(state)
-                    lens2_duration_ms = (time.time() - lens2_start_time) * 1000
-
-                    lenses_executed.append("lens2")
-                    state["lens2_result"] = result
-
-                    logger.info(
-                        "lens_execution_succeeded",
-                        lens="lens2",
-                        duration_ms=lens2_duration_ms,
-                    )
-
-                    # Record success metrics
-                    self._record_lens_metrics(
-                        lens_name="lens2",
-                        duration_ms=lens2_duration_ms,
-                        success=True,
-                    )
-
-                except Exception as e:
-                    lens2_duration_ms = (time.time() - lens2_start_time) * 1000
-                    error_msg = f"{type(e).__name__}: {str(e)}"
-                    error_type = type(e).__name__
-
-                    logger.error(
-                        "lens_execution_failed",
-                        lens="lens2",
-                        error=str(e),
-                        error_type=error_type,
-                        duration_ms=lens2_duration_ms,
-                    )
-
-                    # Record failure metrics
-                    self._record_lens_metrics(
-                        lens_name="lens2",
-                        duration_ms=lens2_duration_ms,
-                        success=False,
-                        error_type=error_type,
-                    )
-
-                    lenses_failed.append("lens2")
-                    lens_errors["lens2"] = error_msg
-                    state["lens2_result"] = None
-            else:
-                error_msg = "Lens 1 result not available (required for Lens 2)"
-                logger.warning(
-                    "lens2_skipped",
-                    reason=error_msg,
-                )
-                lenses_failed.append("lens2")
-                lens_errors["lens2"] = error_msg
-                state["lens2_result"] = None
 
         execution_time_ms = (time.time() - start_time) * 1000
 
@@ -827,53 +770,256 @@ class FourLensesCoordinator:
     async def _execute_lens2(self, state: AnalysisState) -> dict[str, Any]:
         """Execute Lens 2: Period-to-period comparison.
 
-        Placeholder for MVP - full implementation requires two separate RFM calculations.
+        Requires two separate RFM calculations stored in shared state as:
+        - 'rfm_metrics' (period 1)
+        - 'rfm_metrics_period2' (period 2)
 
         Returns:
             Lens 2 result dict
         """
-        # Placeholder - Phase 3 MVP will skip full Lens 2 implementation
-        # Full implementation requires two separate period calculations
-        logger.warning(
-            "lens2_placeholder",
-            message="Lens 2 full implementation pending - returning placeholder",
-        )
+        with tracer.start_as_current_span("lens2_execution") as span:
+            from customer_base_audit.analyses.lens2 import analyze_period_comparison
 
-        return {
-            "period1_name": "Period 1",
-            "period2_name": "Period 2",
-            "retention_rate": 0.75,
-            "churn_rate": 0.25,
-            "growth_momentum": "moderate",
-            "key_drivers": ["Retention holding steady", "Acquisition slowing"],
-            "recommendations": [
-                "Lens 2 full implementation pending in Phase 3 follow-up"
-            ],
-        }
+            from analytics.services.mcp_server.tools.lens2 import (
+                _assess_growth_momentum,
+                _generate_lens2_recommendations,
+                _identify_key_drivers,
+            )
+
+            # Get RFM metrics for both periods from shared state
+            period1_rfm = self.shared_state.get("rfm_metrics")
+            period2_rfm = self.shared_state.get("rfm_metrics_period2")
+
+            # Check if we have both periods
+            if period1_rfm is None:
+                logger.warning(
+                    "lens2_skipped",
+                    message="Period 1 RFM metrics not found in shared state",
+                )
+                raise ValueError(
+                    "Period 1 RFM metrics not found. Calculate RFM for period 1 first."
+                )
+
+            if period2_rfm is None:
+                logger.warning(
+                    "lens2_requires_two_periods",
+                    message="Lens 2 requires two separate RFM calculations. "
+                    "Only period 1 RFM metrics found. Period 2 RFM not available.",
+                )
+                # Return a message indicating what's needed
+                return {
+                    "period1_name": "Period 1",
+                    "period2_name": "Period 2 (Not Available)",
+                    "period1_customers": len(period1_rfm),
+                    "period2_customers": 0,
+                    "retained_customers": 0,
+                    "churned_customers": 0,
+                    "new_customers": 0,
+                    "reactivated_customers": 0,
+                    "retention_rate": 0.0,
+                    "churn_rate": 0.0,
+                    "reactivation_rate": 0.0,
+                    "customer_count_change": 0,
+                    "revenue_change_pct": 0.0,
+                    "avg_order_value_change_pct": None,
+                    "growth_momentum": "unknown",
+                    "key_drivers": [
+                        "Lens 2 requires two separate RFM calculations",
+                        f"Period 1 has {len(period1_rfm)} customers",
+                        "Period 2 RFM metrics not found in shared state",
+                    ],
+                    "recommendations": [
+                        "To enable Lens 2 analysis:",
+                        "1. Calculate RFM for period 1 and store as 'rfm_metrics'",
+                        "2. Calculate RFM for period 2 and store as 'rfm_metrics_period2'",
+                        "3. Re-run the orchestrated analysis",
+                    ],
+                }
+
+            span.set_attribute("period1_rfm_count", len(period1_rfm))
+            span.set_attribute("period2_rfm_count", len(period2_rfm))
+
+            # Get customer history if available for reactivation analysis
+            all_customer_history = self.shared_state.get("customer_history")
+
+            # Run Lens 2 analysis
+            with tracer.start_as_current_span("lens2_calculate"):
+                lens2_result = analyze_period_comparison(
+                    period1_rfm=period1_rfm,
+                    period2_rfm=period2_rfm,
+                    all_customer_history=all_customer_history,
+                )
+
+            # Calculate insights
+            with tracer.start_as_current_span("lens2_generate_insights"):
+                growth_momentum = _assess_growth_momentum(lens2_result)
+                key_drivers = _identify_key_drivers(lens2_result)
+                recommendations = _generate_lens2_recommendations(lens2_result)
+
+            # Add result metrics to span
+            span.set_attribute("retention_rate", float(lens2_result.retention_rate))
+            span.set_attribute("churn_rate", float(lens2_result.churn_rate))
+            span.set_attribute("growth_momentum", growth_momentum)
+            span.set_attribute(
+                "retained_customers", len(lens2_result.migration.retained)
+            )
+            span.set_attribute("churned_customers", len(lens2_result.migration.churned))
+            span.set_attribute("new_customers", len(lens2_result.migration.new))
+
+            # Calculate AOV change if available
+            aov_change_pct = None
+            if lens2_result.avg_order_value_change_pct is not None:
+                aov_change_pct = float(lens2_result.avg_order_value_change_pct)
+
+            # Convert to dict for state storage
+            return {
+                "period1_name": "Period 1",
+                "period2_name": "Period 2",
+                "period1_customers": lens2_result.period1_metrics.total_customers,
+                "period2_customers": lens2_result.period2_metrics.total_customers,
+                "retained_customers": len(lens2_result.migration.retained),
+                "churned_customers": len(lens2_result.migration.churned),
+                "new_customers": len(lens2_result.migration.new),
+                "reactivated_customers": len(lens2_result.migration.reactivated),
+                "retention_rate": float(lens2_result.retention_rate),
+                "churn_rate": float(lens2_result.churn_rate),
+                "reactivation_rate": float(lens2_result.reactivation_rate),
+                "customer_count_change": lens2_result.customer_count_change,
+                "revenue_change_pct": float(lens2_result.revenue_change_pct),
+                "avg_order_value_change_pct": aov_change_pct,
+                "growth_momentum": growth_momentum,
+                "key_drivers": key_drivers,
+                "recommendations": recommendations,
+            }
 
     async def _execute_lens3(self, state: AnalysisState) -> dict[str, Any]:
         """Execute Lens 3: Single cohort evolution.
 
-        Placeholder for MVP - full implementation requires cohort-specific analysis.
+        Analyzes the first available cohort's lifecycle evolution.
 
         Returns:
             Lens 3 result dict
         """
-        logger.warning(
-            "lens3_placeholder",
-            message="Lens 3 full implementation pending - returning placeholder",
-        )
+        with tracer.start_as_current_span("lens3_execution") as span:
+            from customer_base_audit.analyses.lens3 import analyze_cohort_evolution
 
-        return {
-            "cohort_id": "2024-Q1",
-            "cohort_size": 100,
-            "periods_analyzed": 4,
-            "cohort_maturity": "growth",
-            "ltv_trajectory": "strong",
-            "recommendations": [
-                "Lens 3 full implementation pending in Phase 3 follow-up"
-            ],
-        }
+            from analytics.services.mcp_server.tools.lens3 import (
+                _assess_cohort_maturity,
+                _assess_ltv_trajectory,
+                _generate_lens3_recommendations,
+            )
+
+            # Get cohort data from shared state
+            cohort_definitions = self.shared_state.get("cohort_definitions")
+            cohort_assignments = self.shared_state.get("cohort_assignments")
+
+            if cohort_definitions is None or cohort_assignments is None:
+                raise ValueError(
+                    "Cohort data not found in shared state. "
+                    "Run create_customer_cohorts first."
+                )
+
+            # Validate cohort data is not empty
+            if not cohort_definitions:
+                raise ValueError("No cohorts defined. Cannot execute Lens 3.")
+
+            if not cohort_assignments:
+                raise ValueError(
+                    "No cohort assignments found. Cohorts may not have any customers assigned. "
+                    "Verify customer data was provided when creating cohorts."
+                )
+
+            first_cohort = cohort_definitions[0]
+            cohort_id = first_cohort.cohort_id
+
+            span.set_attribute("cohort_id", cohort_id)
+
+            # Get customer IDs for this cohort
+            cohort_customer_ids = [
+                cust_id
+                for cust_id, assigned_cohort in cohort_assignments.items()
+                if assigned_cohort == cohort_id
+            ]
+
+            if not cohort_customer_ids:
+                raise ValueError(
+                    f"No customers assigned to cohort '{cohort_id}'. "
+                    f"Cohort may be empty."
+                )
+
+            span.set_attribute("cohort_size", len(cohort_customer_ids))
+
+            # Get data mart from shared state
+            mart = self.shared_state.get("data_mart")
+            if mart is None:
+                raise ValueError(
+                    "Data mart not found in shared state. "
+                    "Run build_customer_data_mart first."
+                )
+
+            # Get period aggregations (use first granularity)
+            if not mart.periods:
+                raise ValueError(
+                    "Data mart has no period aggregations. "
+                    "Ensure data mart was built correctly."
+                )
+            first_granularity = list(mart.periods.keys())[0]
+            period_aggregations = mart.periods[first_granularity]
+
+            # Run Lens 3 analysis
+            with tracer.start_as_current_span("lens3_calculate"):
+                lens3_result = analyze_cohort_evolution(
+                    cohort_name=cohort_id,
+                    acquisition_date=first_cohort.start_date,
+                    period_aggregations=period_aggregations,
+                    cohort_customer_ids=cohort_customer_ids,
+                )
+
+            # Calculate insights
+            with tracer.start_as_current_span("lens3_generate_insights"):
+                cohort_maturity = _assess_cohort_maturity(lens3_result)
+                ltv_trajectory = _assess_ltv_trajectory(lens3_result)
+                recommendations = _generate_lens3_recommendations(lens3_result)
+
+            # Build metric curves
+            activation_curve = {
+                p.period_number: float(p.cumulative_activation_rate)
+                for p in lens3_result.periods
+            }
+            revenue_curve = {
+                p.period_number: float(p.avg_revenue_per_cohort_member)
+                for p in lens3_result.periods
+            }
+            retention_curve = {
+                p.period_number: (
+                    float(p.active_customers) / lens3_result.cohort_size * 100
+                )
+                for p in lens3_result.periods
+            }
+
+            # Add result metrics to span
+            span.set_attribute("periods_analyzed", len(lens3_result.periods))
+            span.set_attribute("cohort_maturity", cohort_maturity)
+            span.set_attribute("ltv_trajectory", ltv_trajectory)
+            if lens3_result.periods:
+                span.set_attribute(
+                    "final_activation_rate",
+                    float(lens3_result.periods[-1].cumulative_activation_rate),
+                )
+
+            # Convert to dict for state storage
+            return {
+                "cohort_id": cohort_id,
+                "cohort_size": lens3_result.cohort_size,
+                "acquisition_date": lens3_result.acquisition_date.isoformat(),
+                "periods_analyzed": len(lens3_result.periods),
+                "activation_curve": activation_curve,
+                "revenue_curve": revenue_curve,
+                "retention_curve": retention_curve,
+                "cohort_maturity": cohort_maturity,
+                "ltv_trajectory": ltv_trajectory,
+                "recommendations": recommendations,
+            }
 
     async def _execute_lens4(self, state: AnalysisState) -> dict[str, Any]:
         """Execute Lens 4: Multi-cohort comparison.
