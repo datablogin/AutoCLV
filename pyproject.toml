@@ -23,7 +23,7 @@ dependencies = [
     "opentelemetry-instrumentation>=0.58b0",
     "structlog>=25.4.0",
     # Phase 1: Rich Formatters (Visualization)
-    "kaleido==0.2.1",
+    "kaleido==1.1.0",
     # Phase 4A: Essential Observability & Resilience
     "tenacity>=9.0.0",
     # Phase 4B: Advanced Production Observability & Resilience
