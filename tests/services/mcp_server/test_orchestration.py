@@ -511,6 +511,99 @@ async def test_formatted_outputs_executive_dashboard():
 
 
 @pytest.mark.asyncio
+async def test_include_visualizations_default_false():
+    """Test that include_visualizations defaults to False (no PNG generation)."""
+    from analytics.services.mcp_server.state import get_shared_state
+
+    coordinator = FourLensesCoordinator()
+    shared_state = get_shared_state()
+
+    # Setup minimal data
+    from datetime import datetime
+    from decimal import Decimal
+
+    from customer_base_audit.foundation.rfm import RFMMetrics
+
+    rfm_metrics = [
+        RFMMetrics(
+            customer_id=f"C{i}",
+            recency_days=10,
+            frequency=3,
+            monetary=Decimal("150"),
+            observation_start=datetime(2024, 1, 1),
+            observation_end=datetime(2024, 6, 30),
+            total_spend=Decimal("450"),
+        )
+        for i in range(5)
+    ]
+
+    shared_state.set("rfm_metrics", rfm_metrics)
+
+    # Run analysis WITHOUT include_visualizations (default behavior)
+    query = "lens1"
+    result = await coordinator.analyze(query)  # No include_visualizations parameter
+
+    # Should have empty formatted_outputs by default
+    formatted_outputs = result.get("formatted_outputs", {})
+    assert formatted_outputs == {}
+
+    shared_state.clear()
+
+
+@pytest.mark.asyncio
+async def test_include_visualizations_explicit_true():
+    """Test that include_visualizations=True generates PNGs."""
+    from analytics.services.mcp_server.state import get_shared_state
+
+    coordinator = FourLensesCoordinator()
+    shared_state = get_shared_state()
+
+    # Setup data for Lens 2 (requires two periods)
+    from datetime import datetime
+    from decimal import Decimal
+
+    from customer_base_audit.foundation.rfm import RFMMetrics
+
+    period1_rfm = [
+        RFMMetrics(
+            customer_id="C1",
+            recency_days=10,
+            frequency=5,
+            monetary=Decimal("100"),
+            observation_start=datetime(2024, 1, 1),
+            observation_end=datetime(2024, 6, 30),
+            total_spend=Decimal("500"),
+        )
+    ]
+
+    period2_rfm = [
+        RFMMetrics(
+            customer_id="C1",
+            recency_days=5,
+            frequency=3,
+            monetary=Decimal("120"),
+            observation_start=datetime(2024, 7, 1),
+            observation_end=datetime(2024, 12, 31),
+            total_spend=Decimal("360"),
+        )
+    ]
+
+    shared_state.set("rfm_metrics", period1_rfm)
+    shared_state.set("rfm_metrics_period2", period2_rfm)
+
+    # Run analysis WITH include_visualizations=True
+    query = "lens2"
+    result = await coordinator.analyze(query, include_visualizations=True)
+
+    # Should have formatted_outputs with Sankey diagram
+    formatted_outputs = result.get("formatted_outputs", {})
+    assert formatted_outputs != {}
+    assert "lens2_sankey" in formatted_outputs
+
+    shared_state.clear()
+
+
+@pytest.mark.asyncio
 async def test_formatted_outputs_graceful_failure():
     """Test that formatting errors don't crash the entire analysis."""
     coordinator = FourLensesCoordinator()

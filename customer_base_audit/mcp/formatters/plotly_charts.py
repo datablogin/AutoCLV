@@ -60,7 +60,7 @@ def _get_default_width(base_width: int | None = None) -> int:
     return get_chart_config().width
 
 
-def _convert_plotly_to_base64_png(fig_dict: dict[str, Any]) -> str:
+def _convert_plotly_to_base64_png(fig_dict: dict[str, Any]) -> str | None:
     """Convert Plotly JSON to base64-encoded PNG.
 
     Uses kaleido to render static image for Claude Desktop display.
@@ -72,21 +72,52 @@ def _convert_plotly_to_base64_png(fig_dict: dict[str, Any]) -> str:
 
     Returns
     -------
-    str:
-        Base64-encoded PNG image data
+    str | None:
+        Base64-encoded PNG image data, or None if conversion fails
 
-    Raises
-    ------
-    ImportError:
-        If plotly.graph_objects is not available
-    Exception:
-        If PNG conversion fails
+    Notes
+    -----
+    Returns None (instead of raising) if:
+    - plotly.graph_objects is not available
+    - kaleido engine is not installed
+    - PNG conversion fails for any reason
+    - Generated PNG exceeds 100KB (logs warning but still returns)
+
+    This allows graceful degradation when visualization generation fails.
     """
-    import plotly.graph_objects as go
+    try:
+        import plotly.graph_objects as go
+    except ImportError:
+        # Plotly not installed - silent fail, caller can check for None
+        return None
 
-    fig = go.Figure(fig_dict)
-    img_bytes = fig.to_image(format="png", engine="kaleido")
-    return base64.b64encode(img_bytes).decode("utf-8")
+    try:
+        fig = go.Figure(fig_dict)
+        img_bytes = fig.to_image(format="png", engine="kaleido")
+
+        # Warn about large PNGs that may cause token issues
+        if len(img_bytes) > 100_000:
+            import structlog
+
+            logger = structlog.get_logger()
+            logger.warning(
+                "large_png_generated",
+                size_bytes=len(img_bytes),
+                size_kb=len(img_bytes) // 1024,
+            )
+
+        return base64.b64encode(img_bytes).decode("utf-8")
+    except Exception as e:
+        # Kaleido not installed or conversion failed - silent fail
+        import structlog
+
+        logger = structlog.get_logger()
+        logger.error(
+            "png_conversion_failed",
+            error=str(e),
+            error_type=type(e).__name__,
+        )
+        return None
 
 
 def create_retention_trend_chart(metrics: Lens3Metrics) -> dict[str, Any]:
@@ -185,6 +216,7 @@ def create_retention_trend_chart(metrics: Lens3Metrics) -> dict[str, Any]:
     fig_dict = {"data": [retention_trace, active_trace], "layout": layout}
 
     # Return dual format: PNG for display + JSON for programmatic access
+    # Note: image_base64 may be None if PNG conversion fails (graceful degradation)
     return {
         "plotly_json": fig_dict,
         "image_base64": _convert_plotly_to_base64_png(fig_dict),

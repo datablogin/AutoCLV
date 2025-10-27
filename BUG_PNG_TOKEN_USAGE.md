@@ -121,8 +121,9 @@ formatted_outputs["lens2_sankey"] = {
 
 ## Related Issues
 - Phase 3 PNG conversion implementation (completed)
-- Issue #[TBD] - MCP Resources API investigation
-- Issue #[TBD] - Chart size configuration
+- Issue #137 - PNG visualizations token exhaustion (THIS ISSUE - fixed by PR #138)
+- Future: MCP Resources API investigation for image delivery
+- Future: Chart size configuration enhancements
 
 ## Reported By
 User on Claude Max plan - hitting limits after 3-5 commands

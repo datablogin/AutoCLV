@@ -236,9 +236,27 @@ def generate_retention_insights(
 
     # Assess growth trajectory
     if lens2.customer_count_change > 0:
-        growth_text = f"grew by {lens2.customer_count_change:,} customers ({abs(lens2.customer_count_change / lens2.period1_metrics.total_customers * 100):.1f}%)"
+        if lens2.period1_metrics.total_customers > 0:
+            pct_change = abs(
+                lens2.customer_count_change
+                / lens2.period1_metrics.total_customers
+                * 100
+            )
+            growth_text = (
+                f"grew by {lens2.customer_count_change:,} customers ({pct_change:.1f}%)"
+            )
+        else:
+            growth_text = f"grew by {lens2.customer_count_change:,} customers"
     elif lens2.customer_count_change < 0:
-        growth_text = f"declined by {abs(lens2.customer_count_change):,} customers ({abs(lens2.customer_count_change / lens2.period1_metrics.total_customers * 100):.1f}%)"
+        if lens2.period1_metrics.total_customers > 0:
+            pct_change = abs(
+                lens2.customer_count_change
+                / lens2.period1_metrics.total_customers
+                * 100
+            )
+            growth_text = f"declined by {abs(lens2.customer_count_change):,} customers ({pct_change:.1f}%)"
+        else:
+            growth_text = f"declined by {abs(lens2.customer_count_change):,} customers"
     else:
         growth_text = "remained flat"
 
