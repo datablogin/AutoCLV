@@ -121,7 +121,7 @@ def _identify_key_differences(
     metrics: Lens4Metrics, summaries: list[CohortSummary]
 ) -> list[str]:
     """Identify key differences between cohorts."""
-    differences = []
+    differences: list[str] = []
 
     if len(summaries) < 2:
         return differences
@@ -274,7 +274,7 @@ async def _compare_multiple_cohorts_impl(
     first_granularity = list(mart.periods.keys())[0]
     period_aggregations = mart.periods[first_granularity]
 
-    await ctx.report_progress(0.3, "Comparing cohorts...")
+    await ctx.report_progress(0.3, None)
 
     # Run Lens 4 analysis
     lens4_result = compare_cohorts(
@@ -284,7 +284,7 @@ async def _compare_multiple_cohorts_impl(
         include_margin=request.include_margin,
     )
 
-    await ctx.report_progress(0.7, "Generating insights...")
+    await ctx.report_progress(0.7, None)
 
     # Generate summary metrics
     cohort_summaries = _generate_cohort_summaries(lens4_result)
