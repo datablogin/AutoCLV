@@ -55,6 +55,14 @@ class OrchestratedAnalysisRequest(BaseModel):
         "Default: True. Only applies when use_llm=True.",
     )
 
+    include_visualizations: bool = Field(
+        default=False,
+        description="Generate PNG visualizations for charts (Phase 3). "
+        "Default: False to minimize token usage. "
+        "Note: Each chart adds ~20-67KB base64 data, causing conversation limits. "
+        "Set to True only when visualizations are explicitly needed.",
+    )
+
 
 class OrchestratedAnalysisResponse(BaseModel):
     """Orchestrated analysis response with aggregated results."""
@@ -75,6 +83,9 @@ class OrchestratedAnalysisResponse(BaseModel):
 
     # Optional LLM-generated narrative (Phase 5, if use_llm=True)
     narrative: str | None = None
+
+    # Formatted outputs (Phase 3) - PNG images + Plotly JSON
+    formatted_outputs: dict[str, Any] | None = None  # Charts as base64 PNG + JSON
 
     # Foundation status
     data_mart_ready: bool
@@ -150,7 +161,9 @@ async def run_orchestrated_analysis(
                 # Cache miss - run analysis
                 coordinator = FourLensesCoordinator(use_llm=request.use_llm)
                 result = await coordinator.analyze(
-                    request.query, use_cache=False
+                    request.query,
+                    use_cache=False,
+                    include_visualizations=request.include_visualizations,
                 )  # Cache handled at tool level
 
                 # Store in cache
@@ -159,7 +172,9 @@ async def run_orchestrated_analysis(
             # Caching disabled - run analysis directly
             coordinator = FourLensesCoordinator(use_llm=request.use_llm)
             result = await coordinator.analyze(
-                request.query, use_cache=False
+                request.query,
+                use_cache=False,
+                include_visualizations=request.include_visualizations,
             )  # Cache disabled
 
         # Report progress
@@ -185,6 +200,9 @@ async def run_orchestrated_analysis(
             recommendations=result.get("recommendations", []),
             execution_time_ms=result.get("execution_time_ms", 0.0),
             narrative=result.get("narrative"),  # Only present if use_llm=True
+            formatted_outputs=result.get(
+                "formatted_outputs"
+            ),  # Phase 3 formatted outputs
             lens1_result=result.get("lens1_result"),
             lens2_result=result.get("lens2_result"),
             lens3_result=result.get("lens3_result"),

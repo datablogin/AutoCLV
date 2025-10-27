@@ -236,9 +236,27 @@ def generate_retention_insights(
 
     # Assess growth trajectory
     if lens2.customer_count_change > 0:
-        growth_text = f"grew by {lens2.customer_count_change:,} customers ({abs(lens2.customer_count_change / lens2.period1_metrics.total_customers * 100):.1f}%)"
+        if lens2.period1_metrics.total_customers > 0:
+            pct_change = abs(
+                lens2.customer_count_change
+                / lens2.period1_metrics.total_customers
+                * 100
+            )
+            growth_text = (
+                f"grew by {lens2.customer_count_change:,} customers ({pct_change:.1f}%)"
+            )
+        else:
+            growth_text = f"grew by {lens2.customer_count_change:,} customers"
     elif lens2.customer_count_change < 0:
-        growth_text = f"declined by {abs(lens2.customer_count_change):,} customers ({abs(lens2.customer_count_change / lens2.period1_metrics.total_customers * 100):.1f}%)"
+        if lens2.period1_metrics.total_customers > 0:
+            pct_change = abs(
+                lens2.customer_count_change
+                / lens2.period1_metrics.total_customers
+                * 100
+            )
+            growth_text = f"declined by {abs(lens2.customer_count_change):,} customers ({pct_change:.1f}%)"
+        else:
+            growth_text = f"declined by {abs(lens2.customer_count_change):,} customers"
     else:
         growth_text = "remained flat"
 
@@ -385,7 +403,9 @@ def generate_cohort_comparison(metrics: Lens4Metrics, max_cohorts: int = 5) -> s
         return "# Cohort Comparison\n\nNo cohort data available for analysis."
 
     # Group by cohort
-    cohorts = {}
+    from customer_base_audit.analyses.lens4 import CohortDecomposition
+
+    cohorts: dict[str, list[CohortDecomposition]] = {}
     for decomp in metrics.cohort_decompositions:
         if decomp.cohort_id not in cohorts:
             cohorts[decomp.cohort_id] = []
