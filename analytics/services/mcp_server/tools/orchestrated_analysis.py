@@ -200,7 +200,9 @@ async def run_orchestrated_analysis(
             recommendations=result.get("recommendations", []),
             execution_time_ms=result.get("execution_time_ms", 0.0),
             narrative=result.get("narrative"),  # Only present if use_llm=True
-            formatted_outputs=result.get("formatted_outputs"),  # Phase 3 formatted outputs
+            formatted_outputs=result.get(
+                "formatted_outputs"
+            ),  # Phase 3 formatted outputs
             lens1_result=result.get("lens1_result"),
             lens2_result=result.get("lens2_result"),
             lens3_result=result.get("lens3_result"),

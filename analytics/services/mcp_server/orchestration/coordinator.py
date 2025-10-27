@@ -21,6 +21,15 @@ from collections.abc import Awaitable, Callable
 from typing import Any, TypedDict
 
 import structlog
+
+# Phase 3: Import enhanced formatters for visualization
+from customer_base_audit.mcp.formatters import (
+    create_cohort_heatmap,
+    create_executive_dashboard,
+    create_retention_trend_chart,
+    create_sankey_diagram,
+    format_lens4_decomposition_table,
+)
 from langgraph.graph import END, StateGraph
 from opentelemetry import trace
 from tenacity import (
@@ -31,15 +40,6 @@ from tenacity import (
 )
 
 from analytics.services.mcp_server.state import get_shared_state
-
-# Phase 3: Import enhanced formatters for visualization
-from customer_base_audit.mcp.formatters import (
-    create_cohort_heatmap,
-    create_executive_dashboard,
-    create_retention_trend_chart,
-    create_sankey_diagram,
-    format_lens4_decomposition_table,
-)
 
 # Phase 4B: Import Prometheus metrics recording
 try:
@@ -1354,11 +1354,16 @@ class FourLensesCoordinator:
         """
         # Skip PNG generation if not requested (default to save tokens)
         if not state.get("include_visualizations", False):
-            logger.info("skipping_visualization_generation", reason="include_visualizations=False")
+            logger.info(
+                "skipping_visualization_generation",
+                reason="include_visualizations=False",
+            )
             state["formatted_outputs"] = {}
             return state
 
-        logger.info("formatting_results", lenses_executed=state.get("lenses_executed", []))
+        logger.info(
+            "formatting_results", lenses_executed=state.get("lenses_executed", [])
+        )
 
         formatted_outputs: dict[str, Any] = {}
 
@@ -1427,7 +1432,9 @@ class FourLensesCoordinator:
                         "lens5": state.get("lens5_result"),
                     }
                     # Remove None values
-                    lens_results = {k: v for k, v in lens_results.items() if v is not None}
+                    lens_results = {
+                        k: v for k, v in lens_results.items() if v is not None
+                    }
 
                     # Create 4-panel executive dashboard
                     dashboard_json = create_executive_dashboard(lens_results)

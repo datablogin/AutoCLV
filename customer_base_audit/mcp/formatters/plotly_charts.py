@@ -10,7 +10,6 @@ Use ChartConfig to adjust size/quality tradeoffs.
 from __future__ import annotations
 
 import base64
-from io import BytesIO
 from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
@@ -669,9 +668,7 @@ def create_cohort_heatmap(metrics: Lens4Metrics) -> dict[str, Any]:
             "ticksuffix": "%",
         },
         "hovertemplate": (
-            "Cohort: %{y}<br>"
-            "Period: %{x}<br>"
-            "Retention: %{z:.1f}%<extra></extra>"
+            "Cohort: %{y}<br>Period: %{x}<br>Retention: %{z:.1f}%<extra></extra>"
         ),
         "zmin": 0,
         "zmax": 100,
