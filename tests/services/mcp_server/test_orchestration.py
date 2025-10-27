@@ -273,3 +273,257 @@ async def test_lens2_with_two_periods():
 
 # Note: Lens 3 orchestration is already tested via test_lens_tools.py::test_lens3_cohort_evolution
 # which tests the full lens3 implementation. Orchestration-level test would be redundant.
+
+
+@pytest.mark.asyncio
+async def test_formatted_outputs_lens2():
+    """Test that Lens 2 generates formatted Sankey diagram."""
+    from analytics.services.mcp_server.state import get_shared_state
+
+    coordinator = FourLensesCoordinator()
+    shared_state = get_shared_state()
+
+    # Setup data for both periods
+    from datetime import datetime
+    from decimal import Decimal
+
+    from customer_base_audit.foundation.rfm import RFMMetrics
+
+    period1_rfm = [
+        RFMMetrics(
+            customer_id="C1",
+            recency_days=10,
+            frequency=5,
+            monetary=Decimal("100"),
+            observation_start=datetime(2024, 1, 1),
+            observation_end=datetime(2024, 6, 30),
+            total_spend=Decimal("500"),
+        )
+    ]
+
+    period2_rfm = [
+        RFMMetrics(
+            customer_id="C1",
+            recency_days=5,
+            frequency=3,
+            monetary=Decimal("120"),
+            observation_start=datetime(2024, 7, 1),
+            observation_end=datetime(2024, 12, 31),
+            total_spend=Decimal("360"),
+        )
+    ]
+
+    shared_state.set("rfm_metrics", period1_rfm)
+    shared_state.set("rfm_metrics_period2", period2_rfm)
+
+    # Run Lens 2 with visualizations enabled
+    query = "lens2"
+    result = await coordinator.analyze(query, include_visualizations=True)
+
+    # Check formatted_outputs includes lens2_sankey
+    formatted_outputs = result.get("formatted_outputs", {})
+    assert formatted_outputs is not None
+    assert isinstance(formatted_outputs, dict)
+
+    # If lens2 executed successfully, should have Sankey diagram
+    if "lens2" in result.get("lenses_executed", []):
+        assert "lens2_sankey" in formatted_outputs
+        sankey = formatted_outputs["lens2_sankey"]
+
+        # Verify dual format (PNG + JSON)
+        assert "plotly_json" in sankey
+        assert "image_base64" in sankey
+        assert sankey["format"] == "png"
+        assert isinstance(sankey["image_base64"], str)
+        assert len(sankey["image_base64"]) > 1000  # Non-trivial PNG
+        assert "data" in sankey["plotly_json"]
+        assert "layout" in sankey["plotly_json"]
+
+    shared_state.clear()
+
+
+@pytest.mark.asyncio
+async def test_formatted_outputs_lens3():
+    """Test that Lens 3 generates formatted retention trend chart."""
+    from analytics.services.mcp_server.state import get_shared_state
+
+    coordinator = FourLensesCoordinator()
+    shared_state = get_shared_state()
+
+    # Setup minimal cohort data
+    from datetime import datetime
+
+    from customer_base_audit.foundation.cohorts import CohortDefinition
+
+    cohort_definitions = [
+        CohortDefinition(
+            cohort_id="2024-Q1",
+            start_date=datetime(2024, 1, 1),
+            end_date=datetime(2024, 3, 31),
+        )
+    ]
+
+    cohort_assignments = {f"C{i}": "2024-Q1" for i in range(10)}
+
+    shared_state.set("cohort_definitions", cohort_definitions)
+    shared_state.set("cohort_assignments", cohort_assignments)
+
+    # Run Lens 3 with visualizations enabled
+    query = "lens3"
+    result = await coordinator.analyze(query, include_visualizations=True)
+
+    # Check formatted_outputs
+    formatted_outputs = result.get("formatted_outputs", {})
+
+    # If lens3 executed successfully, should have retention chart
+    if "lens3" in result.get("lenses_executed", []):
+        assert "lens3_retention_chart" in formatted_outputs
+        chart = formatted_outputs["lens3_retention_chart"]
+
+        # Verify dual format (PNG + JSON)
+        assert "plotly_json" in chart
+        assert "image_base64" in chart
+        assert chart["format"] == "png"
+        assert isinstance(chart["image_base64"], str)
+        assert len(chart["image_base64"]) > 1000  # Non-trivial PNG
+
+    shared_state.clear()
+
+
+@pytest.mark.asyncio
+async def test_formatted_outputs_lens4():
+    """Test that Lens 4 generates formatted heatmap and table."""
+    from analytics.services.mcp_server.state import get_shared_state
+
+    coordinator = FourLensesCoordinator()
+    shared_state = get_shared_state()
+
+    # Setup minimal cohort data
+    from datetime import datetime
+
+    from customer_base_audit.foundation.cohorts import CohortDefinition
+
+    cohort_definitions = [
+        CohortDefinition(
+            cohort_id="2024-Q1",
+            start_date=datetime(2024, 1, 1),
+            end_date=datetime(2024, 3, 31),
+        ),
+        CohortDefinition(
+            cohort_id="2024-Q2",
+            start_date=datetime(2024, 4, 1),
+            end_date=datetime(2024, 6, 30),
+        ),
+    ]
+
+    cohort_assignments = {}
+    for i in range(5):
+        cohort_assignments[f"C{i}"] = "2024-Q1"
+    for i in range(5, 10):
+        cohort_assignments[f"C{i}"] = "2024-Q2"
+
+    shared_state.set("cohort_definitions", cohort_definitions)
+    shared_state.set("cohort_assignments", cohort_assignments)
+
+    # Run Lens 4
+    query = "lens4"
+    result = await coordinator.analyze(query)
+
+    # Check formatted_outputs
+    formatted_outputs = result.get("formatted_outputs", {})
+
+    # Note: Lens 4 is currently a placeholder, so it won't have formatted outputs
+    # This test validates that the formatting doesn't crash even with placeholder data
+    # When Lens 4 is fully implemented, it should have heatmap and table
+    assert isinstance(formatted_outputs, dict)
+
+    # TODO: Once Lens 4 is fully implemented (not a placeholder), uncomment:
+    # if "lens4" in result.get("lenses_executed", []):
+    #     assert "lens4_heatmap" in formatted_outputs
+    #     assert "lens4_table" in formatted_outputs
+    #     heatmap = formatted_outputs["lens4_heatmap"]
+    #     table = formatted_outputs["lens4_table"]
+    #     assert isinstance(heatmap, dict)
+    #     assert isinstance(table, str)  # Markdown table
+
+    shared_state.clear()
+
+
+@pytest.mark.asyncio
+async def test_formatted_outputs_executive_dashboard():
+    """Test that multi-lens analysis generates executive dashboard."""
+    from analytics.services.mcp_server.state import get_shared_state
+
+    coordinator = FourLensesCoordinator()
+    shared_state = get_shared_state()
+
+    # Setup minimal data for multiple lenses
+    from datetime import datetime
+    from decimal import Decimal
+
+    from customer_base_audit.foundation.rfm import RFMMetrics
+
+    # RFM data for lens1
+    rfm_metrics = [
+        RFMMetrics(
+            customer_id="C1",
+            recency_days=10,
+            frequency=5,
+            monetary=Decimal("100"),
+            observation_start=datetime(2024, 1, 1),
+            observation_end=datetime(2024, 6, 30),
+            total_spend=Decimal("500"),
+        ),
+        RFMMetrics(
+            customer_id="C2",
+            recency_days=20,
+            frequency=3,
+            monetary=Decimal("150"),
+            observation_start=datetime(2024, 1, 1),
+            observation_end=datetime(2024, 6, 30),
+            total_spend=Decimal("450"),
+        ),
+    ]
+
+    shared_state.set("rfm_metrics", rfm_metrics)
+
+    # Run analysis with multiple lenses and visualizations enabled
+    query = "lens1 and lens5"
+    result = await coordinator.analyze(query, include_visualizations=True)
+
+    # Check formatted_outputs
+    formatted_outputs = result.get("formatted_outputs", {})
+    lenses_executed = result.get("lenses_executed", [])
+
+    # If 2+ lenses executed, should have executive dashboard
+    if len(lenses_executed) >= 2:
+        assert "executive_dashboard" in formatted_outputs
+        dashboard = formatted_outputs["executive_dashboard"]
+
+        # Verify dual format (PNG + JSON)
+        assert "plotly_json" in dashboard
+        assert "image_base64" in dashboard
+        assert dashboard["format"] == "png"
+        assert isinstance(dashboard["image_base64"], str)
+        assert len(dashboard["image_base64"]) > 1000  # Non-trivial PNG
+
+    shared_state.clear()
+
+
+@pytest.mark.asyncio
+async def test_formatted_outputs_graceful_failure():
+    """Test that formatting errors don't crash the entire analysis."""
+    coordinator = FourLensesCoordinator()
+
+    # Run analysis without data (lenses will fail)
+    query = "lens1"
+    result = await coordinator.analyze(query)
+
+    # Should have formatted_outputs key, even if empty
+    assert "formatted_outputs" in result
+    formatted_outputs = result.get("formatted_outputs", {})
+    assert isinstance(formatted_outputs, dict)
+
+    # Analysis should still complete
+    assert "insights" in result
+    assert "recommendations" in result

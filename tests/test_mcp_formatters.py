@@ -213,8 +213,14 @@ class TestPlotlyCharts:
             ],
         )
 
-        chart = create_retention_trend_chart(metrics)
+        result = create_retention_trend_chart(metrics)
 
+        # Verify dual format (PNG + JSON)
+        assert "plotly_json" in result
+        assert "image_base64" in result
+        assert result["format"] == "png"
+
+        chart = result["plotly_json"]
         assert "data" in chart
         assert "layout" in chart
         assert len(chart["data"]) == 2  # retention line + active bars
@@ -236,8 +242,14 @@ class TestPlotlyCharts:
             rfm_distribution={},
         )
 
-        chart = create_revenue_concentration_pie(metrics)
+        result = create_revenue_concentration_pie(metrics)
 
+        # Verify dual format (PNG + JSON)
+        assert "plotly_json" in result
+        assert "image_base64" in result
+        assert result["format"] == "png"
+
+        chart = result["plotly_json"]
         assert "data" in chart
         assert "layout" in chart
         assert chart["data"][0]["type"] == "pie"
@@ -264,8 +276,14 @@ class TestPlotlyCharts:
             analysis_end_date=datetime(2023, 12, 31, tzinfo=timezone.utc),
         )
 
-        chart = create_health_score_gauge(metrics)
+        result = create_health_score_gauge(metrics)
 
+        # Verify dual format (PNG + JSON)
+        assert "plotly_json" in result
+        assert "image_base64" in result
+        assert result["format"] == "png"
+
+        chart = result["plotly_json"]
         assert "data" in chart
         assert "layout" in chart
         assert chart["data"][0]["type"] == "indicator"
@@ -303,8 +321,14 @@ class TestPlotlyCharts:
             analysis_end_date=datetime(2023, 12, 31, tzinfo=timezone.utc),
         )
 
-        dashboard = create_executive_dashboard(lens1, lens5)
+        result = create_executive_dashboard(lens1, lens5)
 
+        # Verify dual format (PNG + JSON)
+        assert "plotly_json" in result
+        assert "image_base64" in result
+        assert result["format"] == "png"
+
+        dashboard = result["plotly_json"]
         assert "data" in dashboard
         assert "layout" in dashboard
         assert len(dashboard["data"]) == 6  # 4 KPIs + pie + bar
@@ -358,8 +382,14 @@ class TestPlotlyCharts:
             alignment_type="left-aligned",
         )
 
-        chart = create_cohort_heatmap(metrics)
+        result = create_cohort_heatmap(metrics)
 
+        # Verify dual format (PNG + JSON)
+        assert "plotly_json" in result
+        assert "image_base64" in result
+        assert result["format"] == "png"
+
+        chart = result["plotly_json"]
         assert "data" in chart
         assert "layout" in chart
         assert chart["data"][0]["type"] == "heatmap"
@@ -410,8 +440,14 @@ class TestPlotlyCharts:
             avg_order_value_change_pct=Decimal("5.00"),
         )
 
-        chart = create_sankey_diagram(metrics)
+        result = create_sankey_diagram(metrics)
 
+        # Verify dual format (PNG + JSON)
+        assert "plotly_json" in result
+        assert "image_base64" in result
+        assert result["format"] == "png"
+
+        chart = result["plotly_json"]
         assert "data" in chart
         assert "layout" in chart
         assert chart["data"][0]["type"] == "sankey"
@@ -612,8 +648,9 @@ class TestEdgeCases:
             ],
         )
 
-        chart = create_retention_trend_chart(metrics)
-        assert len(chart["data"]) == 2
+        result = create_retention_trend_chart(metrics)
+        assert "plotly_json" in result
+        assert len(result["plotly_json"]["data"]) == 2
 
 
 class TestFormatConsistency:
@@ -654,8 +691,12 @@ class TestFormatConsistency:
             {},
         )
 
-        chart = create_revenue_concentration_pie(lens1)
+        result = create_revenue_concentration_pie(lens1)
 
+        # Verify dual format
+        assert "plotly_json" in result
+        assert "image_base64" in result
+        chart = result["plotly_json"]
         assert "data" in chart
         assert "layout" in chart
         assert isinstance(chart["data"], list)
@@ -749,15 +790,15 @@ class TestChartOptimization:
                 datetime(2023, 12, 31, tzinfo=timezone.utc),
             )
 
-            chart = create_health_score_gauge(metrics)
+            result = create_health_score_gauge(metrics)
 
             # Should use low quality height (300px)
-            assert chart["layout"]["height"] == 300
+            assert result["plotly_json"]["layout"]["height"] == 300
 
             # Now test high quality
             set_chart_config(ChartConfig.from_quality("high"))
-            chart = create_health_score_gauge(metrics)
-            assert chart["layout"]["height"] == 600
+            result = create_health_score_gauge(metrics)
+            assert result["plotly_json"]["layout"]["height"] == 600
 
         finally:
             # Restore original config
@@ -788,13 +829,13 @@ class TestChartOptimization:
 
             # Generate chart at high quality
             set_chart_config(ChartConfig.from_quality("high"))
-            high_chart = create_revenue_concentration_pie(lens1)
-            high_size = len(json.dumps(high_chart))
+            high_result = create_revenue_concentration_pie(lens1)
+            high_size = len(json.dumps(high_result))
 
             # Generate chart at low quality
             set_chart_config(ChartConfig.from_quality("low"))
-            low_chart = create_revenue_concentration_pie(lens1)
-            low_size = len(json.dumps(low_chart))
+            low_result = create_revenue_concentration_pie(lens1)
+            low_size = len(json.dumps(low_result))
 
             # Low quality should be smaller (though for simple charts difference is minimal)
             # The real savings come from not embedding large images

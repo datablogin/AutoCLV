@@ -9,6 +9,8 @@ Use ChartConfig to adjust size/quality tradeoffs.
 
 from __future__ import annotations
 
+import base64
+from io import BytesIO
 from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
@@ -57,6 +59,35 @@ def _get_default_width(base_width: int | None = None) -> int:
     from customer_base_audit.mcp.formatters import get_chart_config
 
     return get_chart_config().width
+
+
+def _convert_plotly_to_base64_png(fig_dict: dict[str, Any]) -> str:
+    """Convert Plotly JSON to base64-encoded PNG.
+
+    Uses kaleido to render static image for Claude Desktop display.
+
+    Parameters
+    ----------
+    fig_dict:
+        Plotly figure specification as JSON-serializable dict
+
+    Returns
+    -------
+    str:
+        Base64-encoded PNG image data
+
+    Raises
+    ------
+    ImportError:
+        If plotly.graph_objects is not available
+    Exception:
+        If PNG conversion fails
+    """
+    import plotly.graph_objects as go
+
+    fig = go.Figure(fig_dict)
+    img_bytes = fig.to_image(format="png", engine="kaleido")
+    return base64.b64encode(img_bytes).decode("utf-8")
 
 
 def create_retention_trend_chart(metrics: Lens3Metrics) -> dict[str, Any]:
@@ -121,6 +152,9 @@ def create_retention_trend_chart(metrics: Lens3Metrics) -> dict[str, Any]:
         "hovertemplate": "Period %{x}<br>Active: %{y}<extra></extra>",
     }
 
+    width = _get_default_width()
+    height = _get_default_height()
+
     layout = {
         "title": {
             "text": f"Cohort Retention Trend: {metrics.cohort_name}",
@@ -145,9 +179,20 @@ def create_retention_trend_chart(metrics: Lens3Metrics) -> dict[str, Any]:
         "hovermode": "x unified",
         "showlegend": True,
         "legend": {"x": 0.01, "y": 0.99, "xanchor": "left", "yanchor": "top"},
+        "width": width,
+        "height": height,
     }
 
-    return {"data": [retention_trace, active_trace], "layout": layout}
+    fig_dict = {"data": [retention_trace, active_trace], "layout": layout}
+
+    # Return dual format: PNG for display + JSON for programmatic access
+    return {
+        "plotly_json": fig_dict,
+        "image_base64": _convert_plotly_to_base64_png(fig_dict),
+        "format": "png",
+        "width": width,
+        "height": height,
+    }
 
 
 def create_revenue_concentration_pie(metrics: Lens1Metrics) -> dict[str, Any]:
@@ -206,6 +251,9 @@ def create_revenue_concentration_pie(metrics: Lens1Metrics) -> dict[str, Any]:
         "hovertemplate": "%{label}<br>Revenue Share: %{value:.1f}%<extra></extra>",
     }
 
+    width = _get_default_width()
+    height = _get_default_height()
+
     layout = {
         "title": {
             "text": "Revenue Concentration (Pareto Analysis)",
@@ -214,9 +262,20 @@ def create_revenue_concentration_pie(metrics: Lens1Metrics) -> dict[str, Any]:
         },
         "showlegend": True,
         "legend": {"x": 0.85, "y": 0.5},
+        "width": width,
+        "height": height,
     }
 
-    return {"data": [pie_trace], "layout": layout}
+    fig_dict = {"data": [pie_trace], "layout": layout}
+
+    # Return dual format: PNG for display + JSON for programmatic access
+    return {
+        "plotly_json": fig_dict,
+        "image_base64": _convert_plotly_to_base64_png(fig_dict),
+        "format": "png",
+        "width": width,
+        "height": height,
+    }
 
 
 def create_health_score_gauge(metrics: Lens5Metrics) -> dict[str, Any]:
@@ -299,16 +358,29 @@ def create_health_score_gauge(metrics: Lens5Metrics) -> dict[str, Any]:
         },
     }
 
+    width = _get_default_width()
+    height = _get_default_height()
+
     layout = {
         "title": {
             "text": "Customer Base Health Assessment",
             "x": 0.5,
             "xanchor": "center",
         },
-        "height": _get_default_height(),
+        "width": width,
+        "height": height,
     }
 
-    return {"data": [gauge_trace], "layout": layout}
+    fig_dict = {"data": [gauge_trace], "layout": layout}
+
+    # Return dual format: PNG for display + JSON for programmatic access
+    return {
+        "plotly_json": fig_dict,
+        "image_base64": _convert_plotly_to_base64_png(fig_dict),
+        "format": "png",
+        "width": width,
+        "height": height,
+    }
 
 
 def create_executive_dashboard(
@@ -453,6 +525,9 @@ def create_executive_dashboard(
         "name": "Health Components",
     }
 
+    width = _get_default_width()
+    height = _get_default_height(800)  # Larger dashboard, but configurable
+
     layout = {
         "title": {
             "text": "Customer Base Executive Dashboard",
@@ -468,11 +543,12 @@ def create_executive_dashboard(
             "anchor": "x2",
             "range": [0, 100],
         },
-        "height": _get_default_height(800),  # Larger dashboard, but configurable
+        "width": width,
+        "height": height,
         "showlegend": False,
     }
 
-    return {
+    fig_dict = {
         "data": [
             kpi_trace,
             revenue_trace,
@@ -482,6 +558,15 @@ def create_executive_dashboard(
             bar_trace,
         ],
         "layout": layout,
+    }
+
+    # Return dual format: PNG for display + JSON for programmatic access
+    return {
+        "plotly_json": fig_dict,
+        "image_base64": _convert_plotly_to_base64_png(fig_dict),
+        "format": "png",
+        "width": width,
+        "height": height,
     }
 
 
@@ -595,6 +680,7 @@ def create_cohort_heatmap(metrics: Lens4Metrics) -> dict[str, Any]:
     # Calculate dynamic height based on cohort count, but respect config min/max
     base_height = _get_default_height()
     dynamic_height = max(base_height, min(len(cohort_ids) * 30, base_height * 2))
+    width = _get_default_width()
 
     layout = {
         "title": {
@@ -611,10 +697,20 @@ def create_cohort_heatmap(metrics: Lens4Metrics) -> dict[str, Any]:
             "title": "Cohort",
             "autorange": "reversed",  # Newest cohorts at top
         },
+        "width": width,
         "height": dynamic_height,
     }
 
-    return {"data": [heatmap_trace], "layout": layout}
+    fig_dict = {"data": [heatmap_trace], "layout": layout}
+
+    # Return dual format: PNG for display + JSON for programmatic access
+    return {
+        "plotly_json": fig_dict,
+        "image_base64": _convert_plotly_to_base64_png(fig_dict),
+        "format": "png",
+        "width": width,
+        "height": dynamic_height,
+    }
 
 
 def create_sankey_diagram(metrics: Lens2Metrics) -> dict[str, Any]:
@@ -755,6 +851,9 @@ def create_sankey_diagram(metrics: Lens2Metrics) -> dict[str, Any]:
         "textfont": {"size": 12},
     }
 
+    width = _get_default_width()
+    height = _get_default_height(500)
+
     layout = {
         "title": {
             "text": "Customer Migration Flow",
@@ -762,7 +861,17 @@ def create_sankey_diagram(metrics: Lens2Metrics) -> dict[str, Any]:
             "xanchor": "center",
         },
         "font": {"size": 10},
-        "height": _get_default_height(500),
+        "width": width,
+        "height": height,
     }
 
-    return {"data": [sankey_trace], "layout": layout}
+    fig_dict = {"data": [sankey_trace], "layout": layout}
+
+    # Return dual format: PNG for display + JSON for programmatic access
+    return {
+        "plotly_json": fig_dict,
+        "image_base64": _convert_plotly_to_base64_png(fig_dict),
+        "format": "png",
+        "width": width,
+        "height": height,
+    }

@@ -32,6 +32,15 @@ from tenacity import (
 
 from analytics.services.mcp_server.state import get_shared_state
 
+# Phase 3: Import enhanced formatters for visualization
+from customer_base_audit.mcp.formatters import (
+    create_cohort_heatmap,
+    create_executive_dashboard,
+    create_retention_trend_chart,
+    create_sankey_diagram,
+    format_lens4_decomposition_table,
+)
+
 # Phase 4B: Import Prometheus metrics recording
 try:
     from analytics.services.mcp_server.metrics import record_lens_execution
@@ -77,6 +86,7 @@ class AnalysisState(TypedDict, total=False):
     # Input
     query: str  # Natural language or structured query
     intent: dict[str, Any]  # Parsed intent (which lenses, parameters)
+    include_visualizations: bool  # Whether to generate PNG visualizations (Phase 3)
 
     # Foundation data readiness
     data_mart_ready: bool
@@ -90,10 +100,16 @@ class AnalysisState(TypedDict, total=False):
     lens4_result: dict[str, Any] | None
     lens5_result: dict[str, Any] | None
 
+    # Original lens metrics objects (for formatting)
+    lens2_metrics: Any | None  # Lens2Metrics
+    lens3_metrics: Any | None  # Lens3Metrics (CohortEvolutionMetrics)
+    lens4_metrics: Any | None  # MultiCohortComparison
+
     # Aggregated output
     insights: list[str]
     recommendations: list[str]
     narrative: str | None  # LLM-generated narrative (Phase 5)
+    formatted_outputs: dict[str, Any]  # Formatted charts and tables (Phase 3)
 
     # Metadata
     lenses_executed: list[str]
@@ -225,6 +241,7 @@ class FourLensesCoordinator:
         2. prepare_foundation: Ensure data mart, RFM, cohorts are ready
         3. execute_lenses: Run requested lenses in parallel where possible
         4. synthesize_results: Aggregate insights and recommendations
+        5. format_results: Apply enhanced formatters to lens results (Phase 3)
         """
         workflow = StateGraph(AnalysisState)
 
@@ -233,13 +250,15 @@ class FourLensesCoordinator:
         workflow.add_node("prepare_foundation", self._prepare_foundation)
         workflow.add_node("execute_lenses", self._execute_lenses)
         workflow.add_node("synthesize_results", self._synthesize_results)
+        workflow.add_node("format_results", self._format_results)
 
         # Define edges
         workflow.set_entry_point("parse_intent")
         workflow.add_edge("parse_intent", "prepare_foundation")
         workflow.add_edge("prepare_foundation", "execute_lenses")
         workflow.add_edge("execute_lenses", "synthesize_results")
-        workflow.add_edge("synthesize_results", END)
+        workflow.add_edge("synthesize_results", "format_results")
+        workflow.add_edge("format_results", END)
 
         return workflow.compile()
 
@@ -871,6 +890,9 @@ class FourLensesCoordinator:
             if lens2_result.avg_order_value_change_pct is not None:
                 aov_change_pct = float(lens2_result.avg_order_value_change_pct)
 
+            # Store original metrics for formatting
+            state["lens2_metrics"] = lens2_result
+
             # Convert to dict for state storage
             return {
                 "period1_name": "Period 1",
@@ -1006,6 +1028,9 @@ class FourLensesCoordinator:
                     "final_activation_rate",
                     float(lens3_result.periods[-1].cumulative_activation_rate),
                 )
+
+            # Store original metrics for formatting
+            state["lens3_metrics"] = lens3_result
 
             # Convert to dict for state storage
             return {
@@ -1312,7 +1337,135 @@ class FourLensesCoordinator:
 
         return state
 
-    async def analyze(self, query: str, use_cache: bool = True) -> dict[str, Any]:
+    async def _format_results(self, state: AnalysisState) -> AnalysisState:
+        """Apply enhanced formatters to lens results (Phase 3).
+
+        Generates formatted visualizations based on which lenses were executed:
+        - Lens 2: Sankey diagram for customer migration
+        - Lens 3: Retention trend chart for cohort evolution
+        - Lens 4: Cohort heatmap and enhanced decomposition table
+        - Multi-lens: Executive dashboard combining multiple views
+
+        Args:
+            state: Current workflow state with lens results
+
+        Returns:
+            Updated state with formatted_outputs dict containing charts/tables
+        """
+        # Skip PNG generation if not requested (default to save tokens)
+        if not state.get("include_visualizations", False):
+            logger.info("skipping_visualization_generation", reason="include_visualizations=False")
+            state["formatted_outputs"] = {}
+            return state
+
+        logger.info("formatting_results", lenses_executed=state.get("lenses_executed", []))
+
+        formatted_outputs: dict[str, Any] = {}
+
+        try:
+            lenses_executed = state.get("lenses_executed", [])
+
+            # Lens 2: Sankey diagram for customer migration
+            if "lens2" in lenses_executed and state.get("lens2_metrics"):
+                try:
+                    lens2_metrics = state["lens2_metrics"]
+                    # Sankey diagram shows customer flow between periods
+                    sankey_json = create_sankey_diagram(lens2_metrics)
+                    formatted_outputs["lens2_sankey"] = sankey_json
+                    logger.info("lens2_sankey_created")
+                except Exception as e:
+                    logger.warning(
+                        "lens2_formatting_failed",
+                        error=str(e),
+                        error_type=type(e).__name__,
+                    )
+
+            # Lens 3: Retention trend chart for cohort evolution
+            if "lens3" in lenses_executed and state.get("lens3_metrics"):
+                try:
+                    lens3_metrics = state["lens3_metrics"]
+                    # Retention trend shows cohort retention curves
+                    retention_chart_json = create_retention_trend_chart(lens3_metrics)
+                    formatted_outputs["lens3_retention_chart"] = retention_chart_json
+                    logger.info("lens3_retention_chart_created")
+                except Exception as e:
+                    logger.warning(
+                        "lens3_formatting_failed",
+                        error=str(e),
+                        error_type=type(e).__name__,
+                    )
+
+            # Lens 4: Cohort heatmap and enhanced table
+            if "lens4" in lenses_executed and state.get("lens4_result"):
+                try:
+                    lens4_result = state["lens4_result"]
+                    # Cohort heatmap shows performance across cohorts
+                    heatmap_json = create_cohort_heatmap(lens4_result)
+                    formatted_outputs["lens4_heatmap"] = heatmap_json
+
+                    # Enhanced decomposition table with pagination
+                    table_markdown = format_lens4_decomposition_table(lens4_result)
+                    formatted_outputs["lens4_table"] = table_markdown
+
+                    logger.info("lens4_visualizations_created")
+                except Exception as e:
+                    logger.warning(
+                        "lens4_formatting_failed",
+                        error=str(e),
+                        error_type=type(e).__name__,
+                    )
+
+            # Multi-lens: Executive dashboard
+            if len(lenses_executed) >= 2:
+                try:
+                    # Collect all available lens results for dashboard
+                    lens_results = {
+                        "lens1": state.get("lens1_result"),
+                        "lens2": state.get("lens2_result"),
+                        "lens3": state.get("lens3_result"),
+                        "lens4": state.get("lens4_result"),
+                        "lens5": state.get("lens5_result"),
+                    }
+                    # Remove None values
+                    lens_results = {k: v for k, v in lens_results.items() if v is not None}
+
+                    # Create 4-panel executive dashboard
+                    dashboard_json = create_executive_dashboard(lens_results)
+                    formatted_outputs["executive_dashboard"] = dashboard_json
+                    logger.info("executive_dashboard_created", panel_count=4)
+                except Exception as e:
+                    logger.warning(
+                        "executive_dashboard_failed",
+                        error=str(e),
+                        error_type=type(e).__name__,
+                    )
+
+            state["formatted_outputs"] = formatted_outputs
+
+            logger.info(
+                "formatting_complete",
+                output_count=len(formatted_outputs),
+                outputs=list(formatted_outputs.keys()),
+            )
+
+        except Exception as e:
+            logger.error(
+                "formatting_failed",
+                error=str(e),
+                error_type=type(e).__name__,
+                exc_info=True,
+            )
+            # Don't fail the entire analysis if formatting fails
+            state["formatted_outputs"] = {}
+
+        return state
+
+    async def analyze(
+        self,
+        query: str,
+        use_cache: bool = True,
+        include_visualizations: bool = False,
+    ) -> dict[str, Any]:
         """Run complete Four Lenses analysis from query.
 
         This is the main entry point for orchestrated analysis.
@@ -1320,6 +1473,7 @@ class FourLensesCoordinator:
         Args:
             query: Natural language or structured query
             use_cache: Whether to use query result caching (default: True)
+            include_visualizations: Whether to generate PNG visualizations (default: False)
 
         Returns:
             Complete analysis results including:
@@ -1331,6 +1485,7 @@ class FourLensesCoordinator:
             - recommendations: Aggregated recommendations
             - execution_time_ms: Total execution time
             - lens results: Individual lens results (lens1_result, etc.)
+            - formatted_outputs: PNG visualizations (only if include_visualizations=True)
         """
         # Check cache first if enabled and using LLM
         if use_cache and self.use_llm:
@@ -1371,6 +1526,7 @@ class FourLensesCoordinator:
                 "lens_errors": {},
                 "execution_time_ms": 0.0,
                 "error": None,
+                "include_visualizations": include_visualizations,  # Phase 3 PNG generation
             }
 
             try:
