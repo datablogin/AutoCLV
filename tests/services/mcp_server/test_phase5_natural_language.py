@@ -330,24 +330,25 @@ class TestQueryCache:
         assert stats["size"] == 2
 
     def test_cache_ttl_expiration(self):
-        """Test that entries expire after TTL."""
-        import time
+        """Test that entries expire after TTL (Issue #122 - Using time mocking)."""
+        from unittest.mock import patch
 
-        cache = QueryCache(ttl_seconds=1)
+        cache = QueryCache(ttl_seconds=3600)
 
-        # Store result
-        cache.set("test query", True, {"data": "test"})
+        with patch("time.time") as mock_time:
+            # Set initial time
+            mock_time.return_value = 1000.0
+            cache.set("test query", True, {"data": "test"})
 
-        # Immediate retrieval should work
-        result = cache.get("test query", True)
-        assert result is not None
+            # Immediate retrieval should work
+            mock_time.return_value = 1000.0
+            result = cache.get("test query", True)
+            assert result is not None
 
-        # Wait for expiration
-        time.sleep(1.1)
-
-        # Should be expired now
-        result = cache.get("test query", True)
-        assert result is None
+            # Simulate TTL expiration (3600 seconds + 1)
+            mock_time.return_value = 4601.0
+            result = cache.get("test query", True)
+            assert result is None
 
     def test_cache_clear(self):
         """Test clearing all cache entries."""
@@ -407,10 +408,10 @@ class TestQueryCache:
             assert result is not None, f"Query '{query}' should be cache hit"
             assert result["data"] == "health analysis"
 
-        # Verify high hit rate
+        # Verify high hit rate (all queries should hit after initial store)
         stats = cache.get_stats()
-        # 1 miss (initial store) + 5 hits
-        assert stats["hits"] == 5
+        expected_hits = len(queries)
+        assert stats["hits"] == expected_hits
         assert stats["misses"] == 0  # No misses on retrieval
         assert stats["hit_rate"] == 1.0
 
@@ -563,6 +564,45 @@ class TestQueryCache:
         stats = cache.get_stats()
         assert stats["hits"] == 3
         assert stats["misses"] == 0
+
+    def test_cache_normalization_empty_query(self):
+        """Test behavior when all words are stopwords (Issue #122 - Critical)."""
+        cache = QueryCache()
+
+        # Query that would become empty after normalization
+        test_result = {"data": "test1"}
+        cache.set("show me the", True, test_result)
+
+        # Different stopword-only query should NOT match (false positive prevention)
+        result = cache.get("tell me about", True)
+        assert result is None, "Stopword-only queries should not match each other"
+
+        # But exact match should work (falls back to original query)
+        result = cache.get("show me the", True)
+        assert result is not None
+        assert result["data"] == "test1"
+
+    def test_cache_key_determinism(self):
+        """Verify cache keys are deterministic and consistent (Issue #122 - Critical)."""
+        cache = QueryCache()
+
+        # Same query should always produce same key
+        key1 = cache._make_key("customer health", True)
+        key2 = cache._make_key("customer health", True)
+        assert key1 == key2, "Same query should produce identical keys"
+
+        # Different queries should produce different keys
+        key3 = cache._make_key("customer revenue", True)
+        assert key1 != key3, "Different queries should produce different keys"
+
+        # use_llm flag should affect key
+        key4 = cache._make_key("customer health", False)
+        assert key1 != key4, "use_llm flag should change cache key"
+
+        # Normalized equivalents should produce same key
+        key5 = cache._make_key("What is customer health?", True)
+        key6 = cache._make_key("Show me customer health", True)
+        assert key5 == key6, "Semantically equivalent queries should match"
 
 
 # ============================================================================

@@ -29,6 +29,9 @@ import structlog
 
 logger = structlog.get_logger(__name__)
 
+# Precompiled regex pattern for removing punctuation (performance optimization)
+_PUNCTUATION_PATTERN = re.compile(r"[^\w\s]")
+
 # Common English stopwords to remove for better cache hit rates
 # Focus on words that don't change query intent (interrogatives, articles, etc.)
 _STOPWORDS = {
@@ -270,7 +273,7 @@ class QueryCache:
         normalized = query.lower().strip()
 
         # Step 2: Remove punctuation (but keep spaces and alphanumerics)
-        normalized = re.sub(r"[^\w\s]", "", normalized)
+        normalized = _PUNCTUATION_PATTERN.sub("", normalized)
 
         # Step 3: Remove stopwords
         words = normalized.split()
@@ -278,6 +281,11 @@ class QueryCache:
 
         # Step 4: Normalize whitespace (rejoin with single spaces)
         normalized = " ".join(filtered_words)
+
+        # Edge case: If normalization removed all words, fall back to original query
+        # to prevent false positives (e.g., "show me" and "tell me" both → "")
+        if not normalized.strip():
+            normalized = query.lower().strip()
 
         # Include use_llm in key (results differ between LLM and rule-based)
         key_input = f"{normalized}|{use_llm}"
