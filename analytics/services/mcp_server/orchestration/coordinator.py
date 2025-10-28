@@ -23,6 +23,7 @@ from typing import Any, TypedDict
 import structlog
 
 # Phase 3: Import enhanced formatters for visualization
+from customer_base_audit.analyses.lens4 import Lens4Metrics
 from customer_base_audit.mcp.formatters import (
     create_cohort_heatmap,
     create_executive_dashboard,
@@ -103,7 +104,7 @@ class AnalysisState(TypedDict, total=False):
     # Original lens metrics objects (for formatting)
     lens2_metrics: Any | None  # Lens2Metrics
     lens3_metrics: Any | None  # Lens3Metrics (CohortEvolutionMetrics)
-    lens4_metrics: Any | None  # MultiCohortComparison
+    lens4_metrics: Lens4Metrics | None
 
     # Aggregated output
     insights: list[str]
@@ -1049,26 +1050,140 @@ class FourLensesCoordinator:
     async def _execute_lens4(self, state: AnalysisState) -> dict[str, Any]:
         """Execute Lens 4: Multi-cohort comparison.
 
-        Placeholder for MVP - full implementation requires multi-cohort analysis.
+        Retrieves cohort assignments and period aggregations, then calls Lens 4 analysis.
 
         Returns:
             Lens 4 result dict
         """
-        logger.warning(
-            "lens4_placeholder",
-            message="Lens 4 full implementation pending - returning placeholder",
-        )
+        with tracer.start_as_current_span("lens4_execution") as span:
+            logger.info("executing_lens4")
 
-        return {
-            "cohort_count": 4,
-            "alignment_type": "left-aligned",
-            "best_performing_cohort": "2024-Q1",
-            "worst_performing_cohort": "2023-Q4",
-            "key_differences": ["Q1 shows 20% higher retention"],
-            "recommendations": [
-                "Lens 4 full implementation pending in Phase 3 follow-up"
-            ],
-        }
+            try:
+                from customer_base_audit.analyses.lens4 import compare_cohorts
+
+                from analytics.services.mcp_server.tools.lens4 import (
+                    _generate_cohort_summaries,
+                    _generate_lens4_recommendations,
+                    _identify_best_worst_cohorts,
+                    _identify_key_differences,
+                )
+
+                # Get required data from shared state
+                cohort_assignments = self.shared_state.get("cohort_assignments")
+                mart = self.shared_state.get("data_mart")
+
+                logger.info(
+                    "lens4_data_check",
+                    has_cohort_assignments=cohort_assignments is not None,
+                    has_data_mart=mart is not None,
+                )
+
+                if cohort_assignments is None:
+                    raise ValueError(
+                        "Cohort assignments not found in shared state. "
+                        "Run create_customer_cohorts first."
+                    )
+
+                if not cohort_assignments:
+                    raise ValueError(
+                        "No cohort assignments found. Cohorts may not have any customers assigned. "
+                        "Verify customer data was provided when creating cohorts."
+                    )
+
+                if mart is None:
+                    raise ValueError(
+                        "Data mart not found in shared state. "
+                        "Run build_customer_data_mart first."
+                    )
+
+                # Get period aggregations
+                # Note: Uses the first available granularity from the data mart.
+                # In Python 3.7+, dict keys maintain insertion order, so this is deterministic
+                # if the data mart is built consistently. Common granularities are MONTH, QUARTER, YEAR.
+                if not mart.periods:
+                    raise ValueError(
+                        "Data mart has no period aggregations. "
+                        "Ensure data mart was built correctly."
+                    )
+                # Select first granularity (deterministic due to dict insertion order in Python 3.7+)
+                available_granularities = list(mart.periods.keys())
+                selected_granularity = available_granularities[0]
+                period_aggregations = mart.periods[selected_granularity]
+
+                logger.info(
+                    "lens4_granularity_selected",
+                    granularity=str(selected_granularity),
+                    available=[str(g) for g in available_granularities],
+                )
+
+                cohort_count = len(set(cohort_assignments.values()))
+                span.set_attribute("cohort_count", cohort_count)
+                span.set_attribute("period_count", len(period_aggregations))
+
+                # Run Lens 4 analysis
+                with tracer.start_as_current_span("lens4_calculate"):
+                    lens4_result = compare_cohorts(
+                        period_aggregations=period_aggregations,
+                        cohort_assignments=cohort_assignments,
+                        alignment_type="left-aligned",
+                        include_margin=False,
+                    )
+
+                logger.info(
+                    "lens4_analysis_complete",
+                    cohort_count=cohort_count,
+                    decomposition_count=len(lens4_result.cohort_decompositions),
+                    comparison_count=len(lens4_result.cohort_comparisons),
+                )
+
+                # Generate insights
+                with tracer.start_as_current_span("lens4_generate_insights"):
+                    cohort_summaries = _generate_cohort_summaries(lens4_result)
+                    best_cohort, worst_cohort = _identify_best_worst_cohorts(
+                        cohort_summaries
+                    )
+                    key_differences = _identify_key_differences(
+                        lens4_result, cohort_summaries
+                    )
+                    recommendations = _generate_lens4_recommendations(
+                        lens4_result, cohort_summaries
+                    )
+
+                span.set_attribute("cohort_summary_count", len(cohort_summaries))
+                if best_cohort:
+                    span.set_attribute("best_performing_cohort", best_cohort)
+                if worst_cohort:
+                    span.set_attribute("worst_performing_cohort", worst_cohort)
+
+                # Store original metrics for formatting
+                state["lens4_metrics"] = lens4_result
+
+                # Convert to dict for state storage
+                return {
+                    "cohort_count": cohort_count,
+                    "alignment_type": lens4_result.alignment_type,
+                    "cohort_summaries": [
+                        {
+                            "cohort_id": s.cohort_id,
+                            "cohort_size": s.cohort_size,
+                            "total_revenue": float(s.total_revenue),
+                            "avg_revenue_per_member": float(s.avg_revenue_per_member),
+                            "avg_frequency": float(s.avg_frequency),
+                            "avg_order_value": float(s.avg_order_value),
+                        }
+                        for s in cohort_summaries
+                    ],
+                    "best_performing_cohort": best_cohort,
+                    "worst_performing_cohort": worst_cohort,
+                    "key_differences": key_differences,
+                    "recommendations": recommendations,
+                }
+
+            except Exception as e:
+                logger.error("lens4_execution_failed", error=str(e), exc_info=True)
+                span.set_status(trace.Status(trace.StatusCode.ERROR))
+                span.record_exception(e)
+                raise
 
     async def _execute_lens5(self, state: AnalysisState) -> dict[str, Any]:
         """Execute Lens 5: Overall customer base health.
