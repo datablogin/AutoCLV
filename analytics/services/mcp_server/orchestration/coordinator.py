@@ -23,6 +23,7 @@ from typing import Any, TypedDict
 import structlog
 
 # Phase 3: Import enhanced formatters for visualization
+from customer_base_audit.analyses.lens4 import Lens4Metrics
 from customer_base_audit.mcp.formatters import (
     create_cohort_heatmap,
     create_executive_dashboard,
@@ -103,7 +104,7 @@ class AnalysisState(TypedDict, total=False):
     # Original lens metrics objects (for formatting)
     lens2_metrics: Any | None  # Lens2Metrics
     lens3_metrics: Any | None  # Lens3Metrics (CohortEvolutionMetrics)
-    lens4_metrics: Any | None  # MultiCohortComparison
+    lens4_metrics: Lens4Metrics | None
 
     # Aggregated output
     insights: list[str]
@@ -1112,7 +1113,7 @@ class FourLensesCoordinator:
                 logger.info(
                     "lens4_granularity_selected",
                     granularity=str(selected_granularity),
-                    available=[ str(g) for g in available_granularities],
+                    available=[str(g) for g in available_granularities],
                 )
 
                 cohort_count = len(set(cohort_assignments.values()))

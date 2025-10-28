@@ -3,8 +3,6 @@
 Wraps Lens 4 (Multi-Cohort Comparison) as an MCP tool for agentic orchestration.
 """
 
-from collections import defaultdict
-
 import structlog
 from customer_base_audit.analyses.lens4 import Lens4Metrics, compare_cohorts
 from fastmcp import Context
@@ -14,6 +12,36 @@ from analytics.services.mcp_server.main import mcp
 from analytics.services.mcp_server.state import get_shared_state
 
 logger = structlog.get_logger(__name__)
+
+
+class Lens4Thresholds:
+    """Detection thresholds for cohort comparison analysis.
+
+    These thresholds are calibrated to surface actionable insights while avoiding
+    noise from minor statistical variations.
+    """
+
+    # Alert when best cohort generates >50% more revenue than worst
+    REVENUE_VARIANCE_PCT = 50
+
+    # Alert when average order value differs by >30%
+    AOV_VARIANCE_PCT = 30
+
+    # Alert when purchase frequency differs by >50% (1.5x multiplier)
+    FREQUENCY_MULTIPLIER = 1.5
+
+    # Alert when time-to-second-purchase differs by >50% (1.5x multiplier)
+    TTSP_MULTIPLIER = 1.5
+
+    # HIGH priority recommendation when revenue gap exceeds 2x
+    HIGH_PRIORITY_REVENUE_GAP = 2.0
+
+    # MEDIUM priority thresholds for frequency and AOV
+    FREQUENCY_PRIORITY_MULTIPLIER = 1.5
+    AOV_PRIORITY_MULTIPLIER = 1.3
+
+    # Post-purchase engagement threshold (days)
+    LONG_TTSP_DAYS = 60
 
 
 class Lens4Request(BaseModel):
@@ -57,15 +85,18 @@ class Lens4Response(BaseModel):
 
 def _generate_cohort_summaries(metrics: Lens4Metrics) -> list[CohortSummary]:
     """Generate summary statistics for each cohort."""
-    # Group decompositions by cohort using defaultdict for cleaner code
-    cohort_data: dict[str, dict] = defaultdict(
-        lambda: {"cohort_size": 0, "total_revenue": 0.0, "total_orders": 0, "periods": 0}
-    )
+    # Group decompositions by cohort
+    # Optimized: initialize on first encounter to avoid defaultdict lambda overhead
+    cohort_data: dict[str, dict] = {}
 
     for decomp in metrics.cohort_decompositions:
-        # Set cohort_size on first encounter (all decomps for a cohort have same size)
-        if cohort_data[decomp.cohort_id]["cohort_size"] == 0:
-            cohort_data[decomp.cohort_id]["cohort_size"] = decomp.cohort_size
+        if decomp.cohort_id not in cohort_data:
+            cohort_data[decomp.cohort_id] = {
+                "cohort_size": decomp.cohort_size,
+                "total_revenue": 0.0,
+                "total_orders": 0,
+                "periods": 0,
+            }
 
         cohort_data[decomp.cohort_id]["total_revenue"] += float(decomp.revenue)
         cohort_data[decomp.cohort_id]["total_orders"] += decomp.total_orders
@@ -122,11 +153,11 @@ def _identify_key_differences(
 ) -> list[str]:
     """Identify key differences between cohorts.
 
-    Detection thresholds:
-    - Revenue variance: 50% (alerts when best cohort generates >50% more than worst)
-    - Frequency gap: 1.5x (alerts when purchase frequency differs by >50%)
-    - AOV variance: 30% (alerts when average order value differs by >30%)
-    - TTSP variance: 1.5x (alerts when time-to-second-purchase differs by >50%)
+    Detection thresholds are defined in Lens4Thresholds class:
+    - Revenue variance: Revenue variance percentage threshold
+    - Frequency gap: Frequency multiplier for significant differences
+    - AOV variance: AOV variance percentage threshold
+    - TTSP variance: Time-to-second-purchase multiplier
 
     These thresholds are calibrated to surface actionable insights while avoiding
     noise from minor variations.
@@ -146,31 +177,31 @@ def _identify_key_differences(
         (max_revenue - min_revenue) / max_revenue * 100 if max_revenue > 0 else 0
     )
 
-    # Alert on >50% revenue variance (indicates significant cohort quality difference)
-    if revenue_variance_pct > 50:
+    # Alert on significant revenue variance (indicates cohort quality difference)
+    if revenue_variance_pct > Lens4Thresholds.REVENUE_VARIANCE_PCT:
         differences.append(
             f"High revenue variance: Best cohort generates {revenue_variance_pct:.0f}% "
             f"more revenue per member than worst cohort"
         )
 
     # Frequency differences
-    # Alert when max frequency is >1.5x min (50% difference in purchase behavior)
+    # Alert when max frequency is >threshold (significant difference in purchase behavior)
     frequencies = [s.avg_frequency for s in summaries]
     max_freq = max(frequencies)
     min_freq = min(frequencies)
-    if max_freq > min_freq * 1.5:
+    if max_freq > min_freq * Lens4Thresholds.FREQUENCY_MULTIPLIER:
         differences.append(
             f"Purchase frequency varies significantly: {max_freq:.1f} vs {min_freq:.1f} orders per customer"
         )
 
     # AOV differences
-    # Alert on >30% AOV variance (indicates different customer value segments)
+    # Alert on significant AOV variance (indicates different customer value segments)
     aovs = [s.avg_order_value for s in summaries]
     max_aov = max(aovs)
     min_aov = min(aovs)
     aov_variance_pct = (max_aov - min_aov) / max_aov * 100 if max_aov > 0 else 0
 
-    if aov_variance_pct > 30:
+    if aov_variance_pct > Lens4Thresholds.AOV_VARIANCE_PCT:
         differences.append(
             f"Average order value varies: ${max_aov:.2f} vs ${min_aov:.2f}"
         )
@@ -186,7 +217,8 @@ def _identify_key_differences(
         if len(ttsp_data) >= 2:
             max_ttsp = max(ttsp_data)
             min_ttsp = min(ttsp_data)
-            if max_ttsp > min_ttsp * 1.5:
+            # Avoid division by zero and false positives when min_ttsp is 0
+            if max_ttsp > min_ttsp * Lens4Thresholds.TTSP_MULTIPLIER and min_ttsp > 0:
                 differences.append(
                     f"Time to second purchase varies: {min_ttsp:.0f} to {max_ttsp:.0f} days"
                 )
@@ -220,14 +252,17 @@ def _generate_lens4_recommendations(
             else 0
         )
 
-        if revenue_gap > 2:
+        if revenue_gap > Lens4Thresholds.HIGH_PRIORITY_REVENUE_GAP:
             recs.append(
                 f"HIGH PRIORITY: Best cohort ({best}) generates {revenue_gap:.1f}x more revenue "
                 f"than worst cohort ({worst}). Analyze {best} acquisition channels and replicate."
             )
 
         # Frequency insights
-        if best_cohort.avg_frequency > worst_cohort.avg_frequency * 1.5:
+        if (
+            best_cohort.avg_frequency
+            > worst_cohort.avg_frequency * Lens4Thresholds.FREQUENCY_PRIORITY_MULTIPLIER
+        ):
             recs.append(
                 f"MEDIUM: Best cohort has {best_cohort.avg_frequency:.1f} orders per customer "
                 f"vs {worst_cohort.avg_frequency:.1f}. Focus on increasing purchase frequency "
@@ -235,7 +270,10 @@ def _generate_lens4_recommendations(
             )
 
         # AOV insights
-        if best_cohort.avg_order_value > worst_cohort.avg_order_value * 1.3:
+        if (
+            best_cohort.avg_order_value
+            > worst_cohort.avg_order_value * Lens4Thresholds.AOV_PRIORITY_MULTIPLIER
+        ):
             recs.append(
                 f"MEDIUM: Best cohort has ${best_cohort.avg_order_value:.2f} AOV "
                 f"vs ${worst_cohort.avg_order_value:.2f}. Implement upselling strategies "
@@ -251,7 +289,7 @@ def _generate_lens4_recommendations(
         ]
         avg_ttsp = sum(ttsp_with_data) / len(ttsp_with_data) if ttsp_with_data else 0
 
-        if avg_ttsp > 60:
+        if avg_ttsp > Lens4Thresholds.LONG_TTSP_DAYS:
             recs.append(
                 f"MEDIUM: Average time to second purchase is {avg_ttsp:.0f} days. "
                 f"Implement post-purchase engagement campaigns to accelerate repeat purchases."
