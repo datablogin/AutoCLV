@@ -1095,14 +1095,25 @@ class FourLensesCoordinator:
                         "Run build_customer_data_mart first."
                     )
 
-                # Get period aggregations (use first granularity)
+                # Get period aggregations
+                # Note: Uses the first available granularity from the data mart.
+                # In Python 3.7+, dict keys maintain insertion order, so this is deterministic
+                # if the data mart is built consistently. Common granularities are MONTH, QUARTER, YEAR.
                 if not mart.periods:
                     raise ValueError(
                         "Data mart has no period aggregations. "
                         "Ensure data mart was built correctly."
                     )
-                first_granularity = list(mart.periods.keys())[0]
-                period_aggregations = mart.periods[first_granularity]
+                # Select first granularity (deterministic due to dict insertion order in Python 3.7+)
+                available_granularities = list(mart.periods.keys())
+                selected_granularity = available_granularities[0]
+                period_aggregations = mart.periods[selected_granularity]
+
+                logger.info(
+                    "lens4_granularity_selected",
+                    granularity=str(selected_granularity),
+                    available=[ str(g) for g in available_granularities],
+                )
 
                 cohort_count = len(set(cohort_assignments.values()))
                 span.set_attribute("cohort_count", cohort_count)

@@ -3,6 +3,8 @@
 Wraps Lens 4 (Multi-Cohort Comparison) as an MCP tool for agentic orchestration.
 """
 
+from collections import defaultdict
+
 import structlog
 from customer_base_audit.analyses.lens4 import Lens4Metrics, compare_cohorts
 from fastmcp import Context
@@ -55,17 +57,15 @@ class Lens4Response(BaseModel):
 
 def _generate_cohort_summaries(metrics: Lens4Metrics) -> list[CohortSummary]:
     """Generate summary statistics for each cohort."""
-    # Group decompositions by cohort
-    cohort_data: dict[str, dict] = {}
+    # Group decompositions by cohort using defaultdict for cleaner code
+    cohort_data: dict[str, dict] = defaultdict(
+        lambda: {"cohort_size": 0, "total_revenue": 0.0, "total_orders": 0, "periods": 0}
+    )
 
     for decomp in metrics.cohort_decompositions:
-        if decomp.cohort_id not in cohort_data:
-            cohort_data[decomp.cohort_id] = {
-                "cohort_size": decomp.cohort_size,
-                "total_revenue": 0.0,
-                "total_orders": 0,
-                "periods": 0,
-            }
+        # Set cohort_size on first encounter (all decomps for a cohort have same size)
+        if cohort_data[decomp.cohort_id]["cohort_size"] == 0:
+            cohort_data[decomp.cohort_id]["cohort_size"] = decomp.cohort_size
 
         cohort_data[decomp.cohort_id]["total_revenue"] += float(decomp.revenue)
         cohort_data[decomp.cohort_id]["total_orders"] += decomp.total_orders
@@ -93,8 +93,8 @@ def _generate_cohort_summaries(metrics: Lens4Metrics) -> list[CohortSummary]:
             )
         )
 
-    # Sort by total revenue descending
-    summaries.sort(key=lambda s: s.total_revenue, reverse=True)
+    # Sort by total revenue descending, then by cohort_id for deterministic ordering
+    summaries.sort(key=lambda s: (-s.total_revenue, s.cohort_id))
 
     return summaries
 
@@ -120,13 +120,25 @@ def _identify_best_worst_cohorts(
 def _identify_key_differences(
     metrics: Lens4Metrics, summaries: list[CohortSummary]
 ) -> list[str]:
-    """Identify key differences between cohorts."""
+    """Identify key differences between cohorts.
+
+    Detection thresholds:
+    - Revenue variance: 50% (alerts when best cohort generates >50% more than worst)
+    - Frequency gap: 1.5x (alerts when purchase frequency differs by >50%)
+    - AOV variance: 30% (alerts when average order value differs by >30%)
+    - TTSP variance: 1.5x (alerts when time-to-second-purchase differs by >50%)
+
+    These thresholds are calibrated to surface actionable insights while avoiding
+    noise from minor variations.
+    """
     differences: list[str] = []
 
     if len(summaries) < 2:
         return differences
 
     # Revenue per member variance
+    # Calculate percentage difference: (max - min) / max * 100
+    # This shows how much more revenue the best cohort generates vs. the worst
     revenues = [s.avg_revenue_per_member for s in summaries]
     max_revenue = max(revenues)
     min_revenue = min(revenues)
@@ -134,6 +146,7 @@ def _identify_key_differences(
         (max_revenue - min_revenue) / max_revenue * 100 if max_revenue > 0 else 0
     )
 
+    # Alert on >50% revenue variance (indicates significant cohort quality difference)
     if revenue_variance_pct > 50:
         differences.append(
             f"High revenue variance: Best cohort generates {revenue_variance_pct:.0f}% "
@@ -141,6 +154,7 @@ def _identify_key_differences(
         )
 
     # Frequency differences
+    # Alert when max frequency is >1.5x min (50% difference in purchase behavior)
     frequencies = [s.avg_frequency for s in summaries]
     max_freq = max(frequencies)
     min_freq = min(frequencies)
@@ -150,6 +164,7 @@ def _identify_key_differences(
         )
 
     # AOV differences
+    # Alert on >30% AOV variance (indicates different customer value segments)
     aovs = [s.avg_order_value for s in summaries]
     max_aov = max(aovs)
     min_aov = min(aovs)
@@ -161,6 +176,7 @@ def _identify_key_differences(
         )
 
     # Time to second purchase insights
+    # Alert when TTSP varies by >1.5x (indicates different engagement patterns)
     if metrics.time_to_second_purchase:
         ttsp_data = [
             float(t.mean_days)
@@ -191,8 +207,12 @@ def _generate_lens4_recommendations(
     best, worst = _identify_best_worst_cohorts(summaries)
 
     if best and worst:
-        best_cohort = next(s for s in summaries if s.cohort_id == best)
-        worst_cohort = next(s for s in summaries if s.cohort_id == worst)
+        best_cohort = next((s for s in summaries if s.cohort_id == best), None)
+        worst_cohort = next((s for s in summaries if s.cohort_id == worst), None)
+
+        if not best_cohort or not worst_cohort:
+            recs.append("Insufficient cohort data for detailed recommendations.")
+            return recs
 
         revenue_gap = (
             best_cohort.avg_revenue_per_member / worst_cohort.avg_revenue_per_member
@@ -254,15 +274,10 @@ async def _compare_multiple_cohorts_impl(
 
     # Get cohort assignments from context
     cohort_assignments = shared_state.get("cohort_assignments")
-    if cohort_assignments is None:
-        raise ValueError(
-            "Cohort assignments not found. Run create_customer_cohorts first."
-        )
-
-    # Validate cohort assignments is not empty
     if not cohort_assignments:
         raise ValueError(
-            "Cohort assignments is empty. Ensure customers are assigned to cohorts."
+            "Cohort assignments not found or empty. "
+            "Run create_customer_cohorts first and ensure customers are assigned."
         )
 
     # Get data mart from context
