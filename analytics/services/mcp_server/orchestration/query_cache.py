@@ -8,9 +8,18 @@ Design:
 - Thread-safe for concurrent access
 - Tracks cache hit/miss rates for monitoring
 - Can be disabled via environment variable
+- Enhanced query normalization for better cache hit rates (Issue #122)
+
+Query Normalization Strategy:
+- Remove punctuation (? ! . , etc.)
+- Remove common stopwords (show, tell, me, about, the, etc.)
+- Normalize whitespace (multiple spaces → single space)
+- Lowercase all text
+- Target: Increase hit rate from ~30% to 50%+
 """
 
 import hashlib
+import re
 import threading
 import time
 from collections import OrderedDict
@@ -19,6 +28,66 @@ from typing import Any
 import structlog
 
 logger = structlog.get_logger(__name__)
+
+# Common English stopwords to remove for better cache hit rates
+# Focus on words that don't change query intent (interrogatives, articles, etc.)
+_STOPWORDS = {
+    # Interrogatives and request words
+    "show",
+    "tell",
+    "give",
+    "display",
+    "what",
+    "how",
+    "when",
+    "where",
+    "why",
+    "can",
+    "could",
+    "would",
+    "should",
+    # Articles and determiners
+    "a",
+    "an",
+    "the",
+    # Common prepositions and pronouns
+    "me",
+    "my",
+    "you",
+    "your",
+    "our",
+    "about",
+    "for",
+    "to",
+    "of",
+    "in",
+    "on",
+    "at",
+    # Polite words
+    "please",
+    "thanks",
+    "thank",
+    # Common conjunctions
+    "and",
+    "or",
+    "but",
+    # Common verbs that don't affect intent
+    "is",
+    "are",
+    "was",
+    "were",
+    "be",
+    "been",
+    "being",
+    "have",
+    "has",
+    "had",
+    "do",
+    "does",
+    "did",
+    "get",
+    "got",
+}
 
 
 class QueryCache:
@@ -177,6 +246,17 @@ class QueryCache:
     def _make_key(self, query: str, use_llm: bool) -> str:
         """Create cache key from query and use_llm flag.
 
+        Enhanced normalization (Issue #122) to improve cache hit rates:
+        1. Lowercase
+        2. Remove punctuation
+        3. Remove stopwords (show, tell, me, about, etc.)
+        4. Normalize whitespace
+
+        Examples of queries that now map to same key:
+        - "What is customer health?" → "customer health"
+        - "Show me customer health" → "customer health"
+        - "Tell me about customer health" → "customer health"
+
         Uses SHA-256 hash for consistent key generation.
 
         Args:
@@ -186,11 +266,21 @@ class QueryCache:
         Returns:
             Cache key (64-character hex string)
         """
-        # Normalize query (lowercase, strip whitespace)
-        normalized_query = query.lower().strip()
+        # Step 1: Lowercase
+        normalized = query.lower().strip()
+
+        # Step 2: Remove punctuation (but keep spaces and alphanumerics)
+        normalized = re.sub(r"[^\w\s]", "", normalized)
+
+        # Step 3: Remove stopwords
+        words = normalized.split()
+        filtered_words = [w for w in words if w not in _STOPWORDS]
+
+        # Step 4: Normalize whitespace (rejoin with single spaces)
+        normalized = " ".join(filtered_words)
 
         # Include use_llm in key (results differ between LLM and rule-based)
-        key_input = f"{normalized_query}|{use_llm}"
+        key_input = f"{normalized}|{use_llm}"
 
         return hashlib.sha256(key_input.encode()).hexdigest()
 
