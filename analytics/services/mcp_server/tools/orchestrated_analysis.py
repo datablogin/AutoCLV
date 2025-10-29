@@ -152,13 +152,37 @@ async def run_orchestrated_analysis(
         query_length=len(request.query),
     )
 
+    # SECURITY: Sanitize query BEFORE cache lookup to prevent cache poisoning
+    from analytics.services.mcp_server.orchestration.security import (
+        sanitize_user_input,
+    )
+
+    try:
+        sanitized_query = sanitize_user_input(request.query)
+        logger.info("query_sanitized_at_tool_level", original_length=len(request.query))
+    except ValueError as e:
+        # Security violation - return error immediately
+        logger.warning("security_violation_blocked", error=str(e), query=request.query[:50])
+        return OrchestratedAnalysisResponse(
+            query=request.query,
+            lenses_executed=[],
+            lenses_failed=[],
+            insights=[],
+            recommendations=[],
+            execution_time_ms=0.0,
+            data_mart_ready=False,
+            rfm_ready=False,
+            cohorts_ready=False,
+            error=str(e),
+        )
+
     cache = get_query_cache()
     cache_hit = False
 
     try:
-        # Check cache if enabled
+        # Check cache if enabled (using sanitized query)
         if request.use_cache:
-            cached_result = cache.get(request.query, request.use_llm)
+            cached_result = cache.get(sanitized_query, request.use_llm)
             if cached_result:
                 cache_hit = True
                 await ctx.info(
@@ -166,23 +190,25 @@ async def run_orchestrated_analysis(
                 )
                 result = cached_result
             else:
-                # Cache miss - run analysis
+                # Cache miss - run analysis (query already sanitized above)
                 coordinator = FourLensesCoordinator(use_llm=request.use_llm)
                 result = await coordinator.analyze(
-                    request.query,
+                    sanitized_query,
                     use_cache=False,
                     include_visualizations=request.include_visualizations,
+                    skip_sanitization=True,  # Already sanitized at tool level
                 )  # Cache handled at tool level
 
-                # Store in cache
-                cache.set(request.query, request.use_llm, result)
+                # Store in cache (using sanitized query as key)
+                cache.set(sanitized_query, request.use_llm, result)
         else:
-            # Caching disabled - run analysis directly
+            # Caching disabled - run analysis directly (query already sanitized above)
             coordinator = FourLensesCoordinator(use_llm=request.use_llm)
             result = await coordinator.analyze(
-                request.query,
+                sanitized_query,
                 use_cache=False,
                 include_visualizations=request.include_visualizations,
+                skip_sanitization=True,  # Already sanitized at tool level
             )  # Cache disabled
 
         # Report progress

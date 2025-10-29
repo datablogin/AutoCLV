@@ -1587,6 +1587,7 @@ class FourLensesCoordinator:
         query: str,
         use_cache: bool = True,
         include_visualizations: bool = False,
+        skip_sanitization: bool = False,
     ) -> dict[str, Any]:
         """Run complete Four Lenses analysis from query.
 
@@ -1596,6 +1597,7 @@ class FourLensesCoordinator:
             query: Natural language or structured query
             use_cache: Whether to use query result caching (default: True)
             include_visualizations: Whether to generate PNG visualizations (default: False)
+            skip_sanitization: Skip input sanitization if already done at tool level (default: False)
 
         Returns:
             Complete analysis results including:
@@ -1611,37 +1613,41 @@ class FourLensesCoordinator:
         """
         # SECURITY: Sanitize user input FIRST (before any processing)
         # This protects both rule-based and LLM-powered paths
-        from analytics.services.mcp_server.orchestration.security import (
-            sanitize_user_input,
-        )
-
-        try:
-            sanitized_query = sanitize_user_input(query)
-            logger.info(
-                "query_sanitized_at_entry",
-                original_length=len(query),
-                sanitized_length=len(sanitized_query),
+        # Skip if already sanitized at tool level to avoid double sanitization
+        if not skip_sanitization:
+            from analytics.services.mcp_server.orchestration.security import (
+                sanitize_user_input,
             )
-        except ValueError as e:
-            # Return error state for security violations
-            logger.warning(
-                "query_rejected_by_security",
-                error=str(e),
-                query_preview=query[:50],
-            )
-            return {
-                "query": query,
-                "error": str(e),
-                "lenses_executed": [],
-                "lenses_failed": [],
-                "lens_errors": {},
-                "insights": [],
-                "recommendations": [],
-                "execution_time_ms": 0.0,
-            }
 
-        # Use sanitized query for all downstream processing
-        query = sanitized_query
+            try:
+                sanitized_query = sanitize_user_input(query)
+                logger.info(
+                    "query_sanitized_at_coordinator",
+                    original_length=len(query),
+                    sanitized_length=len(sanitized_query),
+                )
+            except ValueError as e:
+                # Return error state for security violations
+                logger.warning(
+                    "query_rejected_by_security",
+                    error=str(e),
+                    query_preview=query[:50],
+                )
+                return {
+                    "query": query,
+                    "error": str(e),
+                    "lenses_executed": [],
+                    "lenses_failed": [],
+                    "lens_errors": {},
+                    "insights": [],
+                    "recommendations": [],
+                    "execution_time_ms": 0.0,
+                }
+
+            # Use sanitized query for all downstream processing
+            query = sanitized_query
+        else:
+            logger.info("skipping_sanitization_already_done_at_tool_level")
 
         # Check cache first if enabled and using LLM
         if use_cache and self.use_llm:
