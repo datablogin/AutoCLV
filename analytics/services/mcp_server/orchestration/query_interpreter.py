@@ -92,7 +92,9 @@ class QueryInterpreter:
 
         sanitized_query = sanitize_user_input(query)
 
-        logger.info("parsing_query_with_claude", query=sanitized_query, model=self.model)
+        logger.info(
+            "parsing_query_with_claude", query=sanitized_query, model=self.model
+        )
 
         prompt = self._build_prompt(sanitized_query)
 
