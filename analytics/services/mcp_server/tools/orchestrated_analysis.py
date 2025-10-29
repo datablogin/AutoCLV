@@ -162,7 +162,9 @@ async def run_orchestrated_analysis(
         logger.info("query_sanitized_at_tool_level", original_length=len(request.query))
     except ValueError as e:
         # Security violation - return error immediately
-        logger.warning("security_violation_blocked", error=str(e), query=request.query[:50])
+        logger.warning(
+            "security_violation_blocked", error=str(e), query=request.query[:50]
+        )
         return OrchestratedAnalysisResponse(
             query=request.query,
             lenses_executed=[],
