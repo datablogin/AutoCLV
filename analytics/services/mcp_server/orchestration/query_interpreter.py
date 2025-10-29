@@ -85,6 +85,8 @@ class QueryInterpreter:
         Raises:
             ValueError: If Claude returns invalid JSON or parsing fails
         """
+        # Query is already sanitized by coordinator.analyze() or tool level
+        # No need to sanitize again here to avoid double sanitization
         logger.info("parsing_query_with_claude", query=query, model=self.model)
 
         prompt = self._build_prompt(query)

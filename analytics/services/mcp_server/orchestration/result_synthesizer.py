@@ -82,6 +82,8 @@ class ResultSynthesizer:
         Raises:
             ValueError: If synthesis fails or Claude returns invalid JSON
         """
+        # Query is already sanitized by coordinator.analyze() or tool level
+        # No need to sanitize again here to avoid double sanitization
         logger.info(
             "synthesizing_results_with_claude",
             query=query,
