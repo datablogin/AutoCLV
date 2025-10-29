@@ -330,24 +330,25 @@ class TestQueryCache:
         assert stats["size"] == 2
 
     def test_cache_ttl_expiration(self):
-        """Test that entries expire after TTL."""
-        import time
+        """Test that entries expire after TTL (Issue #122 - Using time mocking)."""
+        from unittest.mock import patch
 
-        cache = QueryCache(ttl_seconds=1)
+        cache = QueryCache(ttl_seconds=3600)
 
-        # Store result
-        cache.set("test query", True, {"data": "test"})
+        with patch("time.time") as mock_time:
+            # Set initial time
+            mock_time.return_value = 1000.0
+            cache.set("test query", True, {"data": "test"})
 
-        # Immediate retrieval should work
-        result = cache.get("test query", True)
-        assert result is not None
+            # Immediate retrieval should work
+            mock_time.return_value = 1000.0
+            result = cache.get("test query", True)
+            assert result is not None
 
-        # Wait for expiration
-        time.sleep(1.1)
-
-        # Should be expired now
-        result = cache.get("test query", True)
-        assert result is None
+            # Simulate TTL expiration (3600 seconds + 1)
+            mock_time.return_value = 4601.0
+            result = cache.get("test query", True)
+            assert result is None
 
     def test_cache_clear(self):
         """Test clearing all cache entries."""
@@ -369,6 +370,239 @@ class TestQueryCache:
 
         assert result1 is None
         assert result2 is None
+
+    # Issue #122: Enhanced cache key normalization tests
+    def test_cache_normalization_removes_punctuation(self):
+        """Test that punctuation is removed for cache key matching (Issue #122)."""
+        cache = QueryCache()
+
+        # Store with punctuation
+        test_result = {"data": "test"}
+        cache.set("What is customer health?", True, test_result)
+
+        # Retrieve without punctuation - should be cache hit
+        result = cache.get("What is customer health", True)
+
+        assert result is not None
+        assert result["data"] == "test"
+
+    def test_cache_normalization_removes_stopwords(self):
+        """Test that stopwords are removed for better cache hits (Issue #122)."""
+        cache = QueryCache()
+
+        # Store with stopwords
+        test_result = {"data": "health analysis"}
+        cache.set("What is customer health?", True, test_result)
+
+        # These should all match the same cache key (stopwords removed)
+        queries = [
+            "Show me customer health",
+            "Tell me about customer health",
+            "Give me customer health",
+            "customer health",  # Minimal form
+            "Display the customer health",
+        ]
+
+        for query in queries:
+            result = cache.get(query, True)
+            assert result is not None, f"Query '{query}' should be cache hit"
+            assert result["data"] == "health analysis"
+
+        # Verify high hit rate (all queries should hit after initial store)
+        stats = cache.get_stats()
+        expected_hits = len(queries)
+        assert stats["hits"] == expected_hits
+        assert stats["misses"] == 0  # No misses on retrieval
+        assert stats["hit_rate"] == 1.0
+
+    def test_cache_normalization_preserves_key_terms(self):
+        """Test that important domain terms are preserved (Issue #122)."""
+        cache = QueryCache()
+
+        # Store query with specific terms
+        cache.set("customer retention analysis", True, {"type": "retention"})
+
+        # Different phrasing should match
+        result = cache.get("Show me customer retention analysis", True)
+        assert result is not None
+        assert result["type"] == "retention"
+
+        # But different key terms should NOT match
+        result = cache.get("customer health analysis", True)
+        assert result is None  # Different key term: health vs retention
+
+    def test_cache_normalization_handles_case_insensitivity(self):
+        """Test that case differences don't affect cache hits (Issue #122)."""
+        cache = QueryCache()
+
+        test_result = {"data": "case test"}
+        cache.set("Customer Health", True, test_result)
+
+        # Different case variations should all hit
+        queries = [
+            "customer health",
+            "CUSTOMER HEALTH",
+            "CuStOmEr HeAlTh",
+        ]
+
+        for query in queries:
+            result = cache.get(query, True)
+            assert result is not None
+            assert result["data"] == "case test"
+
+    def test_cache_normalization_handles_extra_whitespace(self):
+        """Test that extra whitespace is normalized (Issue #122)."""
+        cache = QueryCache()
+
+        test_result = {"data": "whitespace test"}
+        cache.set("customer   health", True, test_result)
+
+        # Extra whitespace should be normalized
+        result = cache.get("customer health", True)
+        assert result is not None
+
+        result = cache.get("customer     health", True)
+        assert result is not None
+
+        result = cache.get("  customer health  ", True)
+        assert result is not None
+
+    def test_cache_normalization_example_scenarios(self):
+        """Test real-world query variations from Issue #122."""
+        cache = QueryCache()
+
+        # Scenario 1: Customer health queries
+        test_result = {"analysis": "health"}
+        cache.set("What is customer health?", True, test_result)
+
+        # All these should match
+        health_queries = [
+            "Show me customer health",
+            "Tell me about customer health",
+            "customer health",
+            "What is the customer health?",
+            "Give me customer health please",
+        ]
+
+        for query in health_queries:
+            result = cache.get(query, True)
+            assert result is not None, f"Query '{query}' should match"
+            assert result["analysis"] == "health"
+
+        # Scenario 2: Retention queries
+        cache.clear()
+        cache.set("What is our retention?", True, {"type": "retention"})
+
+        retention_queries = [
+            "Show me retention",
+            "Tell me about retention",
+            "What is retention",
+            "retention",
+        ]
+
+        for query in retention_queries:
+            result = cache.get(query, True)
+            assert result is not None
+            assert result["type"] == "retention"
+
+    def test_cache_normalization_hit_rate_improvement(self):
+        """Test that normalization significantly improves hit rates (Issue #122)."""
+        cache = QueryCache()
+
+        # Simulate typical user queries (with variations)
+        test_result = {"lens": "lens1"}
+
+        # Store base query
+        cache.set("customer health", True, test_result)
+
+        # Simulate 10 user queries with natural language variations
+        query_variations = [
+            "Show me customer health",
+            "What is customer health?",
+            "Tell me about customer health",
+            "Display customer health",
+            "Give me the customer health",
+            "Can you show customer health",
+            "customer health please",
+            "Show the customer health",
+            "What is the customer health",
+            "customer health",
+        ]
+
+        hits = 0
+        for query in query_variations:
+            result = cache.get(query, True)
+            if result is not None:
+                hits += 1
+
+        # All 10 should hit (100% hit rate after initial store)
+        assert hits == 10, f"Expected 10 hits, got {hits}"
+
+        stats = cache.get_stats()
+        assert stats["hit_rate"] == 1.0  # Perfect hit rate
+
+    def test_cache_normalization_doesnt_over_normalize(self):
+        """Test that important distinctions are preserved (Issue #122)."""
+        cache = QueryCache()
+
+        # Store different analyses
+        cache.set("customer retention", True, {"type": "retention"})
+        cache.set("customer health", True, {"type": "health"})
+        cache.set("customer revenue", True, {"type": "revenue"})
+
+        # Each should remain distinct
+        result1 = cache.get("Show me customer retention", True)
+        assert result1["type"] == "retention"
+
+        result2 = cache.get("Show me customer health", True)
+        assert result2["type"] == "health"
+
+        result3 = cache.get("Show me customer revenue", True)
+        assert result3["type"] == "revenue"
+
+        # Verify no false positives
+        stats = cache.get_stats()
+        assert stats["hits"] == 3
+        assert stats["misses"] == 0
+
+    def test_cache_normalization_empty_query(self):
+        """Test behavior when all words are stopwords (Issue #122 - Critical)."""
+        cache = QueryCache()
+
+        # Query that would become empty after normalization
+        test_result = {"data": "test1"}
+        cache.set("show me the", True, test_result)
+
+        # Different stopword-only query should NOT match (false positive prevention)
+        result = cache.get("tell me about", True)
+        assert result is None, "Stopword-only queries should not match each other"
+
+        # But exact match should work (falls back to original query)
+        result = cache.get("show me the", True)
+        assert result is not None
+        assert result["data"] == "test1"
+
+    def test_cache_key_determinism(self):
+        """Verify cache keys are deterministic and consistent (Issue #122 - Critical)."""
+        cache = QueryCache()
+
+        # Same query should always produce same key
+        key1 = cache._make_key("customer health", True)
+        key2 = cache._make_key("customer health", True)
+        assert key1 == key2, "Same query should produce identical keys"
+
+        # Different queries should produce different keys
+        key3 = cache._make_key("customer revenue", True)
+        assert key1 != key3, "Different queries should produce different keys"
+
+        # use_llm flag should affect key
+        key4 = cache._make_key("customer health", False)
+        assert key1 != key4, "use_llm flag should change cache key"
+
+        # Normalized equivalents should produce same key
+        key5 = cache._make_key("What is customer health?", True)
+        key6 = cache._make_key("Show me customer health", True)
+        assert key5 == key6, "Semantically equivalent queries should match"
 
 
 # ============================================================================
