@@ -1609,6 +1609,40 @@ class FourLensesCoordinator:
             - lens results: Individual lens results (lens1_result, etc.)
             - formatted_outputs: PNG visualizations (only if include_visualizations=True)
         """
+        # SECURITY: Sanitize user input FIRST (before any processing)
+        # This protects both rule-based and LLM-powered paths
+        from analytics.services.mcp_server.orchestration.security import (
+            sanitize_user_input,
+        )
+
+        try:
+            sanitized_query = sanitize_user_input(query)
+            logger.info(
+                "query_sanitized_at_entry",
+                original_length=len(query),
+                sanitized_length=len(sanitized_query),
+            )
+        except ValueError as e:
+            # Return error state for security violations
+            logger.warning(
+                "query_rejected_by_security",
+                error=str(e),
+                query_preview=query[:50],
+            )
+            return {
+                "query": query,
+                "error": str(e),
+                "lenses_executed": [],
+                "lenses_failed": [],
+                "lens_errors": {},
+                "insights": [],
+                "recommendations": [],
+                "execution_time_ms": 0.0,
+            }
+
+        # Use sanitized query for all downstream processing
+        query = sanitized_query
+
         # Check cache first if enabled and using LLM
         if use_cache and self.use_llm:
             from analytics.services.mcp_server.orchestration.query_cache import (

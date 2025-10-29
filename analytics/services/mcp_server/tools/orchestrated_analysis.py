@@ -138,11 +138,19 @@ async def run_orchestrated_analysis(
     logger.info(
         "orchestrated_analysis_received",
         query=request.query[:50],
+        full_query=request.query,  # Log full query for security analysis
         use_llm=request.use_llm,
         use_cache=request.use_cache,
     )
 
     await ctx.info(f"Running orchestrated analysis: {request.query}")
+
+    # SECURITY AUDIT: Log exact query received from Claude Desktop
+    logger.warning(
+        "SECURITY_AUDIT_QUERY_RECEIVED",
+        full_query=request.query,
+        query_length=len(request.query),
+    )
 
     cache = get_query_cache()
     cache_hit = False

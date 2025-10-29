@@ -82,9 +82,16 @@ class ResultSynthesizer:
         Raises:
             ValueError: If synthesis fails or Claude returns invalid JSON
         """
+        # Sanitize user input to prevent prompt injection attacks
+        from analytics.services.mcp_server.orchestration.security import (
+            sanitize_user_input,
+        )
+
+        sanitized_query = sanitize_user_input(query)
+
         logger.info(
             "synthesizing_results_with_claude",
-            query=query,
+            query=sanitized_query,
             lens_count=sum(1 for v in lens_results.values() if v is not None),
             model=self.model,
         )
@@ -105,7 +112,7 @@ class ResultSynthesizer:
                 "Please verify that required data is loaded and try again.",
             )
 
-        prompt = self._build_prompt(query, valid_results)
+        prompt = self._build_prompt(sanitized_query, valid_results)
 
         try:
             # Add 30-second timeout to prevent indefinite hangs

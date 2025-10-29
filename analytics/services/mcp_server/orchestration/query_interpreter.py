@@ -85,9 +85,16 @@ class QueryInterpreter:
         Raises:
             ValueError: If Claude returns invalid JSON or parsing fails
         """
-        logger.info("parsing_query_with_claude", query=query, model=self.model)
+        # Sanitize user input to prevent prompt injection attacks
+        from analytics.services.mcp_server.orchestration.security import (
+            sanitize_user_input,
+        )
 
-        prompt = self._build_prompt(query)
+        sanitized_query = sanitize_user_input(query)
+
+        logger.info("parsing_query_with_claude", query=sanitized_query, model=self.model)
+
+        prompt = self._build_prompt(sanitized_query)
 
         try:
             # Add 30-second timeout to prevent indefinite hangs
