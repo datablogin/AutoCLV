@@ -17,7 +17,7 @@ from customer_base_audit.analyses.lens5 import (
 from fastmcp import Context
 from pydantic import BaseModel, Field
 
-from analytics.services.mcp_server.main import mcp
+from analytics.services.mcp_server.instance import mcp
 from analytics.services.mcp_server.state import get_shared_state
 
 # Phase 4B: Import Prometheus metrics

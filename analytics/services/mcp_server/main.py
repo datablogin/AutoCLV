@@ -98,8 +98,11 @@ async def app_lifespan(app):
     logger.info("mcp_server_stopping")
 
 
-# Initialize MCP server
-mcp = FastMCP(name="Four Lenses Analytics", version=VERSION, lifespan=app_lifespan)
+# Import MCP server instance (must be imported before tools to avoid circular imports)
+from analytics.services.mcp_server.instance import mcp  # noqa: E402
+
+# Configure lifespan
+mcp.lifespan = app_lifespan
 
 
 # Import Phase 1 Foundation Tools

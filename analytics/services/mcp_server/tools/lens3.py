@@ -11,7 +11,7 @@ from fastmcp import Context
 from opentelemetry import trace
 from pydantic import BaseModel, Field
 
-from analytics.services.mcp_server.main import mcp
+from analytics.services.mcp_server.instance import mcp
 from analytics.services.mcp_server.state import get_shared_state
 
 logger = structlog.get_logger(__name__)

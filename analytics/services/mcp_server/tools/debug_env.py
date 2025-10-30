@@ -9,7 +9,7 @@ import structlog
 from fastmcp import Context
 from pydantic import BaseModel
 
-from analytics.services.mcp_server.main import mcp
+from analytics.services.mcp_server.instance import mcp
 
 logger = structlog.get_logger(__name__)
 
