@@ -32,21 +32,6 @@ from customer_base_audit.mcp.formatters import (
     create_sankey_diagram,
     format_lens4_decomposition_table,
 )
-
-# Phase 2 Integration: Additional formatters for all lenses
-from analytics.services.mcp_server.formatters import (
-    # Plotly charts (return dict[str, Any] - Plotly JSON specs)
-    create_revenue_concentration_pie,
-    create_health_score_gauge,
-    # Markdown tables (return str)
-    format_lens1_table,
-    format_lens2_table,
-    format_lens5_health_summary_table,
-    # Executive summaries (return str)
-    generate_health_summary,
-    generate_retention_insights,
-    generate_cohort_comparison,
-)
 from langgraph.graph import END, StateGraph
 from opentelemetry import trace
 from tenacity import (
@@ -56,6 +41,20 @@ from tenacity import (
     wait_exponential,
 )
 
+# Phase 2 Integration: Additional formatters for all lenses
+from analytics.services.mcp_server.formatters import (
+    create_health_score_gauge,
+    # Plotly charts (return dict[str, Any] - Plotly JSON specs)
+    create_revenue_concentration_pie,
+    # Markdown tables (return str)
+    format_lens1_table,
+    format_lens2_table,
+    format_lens5_health_summary_table,
+    generate_cohort_comparison,
+    # Executive summaries (return str)
+    generate_health_summary,
+    generate_retention_insights,
+)
 from analytics.services.mcp_server.state import get_shared_state
 
 # Phase 4B: Import Prometheus metrics recording
@@ -1566,13 +1565,11 @@ class FourLensesCoordinator:
             except Exception as e:
                 logger.warning("lens2_table_generation_failed", error=str(e))
 
-            # Sankey diagram (PNG) - EXISTING CODE
+            # Sankey diagram (PNG) - Main branch formatter already generates PNG
             try:
-                sankey_json = create_sankey_diagram(lens2_metrics)
-                fig = go.Figure(data=sankey_json["data"], layout=sankey_json["layout"])
-                img_bytes = fig.to_image(format="png", width=1000, height=600)
-                formatted_outputs["lens2_sankey"] = Image(data=img_bytes, format="png")
-                logger.debug("lens2_sankey_generated", size_bytes=len(img_bytes))
+                sankey_result = create_sankey_diagram(lens2_metrics)
+                formatted_outputs["lens2_sankey"] = sankey_result
+                logger.debug("lens2_sankey_generated")
             except Exception as e:
                 logger.warning("lens2_sankey_generation_failed", error=str(e))
 
@@ -1594,17 +1591,11 @@ class FourLensesCoordinator:
             lens3_metrics = state["lens3_metrics"]
             logger.info("formatting_lens3_outputs")
 
-            # Retention trend chart (PNG)
+            # Retention trend chart (PNG) - Main branch formatter already generates PNG
             try:
-                retention_chart_json = create_retention_trend_chart(lens3_metrics)
-                fig = go.Figure(data=retention_chart_json["data"], layout=retention_chart_json["layout"])
-                img_bytes = fig.to_image(format="png", width=1200, height=600)
-                formatted_outputs["lens3_retention_trend"] = Image(
-                    data=img_bytes, format="png"
-                )
-                logger.debug(
-                    "lens3_retention_trend_generated", size_bytes=len(img_bytes)
-                )
+                retention_chart_result = create_retention_trend_chart(lens3_metrics)
+                formatted_outputs["lens3_retention_trend"] = retention_chart_result
+                logger.debug("lens3_retention_trend_generated")
             except Exception as e:
                 logger.warning("lens3_retention_trend_generation_failed", error=str(e))
 
@@ -1625,24 +1616,18 @@ class FourLensesCoordinator:
             except Exception as e:
                 logger.warning("lens4_table_generation_failed", error=str(e))
 
-            # Cohort heatmap (PNG)
+            # Cohort heatmap (PNG) - Main branch formatter already generates PNG
             try:
-                heatmap_json = create_cohort_heatmap(lens4_result)
-                fig = go.Figure(data=heatmap_json["data"], layout=heatmap_json["layout"])
-                img_bytes = fig.to_image(format="png", width=1200, height=800)
-                formatted_outputs["lens4_heatmap"] = Image(
-                    data=img_bytes, format="png"
-                )
-                logger.debug("lens4_heatmap_generated", size_bytes=len(img_bytes))
+                heatmap_result = create_cohort_heatmap(lens4_result)
+                formatted_outputs["lens4_heatmap"] = heatmap_result
+                logger.debug("lens4_heatmap_generated")
             except Exception as e:
                 logger.warning("lens4_heatmap_generation_failed", error=str(e))
 
             # Executive summary - Cohort comparison
             try:
                 # Reconstruct Lens4Metrics if needed (assuming it's already in correct format)
-                comparison_md = generate_cohort_comparison(
-                    lens4_result, max_cohorts=5
-                )
+                comparison_md = generate_cohort_comparison(lens4_result, max_cohorts=5)
                 formatted_outputs["cohort_comparison_summary"] = comparison_md
                 logger.debug("cohort_comparison_generated", length=len(comparison_md))
             except Exception as e:
@@ -1713,17 +1698,11 @@ class FourLensesCoordinator:
                 )
                 lens5_metrics = Lens5Metrics(**lens5_result.get("metrics", {}))
 
-                dashboard_json = create_executive_dashboard(
+                dashboard_result = create_executive_dashboard(
                     lens1_metrics, lens5_metrics
                 )
-                fig = go.Figure(data=dashboard_json["data"], layout=dashboard_json["layout"])
-                img_bytes = fig.to_image(format="png", width=1400, height=1000)
-                formatted_outputs["executive_dashboard"] = Image(
-                    data=img_bytes, format="png"
-                )
-                logger.debug(
-                    "executive_dashboard_generated", size_bytes=len(img_bytes)
-                )
+                formatted_outputs["executive_dashboard"] = dashboard_result
+                logger.debug("executive_dashboard_generated")
             except Exception as e:
                 logger.warning("executive_dashboard_generation_failed", error=str(e))
 

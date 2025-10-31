@@ -10,7 +10,6 @@ import sys
 from contextlib import asynccontextmanager
 
 import structlog
-from fastmcp import FastMCP
 
 # Version and phase constants
 VERSION = "2.0.0"

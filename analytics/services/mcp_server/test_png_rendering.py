@@ -9,24 +9,25 @@ Usage:
 
 from datetime import datetime, timezone
 from decimal import Decimal
-import plotly.graph_objects as go
 
-# Import formatters
-from analytics.services.mcp_server.formatters import (
-    create_retention_trend_chart,
-    create_revenue_concentration_pie,
-    create_health_score_gauge,
-    create_executive_dashboard,
-)
+import plotly.graph_objects as go
 
 # Import metrics classes from main branch (track-a has them)
 from customer_base_audit.analyses.lens1 import Lens1Metrics
-from customer_base_audit.analyses.lens3 import Lens3Metrics, CohortPeriodMetrics
+from customer_base_audit.analyses.lens3 import CohortPeriodMetrics, Lens3Metrics
 from customer_base_audit.analyses.lens5 import (
-    Lens5Metrics,
-    CustomerBaseHealthScore,
-    CohortRevenuePeriod,
     CohortRepeatBehavior,
+    CohortRevenuePeriod,
+    CustomerBaseHealthScore,
+    Lens5Metrics,
+)
+
+# Import formatters
+from analytics.services.mcp_server.formatters import (
+    create_executive_dashboard,
+    create_health_score_gauge,
+    create_retention_trend_chart,
+    create_revenue_concentration_pie,
 )
 
 
