@@ -1287,6 +1287,9 @@ class FourLensesCoordinator:
                     # Generate recommendations
                     recommendations = _generate_recommendations(lens5_result)
 
+                # Store original metrics for formatting
+                state["lens5_metrics"] = lens5_result
+
                 # Convert to dict for state storage (matching the Lens5Metrics structure)
                 result = {
                     "analysis_name": "Customer Base Health Assessment",
@@ -1486,6 +1489,17 @@ class FourLensesCoordinator:
         import plotly.graph_objects as go
         from fastmcp.utilities.types import Image
 
+        # Check kaleido dependency for PNG rendering
+        try:
+            import kaleido  # noqa: F401
+        except ImportError:
+            logger.error(
+                "kaleido_not_installed",
+                error="PNG rendering requires 'kaleido' package. Install with: pip install kaleido",
+            )
+            state["formatted_outputs"] = {}
+            return state
+
         # Skip PNG generation if not requested (default to save tokens)
         if not state.get("include_visualizations", False):
             logger.info(
@@ -1642,15 +1656,12 @@ class FourLensesCoordinator:
         # ======================
         # LENS 5: Customer Base Health
         # ======================
-        if "lens5" in lenses_executed and state.get("lens5_result"):
-            lens5_result = state["lens5_result"]
+        if "lens5" in lenses_executed and state.get("lens5_metrics"):
+            lens5_metrics = state["lens5_metrics"]
             logger.info("formatting_lens5_outputs")
 
-            # Reconstruct Lens5Metrics from result dict
+            # Use original Lens5Metrics object stored in state
             try:
-                from customer_base_audit.analyses.lens5 import Lens5Metrics
-
-                lens5_metrics = Lens5Metrics(**lens5_result.get("metrics", {}))
 
                 # Markdown table
                 table_md = format_lens5_health_summary_table(lens5_metrics)
@@ -1682,11 +1693,11 @@ class FourLensesCoordinator:
             logger.info("generating_executive_dashboard")
             try:
                 from customer_base_audit.analyses.lens1 import Lens1Metrics
-                from customer_base_audit.analyses.lens5 import Lens5Metrics
 
                 lens1_result = state.get("lens1_result", {})
-                lens5_result = state.get("lens5_result", {})
+                lens5_metrics = state.get("lens5_metrics")
 
+                # Reconstruct Lens1Metrics (same pattern as earlier in this function)
                 lens1_metrics = Lens1Metrics(
                     total_customers=lens1_result["total_customers"],
                     one_time_buyers=lens1_result["one_time_buyers"],
@@ -1702,7 +1713,10 @@ class FourLensesCoordinator:
                     median_customer_value=lens1_result["median_customer_value"],
                     rfm_distribution=lens1_result["rfm_distribution"],
                 )
-                lens5_metrics = Lens5Metrics(**lens5_result.get("metrics", {}))
+
+                # Use stored Lens5Metrics object (not reconstructed from dict)
+                if not lens5_metrics:
+                    raise ValueError("lens5_metrics not found in state for executive dashboard")
 
                 dashboard_json = create_executive_dashboard(
                     lens1_metrics, lens5_metrics
