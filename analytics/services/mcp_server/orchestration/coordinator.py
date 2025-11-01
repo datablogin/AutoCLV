@@ -25,6 +25,7 @@ import structlog
 # Phase 3: Import enhanced formatters for visualization
 from customer_base_audit.analyses.lens4 import Lens4Metrics
 from customer_base_audit.mcp.formatters import (
+    # Existing formatters (Sankey, heatmap)
     create_cohort_heatmap,
     create_executive_dashboard,
     create_retention_trend_chart,
@@ -40,6 +41,20 @@ from tenacity import (
     wait_exponential,
 )
 
+# Phase 2 Integration: Additional formatters for all lenses
+from analytics.services.mcp_server.formatters import (
+    create_health_score_gauge,
+    # Plotly charts (return dict[str, Any] - Plotly JSON specs)
+    create_revenue_concentration_pie,
+    # Markdown tables (return str)
+    format_lens1_table,
+    format_lens2_table,
+    format_lens5_health_summary_table,
+    generate_cohort_comparison,
+    # Executive summaries (return str)
+    generate_health_summary,
+    generate_retention_insights,
+)
 from analytics.services.mcp_server.state import get_shared_state
 
 # Phase 4B: Import Prometheus metrics recording
@@ -1453,20 +1468,24 @@ class FourLensesCoordinator:
         return state
 
     async def _format_results(self, state: AnalysisState) -> AnalysisState:
-        """Apply enhanced formatters to lens results (Phase 3).
+        """Format lens results with PNG visualizations, markdown tables, and executive summaries.
 
-        Generates formatted visualizations based on which lenses were executed:
-        - Lens 2: Sankey diagram for customer migration
-        - Lens 3: Retention trend chart for cohort evolution
-        - Lens 4: Cohort heatmap and enhanced decomposition table
-        - Multi-lens: Executive dashboard combining multiple views
+        This node generates three types of formatted outputs:
+        1. PNG Images: Rendered from Plotly JSON specs using kaleido
+        2. Markdown Tables: Formatted tables for each lens
+        3. Executive Summaries: Narrative insights and recommendations
+
+        Only runs if include_visualizations=True to save tokens.
 
         Args:
             state: Current workflow state with lens results
 
         Returns:
-            Updated state with formatted_outputs dict containing charts/tables
+            Updated state with formatted_outputs dict containing PNGs/tables/summaries
         """
+        import plotly.graph_objects as go
+        from fastmcp.utilities.types import Image
+
         # Skip PNG generation if not requested (default to save tokens)
         if not state.get("include_visualizations", False):
             logger.info(
@@ -1477,108 +1496,223 @@ class FourLensesCoordinator:
             return state
 
         logger.info(
-            "formatting_results", lenses_executed=state.get("lenses_executed", [])
+            "generating_formatted_outputs",
+            lenses_executed=state.get("lenses_executed", []),
         )
 
-        formatted_outputs: dict[str, Any] = {}
+        formatted_outputs = {}
+        lenses_executed = state.get("lenses_executed", [])
 
-        try:
-            lenses_executed = state.get("lenses_executed", [])
+        # ======================
+        # LENS 1: Revenue Snapshot
+        # ======================
+        if "lens1" in lenses_executed and state.get("lens1_result"):
+            lens1_result = state["lens1_result"]
+            logger.info("formatting_lens1_outputs")
 
-            # Lens 2: Sankey diagram for customer migration
-            if "lens2" in lenses_executed and state.get("lens2_metrics"):
-                try:
-                    lens2_metrics = state["lens2_metrics"]
-                    # Sankey diagram shows customer flow between periods
-                    sankey_json = create_sankey_diagram(lens2_metrics)
-                    formatted_outputs["lens2_sankey"] = sankey_json
-                    logger.info("lens2_sankey_created")
-                except Exception as e:
-                    logger.warning(
-                        "lens2_formatting_failed",
-                        error=str(e),
-                        error_type=type(e).__name__,
-                    )
+            # Markdown table
+            try:
+                # Reconstruct Lens1Metrics from result dict
+                from customer_base_audit.analyses.lens1 import Lens1Metrics
 
-            # Lens 3: Retention trend chart for cohort evolution
-            if "lens3" in lenses_executed and state.get("lens3_metrics"):
-                try:
-                    lens3_metrics = state["lens3_metrics"]
-                    # Retention trend shows cohort retention curves
-                    retention_chart_json = create_retention_trend_chart(lens3_metrics)
-                    formatted_outputs["lens3_retention_chart"] = retention_chart_json
-                    logger.info("lens3_retention_chart_created")
-                except Exception as e:
-                    logger.warning(
-                        "lens3_formatting_failed",
-                        error=str(e),
-                        error_type=type(e).__name__,
-                    )
+                # Extract only fields that Lens1Metrics expects (exclude extra fields)
+                lens1_metrics = Lens1Metrics(
+                    total_customers=lens1_result["total_customers"],
+                    one_time_buyers=lens1_result["one_time_buyers"],
+                    one_time_buyer_pct=lens1_result["one_time_buyer_pct"],
+                    total_revenue=lens1_result["total_revenue"],
+                    top_10pct_revenue_contribution=lens1_result[
+                        "top_10pct_revenue_contribution"
+                    ],
+                    top_20pct_revenue_contribution=lens1_result[
+                        "top_20pct_revenue_contribution"
+                    ],
+                    avg_orders_per_customer=lens1_result["avg_orders_per_customer"],
+                    median_customer_value=lens1_result["median_customer_value"],
+                    rfm_distribution=lens1_result["rfm_distribution"],
+                )
 
-            # Lens 4: Cohort heatmap and enhanced table
-            if "lens4" in lenses_executed and state.get("lens4_result"):
-                try:
-                    lens4_result = state["lens4_result"]
-                    # Cohort heatmap shows performance across cohorts
-                    heatmap_json = create_cohort_heatmap(lens4_result)
-                    formatted_outputs["lens4_heatmap"] = heatmap_json
+                table_md = format_lens1_table(lens1_metrics)
+                formatted_outputs["lens1_table"] = table_md
+                logger.debug("lens1_table_generated", length=len(table_md))
+            except Exception as e:
+                logger.warning("lens1_table_generation_failed", error=str(e))
 
-                    # Enhanced decomposition table with pagination
-                    table_markdown = format_lens4_decomposition_table(lens4_result)
-                    formatted_outputs["lens4_table"] = table_markdown
+            # Revenue concentration pie chart (PNG)
+            try:
+                pie_json = create_revenue_concentration_pie(lens1_metrics)
+                fig = go.Figure(data=pie_json["data"], layout=pie_json["layout"])
+                img_bytes = fig.to_image(format="png", width=800, height=600)
+                formatted_outputs["lens1_revenue_pie"] = Image(
+                    data=img_bytes, format="png"
+                )
+                logger.debug("lens1_revenue_pie_generated", size_bytes=len(img_bytes))
+            except Exception as e:
+                logger.warning("lens1_revenue_pie_generation_failed", error=str(e))
 
-                    logger.info("lens4_visualizations_created")
-                except Exception as e:
-                    logger.warning(
-                        "lens4_formatting_failed",
-                        error=str(e),
-                        error_type=type(e).__name__,
-                    )
+        # ======================
+        # LENS 2: Customer Migration
+        # ======================
+        if "lens2" in lenses_executed and state.get("lens2_metrics"):
+            lens2_metrics = state["lens2_metrics"]
+            logger.info("formatting_lens2_outputs")
 
-            # Multi-lens: Executive dashboard
-            if len(lenses_executed) >= 2:
-                try:
-                    # Collect all available lens results for dashboard
-                    lens_results = {
-                        "lens1": state.get("lens1_result"),
-                        "lens2": state.get("lens2_result"),
-                        "lens3": state.get("lens3_result"),
-                        "lens4": state.get("lens4_result"),
-                        "lens5": state.get("lens5_result"),
-                    }
-                    # Remove None values
-                    lens_results = {
-                        k: v for k, v in lens_results.items() if v is not None
-                    }
+            # Markdown table
+            try:
+                table_md = format_lens2_table(lens2_metrics)
+                formatted_outputs["lens2_table"] = table_md
+                logger.debug("lens2_table_generated", length=len(table_md))
+            except Exception as e:
+                logger.warning("lens2_table_generation_failed", error=str(e))
 
-                    # Create 4-panel executive dashboard
-                    dashboard_json = create_executive_dashboard(lens_results)
-                    formatted_outputs["executive_dashboard"] = dashboard_json
-                    logger.info("executive_dashboard_created", panel_count=4)
-                except Exception as e:
-                    logger.warning(
-                        "executive_dashboard_failed",
-                        error=str(e),
-                        error_type=type(e).__name__,
-                    )
+            # Sankey diagram (PNG) - Main branch formatter already generates PNG
+            try:
+                sankey_result = create_sankey_diagram(lens2_metrics)
+                formatted_outputs["lens2_sankey"] = sankey_result
+                logger.debug("lens2_sankey_generated")
+            except Exception as e:
+                logger.warning("lens2_sankey_generation_failed", error=str(e))
 
-            state["formatted_outputs"] = formatted_outputs
+            # Executive summary - Retention insights (combines Lens 2 + Lens 3 if available)
+            try:
+                lens3_metrics = (
+                    state.get("lens3_metrics") if "lens3" in lenses_executed else None
+                )
+                insights_md = generate_retention_insights(lens2_metrics, lens3_metrics)
+                formatted_outputs["retention_insights_summary"] = insights_md
+                logger.debug("retention_insights_generated", length=len(insights_md))
+            except Exception as e:
+                logger.warning("retention_insights_generation_failed", error=str(e))
 
-            logger.info(
-                "formatting_complete",
-                output_count=len(formatted_outputs),
-                outputs=list(formatted_outputs.keys()),
-            )
+        # ======================
+        # LENS 3: Cohort Evolution
+        # ======================
+        if "lens3" in lenses_executed and state.get("lens3_metrics"):
+            lens3_metrics = state["lens3_metrics"]
+            logger.info("formatting_lens3_outputs")
 
-        except Exception as e:
-            logger.error(
-                "formatting_failed",
-                error=str(e),
-                error_type=type(e).__name__,
-                exc_info=True,
-            )
-            # Don't fail the entire analysis if formatting fails
-            state["formatted_outputs"] = {}
+            # Retention trend chart (PNG) - Main branch formatter already generates PNG
+            try:
+                retention_chart_result = create_retention_trend_chart(lens3_metrics)
+                formatted_outputs["lens3_retention_trend"] = retention_chart_result
+                logger.debug("lens3_retention_trend_generated")
+            except Exception as e:
+                logger.warning("lens3_retention_trend_generation_failed", error=str(e))
+
+        # ======================
+        # LENS 4: Cohort Decomposition
+        # ======================
+        if "lens4" in lenses_executed and state.get("lens4_result"):
+            lens4_result = state["lens4_result"]
+            logger.info("formatting_lens4_outputs")
+
+            # Markdown table
+            try:
+                table_md = format_lens4_decomposition_table(
+                    lens4_result, max_cohorts=10
+                )
+                formatted_outputs["lens4_table"] = table_md
+                logger.debug("lens4_table_generated", length=len(table_md))
+            except Exception as e:
+                logger.warning("lens4_table_generation_failed", error=str(e))
+
+            # Cohort heatmap (PNG) - Main branch formatter already generates PNG
+            try:
+                heatmap_result = create_cohort_heatmap(lens4_result)
+                formatted_outputs["lens4_heatmap"] = heatmap_result
+                logger.debug("lens4_heatmap_generated")
+            except Exception as e:
+                logger.warning("lens4_heatmap_generation_failed", error=str(e))
+
+            # Executive summary - Cohort comparison
+            try:
+                # Reconstruct Lens4Metrics if needed (assuming it's already in correct format)
+                comparison_md = generate_cohort_comparison(lens4_result, max_cohorts=5)
+                formatted_outputs["cohort_comparison_summary"] = comparison_md
+                logger.debug("cohort_comparison_generated", length=len(comparison_md))
+            except Exception as e:
+                logger.warning("cohort_comparison_generation_failed", error=str(e))
+
+        # ======================
+        # LENS 5: Customer Base Health
+        # ======================
+        if "lens5" in lenses_executed and state.get("lens5_result"):
+            lens5_result = state["lens5_result"]
+            logger.info("formatting_lens5_outputs")
+
+            # Reconstruct Lens5Metrics from result dict
+            try:
+                from customer_base_audit.analyses.lens5 import Lens5Metrics
+
+                lens5_metrics = Lens5Metrics(**lens5_result.get("metrics", {}))
+
+                # Markdown table
+                table_md = format_lens5_health_summary_table(lens5_metrics)
+                formatted_outputs["lens5_table"] = table_md
+                logger.debug("lens5_table_generated", length=len(table_md))
+
+                # Health score gauge (PNG)
+                gauge_json = create_health_score_gauge(lens5_metrics)
+                fig = go.Figure(data=gauge_json["data"], layout=gauge_json["layout"])
+                img_bytes = fig.to_image(format="png", width=600, height=400)
+                formatted_outputs["lens5_health_gauge"] = Image(
+                    data=img_bytes, format="png"
+                )
+                logger.debug("lens5_health_gauge_generated", size_bytes=len(img_bytes))
+
+                # Executive summary - Health summary
+                summary_md = generate_health_summary(lens5_metrics)
+                formatted_outputs["health_summary"] = summary_md
+                logger.debug("health_summary_generated", length=len(summary_md))
+
+            except Exception as e:
+                logger.warning("lens5_formatting_failed", error=str(e))
+
+        # ======================
+        # MULTI-LENS: Executive Dashboard
+        # ======================
+        # Generate executive dashboard if both Lens 1 and Lens 5 executed
+        if "lens1" in lenses_executed and "lens5" in lenses_executed:
+            logger.info("generating_executive_dashboard")
+            try:
+                from customer_base_audit.analyses.lens1 import Lens1Metrics
+                from customer_base_audit.analyses.lens5 import Lens5Metrics
+
+                lens1_result = state.get("lens1_result", {})
+                lens5_result = state.get("lens5_result", {})
+
+                lens1_metrics = Lens1Metrics(
+                    total_customers=lens1_result["total_customers"],
+                    one_time_buyers=lens1_result["one_time_buyers"],
+                    one_time_buyer_pct=lens1_result["one_time_buyer_pct"],
+                    total_revenue=lens1_result["total_revenue"],
+                    top_10pct_revenue_contribution=lens1_result[
+                        "top_10pct_revenue_contribution"
+                    ],
+                    top_20pct_revenue_contribution=lens1_result[
+                        "top_20pct_revenue_contribution"
+                    ],
+                    avg_orders_per_customer=lens1_result["avg_orders_per_customer"],
+                    median_customer_value=lens1_result["median_customer_value"],
+                    rfm_distribution=lens1_result["rfm_distribution"],
+                )
+                lens5_metrics = Lens5Metrics(**lens5_result.get("metrics", {}))
+
+                dashboard_result = create_executive_dashboard(
+                    lens1_metrics, lens5_metrics
+                )
+                formatted_outputs["executive_dashboard"] = dashboard_result
+                logger.debug("executive_dashboard_generated")
+            except Exception as e:
+                logger.warning("executive_dashboard_generation_failed", error=str(e))
+
+        # Store all formatted outputs in state
+        state["formatted_outputs"] = formatted_outputs
+        logger.info(
+            "formatted_outputs_complete",
+            output_count=len(formatted_outputs),
+            output_keys=list(formatted_outputs.keys()),
+        )
 
         return state
 
