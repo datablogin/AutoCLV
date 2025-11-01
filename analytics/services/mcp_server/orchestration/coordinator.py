@@ -18,17 +18,22 @@ import asyncio
 import os
 import time
 from collections.abc import Awaitable, Callable
-from typing import Any, TypedDict
+from typing import TYPE_CHECKING, Any, TypedDict
 
 import structlog
+
+if TYPE_CHECKING:
+    from customer_base_audit.analyses.lens1 import Lens1Metrics
 
 # Phase 3: Import enhanced formatters for visualization
 from customer_base_audit.analyses.lens4 import Lens4Metrics
 from customer_base_audit.mcp.formatters import (
-    # Existing formatters (Sankey, heatmap)
+    # Plotly charts (return dict with 'plotly_json' key)
     create_cohort_heatmap,
     create_executive_dashboard,
+    create_health_score_gauge,
     create_retention_trend_chart,
+    create_revenue_concentration_pie,
     create_sankey_diagram,
     format_lens4_decomposition_table,
 )
@@ -43,9 +48,6 @@ from tenacity import (
 
 # Phase 2 Integration: Additional formatters for all lenses
 from analytics.services.mcp_server.formatters import (
-    create_health_score_gauge,
-    # Plotly charts (return dict[str, Any] - Plotly JSON specs)
-    create_revenue_concentration_pie,
     # Markdown tables (return str)
     format_lens1_table,
     format_lens2_table,
@@ -1592,8 +1594,11 @@ class FourLensesCoordinator:
 
             # Revenue concentration pie chart (PNG)
             try:
-                pie_json = create_revenue_concentration_pie(lens1_metrics)
-                fig = go.Figure(data=pie_json["data"], layout=pie_json["layout"])
+                pie_result = create_revenue_concentration_pie(lens1_metrics)
+                fig = go.Figure(
+                    data=pie_result["plotly_json"]["data"],
+                    layout=pie_result["plotly_json"]["layout"],
+                )
                 img_bytes = fig.to_image(format="png", width=800, height=600)
                 formatted_outputs["lens1_revenue_pie"] = Image(
                     data=img_bytes, format="png"
@@ -1619,8 +1624,11 @@ class FourLensesCoordinator:
 
             # Sankey diagram (PNG)
             try:
-                sankey_json = create_sankey_diagram(lens2_metrics)
-                fig = go.Figure(data=sankey_json["data"], layout=sankey_json["layout"])
+                sankey_result = create_sankey_diagram(lens2_metrics)
+                fig = go.Figure(
+                    data=sankey_result["plotly_json"]["data"],
+                    layout=sankey_result["plotly_json"]["layout"],
+                )
                 img_bytes = fig.to_image(format="png", width=1000, height=600)
                 formatted_outputs["lens2_sankey"] = Image(data=img_bytes, format="png")
                 logger.debug("lens2_sankey_generated", size_bytes=len(img_bytes))
@@ -1647,10 +1655,10 @@ class FourLensesCoordinator:
 
             # Retention trend chart (PNG)
             try:
-                retention_chart_json = create_retention_trend_chart(lens3_metrics)
+                retention_chart_result = create_retention_trend_chart(lens3_metrics)
                 fig = go.Figure(
-                    data=retention_chart_json["data"],
-                    layout=retention_chart_json["layout"],
+                    data=retention_chart_result["plotly_json"]["data"],
+                    layout=retention_chart_result["plotly_json"]["layout"],
                 )
                 img_bytes = fig.to_image(format="png", width=1200, height=600)
                 formatted_outputs["lens3_retention_trend"] = Image(
@@ -1681,9 +1689,10 @@ class FourLensesCoordinator:
 
             # Cohort heatmap (PNG)
             try:
-                heatmap_json = create_cohort_heatmap(lens4_result)
+                heatmap_result = create_cohort_heatmap(lens4_result)
                 fig = go.Figure(
-                    data=heatmap_json["data"], layout=heatmap_json["layout"]
+                    data=heatmap_result["plotly_json"]["data"],
+                    layout=heatmap_result["plotly_json"]["layout"],
                 )
                 img_bytes = fig.to_image(format="png", width=1200, height=800)
                 formatted_outputs["lens4_heatmap"] = Image(data=img_bytes, format="png")
@@ -1715,8 +1724,11 @@ class FourLensesCoordinator:
                 logger.debug("lens5_table_generated", length=len(table_md))
 
                 # Health score gauge (PNG)
-                gauge_json = create_health_score_gauge(lens5_metrics)
-                fig = go.Figure(data=gauge_json["data"], layout=gauge_json["layout"])
+                gauge_result = create_health_score_gauge(lens5_metrics)
+                fig = go.Figure(
+                    data=gauge_result["plotly_json"]["data"],
+                    layout=gauge_result["plotly_json"]["layout"],
+                )
                 img_bytes = fig.to_image(format="png", width=600, height=400)
                 formatted_outputs["lens5_health_gauge"] = Image(
                     data=img_bytes, format="png"
@@ -1750,11 +1762,12 @@ class FourLensesCoordinator:
                         "lens5_metrics not found in state for executive dashboard"
                     )
 
-                dashboard_json = create_executive_dashboard(
+                dashboard_result = create_executive_dashboard(
                     lens1_metrics, lens5_metrics
                 )
                 fig = go.Figure(
-                    data=dashboard_json["data"], layout=dashboard_json["layout"]
+                    data=dashboard_result["plotly_json"]["data"],
+                    layout=dashboard_result["plotly_json"]["layout"],
                 )
                 img_bytes = fig.to_image(format="png", width=1400, height=1000)
                 formatted_outputs["executive_dashboard"] = Image(
