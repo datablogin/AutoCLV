@@ -2,6 +2,7 @@
 
 Tests that PNG images are actually generated correctly with valid headers.
 """
+
 from datetime import datetime
 from decimal import Decimal
 
@@ -136,9 +137,9 @@ async def test_format_results_generates_valid_pngs():
 
         # Verify PNG header (Image.data should contain PNG bytes)
         assert hasattr(img, "data"), f"{image_key} missing data attribute"
-        assert img.data.startswith(
-            b"\x89PNG\r\n\x1a\n"
-        ), f"{image_key} does not have valid PNG header"
+        assert img.data.startswith(b"\x89PNG\r\n\x1a\n"), (
+            f"{image_key} does not have valid PNG header"
+        )
 
         # Verify non-empty
         assert len(img.data) > 0, f"{image_key} has empty data"
@@ -147,9 +148,9 @@ async def test_format_results_generates_valid_pngs():
     expected_tables = ["lens1_table", "lens5_table"]
     for table_key in expected_tables:
         assert table_key in formatted_outputs, f"Missing {table_key}"
-        assert isinstance(
-            formatted_outputs[table_key], str
-        ), f"{table_key} is not a string"
+        assert isinstance(formatted_outputs[table_key], str), (
+            f"{table_key} is not a string"
+        )
         assert len(formatted_outputs[table_key]) > 0, f"{table_key} is empty"
 
     # Verify summaries are generated

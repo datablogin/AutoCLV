@@ -4,7 +4,7 @@
 This test verifies that the coordinator code correctly converts Plotly JSON
 to PNG Images for all chart types.
 """
-import ast
+
 import re
 import sys
 
@@ -21,9 +21,7 @@ def analyze_format_results_method():
 
     # Find all places where formatted_outputs is assigned
     assignments = re.findall(
-        r'formatted_outputs\["([^"]+)"\]\s*=\s*(.+)',
-        content,
-        re.MULTILINE
+        r'formatted_outputs\["([^"]+)"\]\s*=\s*(.+)', content, re.MULTILINE
     )
 
     print(f"\nFound {len(assignments)} formatted_outputs assignments:\n")
@@ -36,7 +34,7 @@ def analyze_format_results_method():
 
     for key, value in assignments:
         # Check if it's an Image object (correct for PNGs)
-        if "Image(data=" in value and "format=\"png\"" in value:
+        if "Image(data=" in value and 'format="png"' in value:
             correct_png_pattern += 1
             print(f"  ✓ {key}: Correct PNG Image pattern")
         # Check if it's a raw dict assignment (incorrect!)
@@ -51,7 +49,10 @@ def analyze_format_results_method():
                 correct_png_pattern += 1
                 print(f"  ✓ {key}: Correct PNG Image pattern")
         # String assignments (markdown tables, summaries)
-        elif any(var in value for var in ["table_md", "summary_md", "insights_md", "comparison_md"]):
+        elif any(
+            var in value
+            for var in ["table_md", "summary_md", "insights_md", "comparison_md"]
+        ):
             string_assignments += 1
             print(f"  ✓ {key}: String (table/summary)")
         else:
@@ -64,14 +65,22 @@ def analyze_format_results_method():
 
     # Check for specific problematic patterns from the bug
     problematic_patterns = [
-        (r'formatted_outputs\["lens2_sankey"\]\s*=\s*sankey_result(?!\s*#|\n)',
-         "lens2_sankey: Direct dict assignment"),
-        (r'formatted_outputs\["lens3_retention_trend"\]\s*=\s*retention_chart_result(?!\s*#|\n)',
-         "lens3_retention_trend: Direct dict assignment"),
-        (r'formatted_outputs\["lens4_heatmap"\]\s*=\s*heatmap_result(?!\s*#|\n)',
-         "lens4_heatmap: Direct dict assignment"),
-        (r'formatted_outputs\["executive_dashboard"\]\s*=\s*dashboard_result(?!\s*#|\n)',
-         "executive_dashboard: Direct dict assignment"),
+        (
+            r'formatted_outputs\["lens2_sankey"\]\s*=\s*sankey_result(?!\s*#|\n)',
+            "lens2_sankey: Direct dict assignment",
+        ),
+        (
+            r'formatted_outputs\["lens3_retention_trend"\]\s*=\s*retention_chart_result(?!\s*#|\n)',
+            "lens3_retention_trend: Direct dict assignment",
+        ),
+        (
+            r'formatted_outputs\["lens4_heatmap"\]\s*=\s*heatmap_result(?!\s*#|\n)',
+            "lens4_heatmap: Direct dict assignment",
+        ),
+        (
+            r'formatted_outputs\["executive_dashboard"\]\s*=\s*dashboard_result(?!\s*#|\n)',
+            "executive_dashboard: Direct dict assignment",
+        ),
     ]
 
     print("\n" + "=" * 80)
@@ -104,7 +113,7 @@ def analyze_format_results_method():
     missing_correct_pattern = []
     for chart in required_png_charts:
         # Check if the correct pattern exists: go.Figure(...).to_image() -> Image()
-        pattern = rf'{chart}.*?go\.Figure.*?to_image.*?Image\('
+        pattern = rf"{chart}.*?go\.Figure.*?to_image.*?Image\("
         if re.search(pattern, content, re.DOTALL):
             print(f"  ✓ {chart}: Uses correct go.Figure -> to_image -> Image pattern")
         else:
@@ -121,9 +130,9 @@ def analyze_format_results_method():
     print(f"  Direct dict assignments (incorrect): {incorrect_dict_pattern}")
 
     success = (
-        len(found_problems) == 0 and
-        len(missing_correct_pattern) == 0 and
-        incorrect_dict_pattern == 0
+        len(found_problems) == 0
+        and len(missing_correct_pattern) == 0
+        and incorrect_dict_pattern == 0
     )
 
     if success:
@@ -132,11 +141,13 @@ def analyze_format_results_method():
         print("  - All charts use go.Figure -> to_image -> Image() pattern")
         return 0
     else:
-        print(f"\n✗ FAILURE!")
+        print("\n✗ FAILURE!")
         if found_problems:
             print(f"  - Found {len(found_problems)} problematic pattern(s)")
         if missing_correct_pattern:
-            print(f"  - {len(missing_correct_pattern)} chart(s) missing correct pattern")
+            print(
+                f"  - {len(missing_correct_pattern)} chart(s) missing correct pattern"
+            )
         if incorrect_dict_pattern > 0:
             print(f"  - {incorrect_dict_pattern} direct dict assignment(s)")
         return 1
