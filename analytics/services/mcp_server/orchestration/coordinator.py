@@ -18,17 +18,22 @@ import asyncio
 import os
 import time
 from collections.abc import Awaitable, Callable
-from typing import Any, TypedDict
+from typing import TYPE_CHECKING, Any, TypedDict
 
 import structlog
+
+if TYPE_CHECKING:
+    from customer_base_audit.analyses.lens1 import Lens1Metrics
 
 # Phase 3: Import enhanced formatters for visualization
 from customer_base_audit.analyses.lens4 import Lens4Metrics
 from customer_base_audit.mcp.formatters import (
-    # Existing formatters (Sankey, heatmap)
+    # Plotly charts (return dict with 'plotly_json' key)
     create_cohort_heatmap,
     create_executive_dashboard,
+    create_health_score_gauge,
     create_retention_trend_chart,
+    create_revenue_concentration_pie,
     create_sankey_diagram,
     format_lens4_decomposition_table,
 )
@@ -43,9 +48,6 @@ from tenacity import (
 
 # Phase 2 Integration: Additional formatters for all lenses
 from analytics.services.mcp_server.formatters import (
-    create_health_score_gauge,
-    # Plotly charts (return dict[str, Any] - Plotly JSON specs)
-    create_revenue_concentration_pie,
     # Markdown tables (return str)
     format_lens1_table,
     format_lens2_table,
@@ -67,6 +69,9 @@ except ImportError:
 
 logger = structlog.get_logger(__name__)
 tracer = trace.get_tracer(__name__)
+
+# PNG size limit (5MB) to prevent memory issues from malicious/buggy formatters
+PNG_SIZE_LIMIT_BYTES = 5_000_000
 
 # Lazy import to avoid circular dependency
 # This global function is kept for backward compatibility but coordinator now uses dependency injection
@@ -1287,6 +1292,9 @@ class FourLensesCoordinator:
                     # Generate recommendations
                     recommendations = _generate_recommendations(lens5_result)
 
+                # Store original metrics for formatting
+                state["lens5_metrics"] = lens5_result
+
                 # Convert to dict for state storage (matching the Lens5Metrics structure)
                 result = {
                     "analysis_name": "Customer Base Health Assessment",
@@ -1467,6 +1475,57 @@ class FourLensesCoordinator:
 
         return state
 
+    def _reconstruct_lens1_metrics(self, lens1_result: dict) -> "Lens1Metrics":
+        """Reconstruct Lens1Metrics from result dict.
+
+        Helper to avoid code duplication when reconstructing Lens1Metrics
+        from the flattened dict stored in state.
+
+        Args:
+            lens1_result: Lens 1 result dict with all required fields
+
+        Returns:
+            Lens1Metrics object
+        """
+        from customer_base_audit.analyses.lens1 import Lens1Metrics
+
+        return Lens1Metrics(
+            total_customers=lens1_result["total_customers"],
+            one_time_buyers=lens1_result["one_time_buyers"],
+            one_time_buyer_pct=lens1_result["one_time_buyer_pct"],
+            total_revenue=lens1_result["total_revenue"],
+            top_10pct_revenue_contribution=lens1_result[
+                "top_10pct_revenue_contribution"
+            ],
+            top_20pct_revenue_contribution=lens1_result[
+                "top_20pct_revenue_contribution"
+            ],
+            avg_orders_per_customer=lens1_result["avg_orders_per_customer"],
+            median_customer_value=lens1_result["median_customer_value"],
+            rfm_distribution=lens1_result["rfm_distribution"],
+        )
+
+    def _validate_png_size(self, img_bytes: bytes, chart_name: str) -> bool:
+        """Validate PNG size to prevent memory issues.
+
+        Args:
+            img_bytes: PNG image bytes
+            chart_name: Name of chart for logging
+
+        Returns:
+            True if size is acceptable, False if too large
+        """
+        if len(img_bytes) > PNG_SIZE_LIMIT_BYTES:
+            logger.warning(
+                "png_too_large",
+                chart=chart_name,
+                size_bytes=len(img_bytes),
+                limit_bytes=PNG_SIZE_LIMIT_BYTES,
+                message=f"PNG exceeds size limit ({len(img_bytes):,} > {PNG_SIZE_LIMIT_BYTES:,} bytes)",
+            )
+            return False
+        return True
+
     async def _format_results(self, state: AnalysisState) -> AnalysisState:
         """Format lens results with PNG visualizations, markdown tables, and executive summaries.
 
@@ -1485,6 +1544,18 @@ class FourLensesCoordinator:
         """
         import plotly.graph_objects as go
         from fastmcp.utilities.types import Image
+
+        # Check kaleido dependency for PNG rendering
+        try:
+            import kaleido  # noqa: F401
+        except ImportError:
+            error_msg = "PNG rendering requires 'kaleido' package. Install with: pip install kaleido"
+            logger.error("kaleido_not_installed", error=error_msg)
+            state["formatted_outputs"] = {}
+            # Add error to state so user understands why visualizations failed
+            if "error" not in state or not state["error"]:
+                state["error"] = error_msg
+            return state
 
         # Skip PNG generation if not requested (default to save tokens)
         if not state.get("include_visualizations", False):
@@ -1513,24 +1584,7 @@ class FourLensesCoordinator:
             # Markdown table
             try:
                 # Reconstruct Lens1Metrics from result dict
-                from customer_base_audit.analyses.lens1 import Lens1Metrics
-
-                # Extract only fields that Lens1Metrics expects (exclude extra fields)
-                lens1_metrics = Lens1Metrics(
-                    total_customers=lens1_result["total_customers"],
-                    one_time_buyers=lens1_result["one_time_buyers"],
-                    one_time_buyer_pct=lens1_result["one_time_buyer_pct"],
-                    total_revenue=lens1_result["total_revenue"],
-                    top_10pct_revenue_contribution=lens1_result[
-                        "top_10pct_revenue_contribution"
-                    ],
-                    top_20pct_revenue_contribution=lens1_result[
-                        "top_20pct_revenue_contribution"
-                    ],
-                    avg_orders_per_customer=lens1_result["avg_orders_per_customer"],
-                    median_customer_value=lens1_result["median_customer_value"],
-                    rfm_distribution=lens1_result["rfm_distribution"],
-                )
+                lens1_metrics = self._reconstruct_lens1_metrics(lens1_result)
 
                 table_md = format_lens1_table(lens1_metrics)
                 formatted_outputs["lens1_table"] = table_md
@@ -1540,8 +1594,11 @@ class FourLensesCoordinator:
 
             # Revenue concentration pie chart (PNG)
             try:
-                pie_json = create_revenue_concentration_pie(lens1_metrics)
-                fig = go.Figure(data=pie_json["data"], layout=pie_json["layout"])
+                pie_result = create_revenue_concentration_pie(lens1_metrics)
+                fig = go.Figure(
+                    data=pie_result["plotly_json"]["data"],
+                    layout=pie_result["plotly_json"]["layout"],
+                )
                 img_bytes = fig.to_image(format="png", width=800, height=600)
                 formatted_outputs["lens1_revenue_pie"] = Image(
                     data=img_bytes, format="png"
@@ -1565,11 +1622,16 @@ class FourLensesCoordinator:
             except Exception as e:
                 logger.warning("lens2_table_generation_failed", error=str(e))
 
-            # Sankey diagram (PNG) - Main branch formatter already generates PNG
+            # Sankey diagram (PNG)
             try:
                 sankey_result = create_sankey_diagram(lens2_metrics)
-                formatted_outputs["lens2_sankey"] = sankey_result
-                logger.debug("lens2_sankey_generated")
+                fig = go.Figure(
+                    data=sankey_result["plotly_json"]["data"],
+                    layout=sankey_result["plotly_json"]["layout"],
+                )
+                img_bytes = fig.to_image(format="png", width=1000, height=600)
+                formatted_outputs["lens2_sankey"] = Image(data=img_bytes, format="png")
+                logger.debug("lens2_sankey_generated", size_bytes=len(img_bytes))
             except Exception as e:
                 logger.warning("lens2_sankey_generation_failed", error=str(e))
 
@@ -1591,11 +1653,20 @@ class FourLensesCoordinator:
             lens3_metrics = state["lens3_metrics"]
             logger.info("formatting_lens3_outputs")
 
-            # Retention trend chart (PNG) - Main branch formatter already generates PNG
+            # Retention trend chart (PNG)
             try:
                 retention_chart_result = create_retention_trend_chart(lens3_metrics)
-                formatted_outputs["lens3_retention_trend"] = retention_chart_result
-                logger.debug("lens3_retention_trend_generated")
+                fig = go.Figure(
+                    data=retention_chart_result["plotly_json"]["data"],
+                    layout=retention_chart_result["plotly_json"]["layout"],
+                )
+                img_bytes = fig.to_image(format="png", width=1200, height=600)
+                formatted_outputs["lens3_retention_trend"] = Image(
+                    data=img_bytes, format="png"
+                )
+                logger.debug(
+                    "lens3_retention_trend_generated", size_bytes=len(img_bytes)
+                )
             except Exception as e:
                 logger.warning("lens3_retention_trend_generation_failed", error=str(e))
 
@@ -1616,11 +1687,16 @@ class FourLensesCoordinator:
             except Exception as e:
                 logger.warning("lens4_table_generation_failed", error=str(e))
 
-            # Cohort heatmap (PNG) - Main branch formatter already generates PNG
+            # Cohort heatmap (PNG)
             try:
                 heatmap_result = create_cohort_heatmap(lens4_result)
-                formatted_outputs["lens4_heatmap"] = heatmap_result
-                logger.debug("lens4_heatmap_generated")
+                fig = go.Figure(
+                    data=heatmap_result["plotly_json"]["data"],
+                    layout=heatmap_result["plotly_json"]["layout"],
+                )
+                img_bytes = fig.to_image(format="png", width=1200, height=800)
+                formatted_outputs["lens4_heatmap"] = Image(data=img_bytes, format="png")
+                logger.debug("lens4_heatmap_generated", size_bytes=len(img_bytes))
             except Exception as e:
                 logger.warning("lens4_heatmap_generation_failed", error=str(e))
 
@@ -1636,24 +1712,23 @@ class FourLensesCoordinator:
         # ======================
         # LENS 5: Customer Base Health
         # ======================
-        if "lens5" in lenses_executed and state.get("lens5_result"):
-            lens5_result = state["lens5_result"]
+        if "lens5" in lenses_executed and state.get("lens5_metrics"):
+            lens5_metrics = state["lens5_metrics"]
             logger.info("formatting_lens5_outputs")
 
-            # Reconstruct Lens5Metrics from result dict
+            # Use original Lens5Metrics object stored in state
             try:
-                from customer_base_audit.analyses.lens5 import Lens5Metrics
-
-                lens5_metrics = Lens5Metrics(**lens5_result.get("metrics", {}))
-
                 # Markdown table
                 table_md = format_lens5_health_summary_table(lens5_metrics)
                 formatted_outputs["lens5_table"] = table_md
                 logger.debug("lens5_table_generated", length=len(table_md))
 
                 # Health score gauge (PNG)
-                gauge_json = create_health_score_gauge(lens5_metrics)
-                fig = go.Figure(data=gauge_json["data"], layout=gauge_json["layout"])
+                gauge_result = create_health_score_gauge(lens5_metrics)
+                fig = go.Figure(
+                    data=gauge_result["plotly_json"]["data"],
+                    layout=gauge_result["plotly_json"]["layout"],
+                )
                 img_bytes = fig.to_image(format="png", width=600, height=400)
                 formatted_outputs["lens5_health_gauge"] = Image(
                     data=img_bytes, format="png"
@@ -1675,34 +1750,30 @@ class FourLensesCoordinator:
         if "lens1" in lenses_executed and "lens5" in lenses_executed:
             logger.info("generating_executive_dashboard")
             try:
-                from customer_base_audit.analyses.lens1 import Lens1Metrics
-                from customer_base_audit.analyses.lens5 import Lens5Metrics
-
                 lens1_result = state.get("lens1_result", {})
-                lens5_result = state.get("lens5_result", {})
+                lens5_metrics = state.get("lens5_metrics")
 
-                lens1_metrics = Lens1Metrics(
-                    total_customers=lens1_result["total_customers"],
-                    one_time_buyers=lens1_result["one_time_buyers"],
-                    one_time_buyer_pct=lens1_result["one_time_buyer_pct"],
-                    total_revenue=lens1_result["total_revenue"],
-                    top_10pct_revenue_contribution=lens1_result[
-                        "top_10pct_revenue_contribution"
-                    ],
-                    top_20pct_revenue_contribution=lens1_result[
-                        "top_20pct_revenue_contribution"
-                    ],
-                    avg_orders_per_customer=lens1_result["avg_orders_per_customer"],
-                    median_customer_value=lens1_result["median_customer_value"],
-                    rfm_distribution=lens1_result["rfm_distribution"],
-                )
-                lens5_metrics = Lens5Metrics(**lens5_result.get("metrics", {}))
+                # Reconstruct Lens1Metrics using helper method
+                lens1_metrics = self._reconstruct_lens1_metrics(lens1_result)
+
+                # Use stored Lens5Metrics object (not reconstructed from dict)
+                if not lens5_metrics:
+                    raise ValueError(
+                        "lens5_metrics not found in state for executive dashboard"
+                    )
 
                 dashboard_result = create_executive_dashboard(
                     lens1_metrics, lens5_metrics
                 )
-                formatted_outputs["executive_dashboard"] = dashboard_result
-                logger.debug("executive_dashboard_generated")
+                fig = go.Figure(
+                    data=dashboard_result["plotly_json"]["data"],
+                    layout=dashboard_result["plotly_json"]["layout"],
+                )
+                img_bytes = fig.to_image(format="png", width=1400, height=1000)
+                formatted_outputs["executive_dashboard"] = Image(
+                    data=img_bytes, format="png"
+                )
+                logger.debug("executive_dashboard_generated", size_bytes=len(img_bytes))
             except Exception as e:
                 logger.warning("executive_dashboard_generation_failed", error=str(e))
 

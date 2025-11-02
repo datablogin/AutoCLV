@@ -330,14 +330,15 @@ async def test_formatted_outputs_lens2():
         assert "lens2_sankey" in formatted_outputs
         sankey = formatted_outputs["lens2_sankey"]
 
-        # Verify dual format (PNG + JSON)
-        assert "plotly_json" in sankey
-        assert "image_base64" in sankey
-        assert sankey["format"] == "png"
-        assert isinstance(sankey["image_base64"], str)
-        assert len(sankey["image_base64"]) > 1000  # Non-trivial PNG
-        assert "data" in sankey["plotly_json"]
-        assert "layout" in sankey["plotly_json"]
+        # Verify it's a FastMCP Image object with PNG data
+        from fastmcp.utilities.types import Image
+
+        assert isinstance(sankey, Image), "lens2_sankey should be an Image object"
+        assert hasattr(sankey, "data"), "Image should have data attribute"
+        assert sankey.data.startswith(b"\x89PNG\r\n\x1a\n"), (
+            "Should have valid PNG header"
+        )
+        assert len(sankey.data) > 1000, "Non-trivial PNG"
 
     shared_state.clear()
 
@@ -375,17 +376,22 @@ async def test_formatted_outputs_lens3():
     # Check formatted_outputs
     formatted_outputs = result.get("formatted_outputs", {})
 
-    # If lens3 executed successfully, should have retention chart
+    # If lens3 executed successfully, should have retention trend chart
     if "lens3" in result.get("lenses_executed", []):
-        assert "lens3_retention_chart" in formatted_outputs
-        chart = formatted_outputs["lens3_retention_chart"]
+        assert "lens3_retention_trend" in formatted_outputs
+        chart = formatted_outputs["lens3_retention_trend"]
 
-        # Verify dual format (PNG + JSON)
-        assert "plotly_json" in chart
-        assert "image_base64" in chart
-        assert chart["format"] == "png"
-        assert isinstance(chart["image_base64"], str)
-        assert len(chart["image_base64"]) > 1000  # Non-trivial PNG
+        # Verify it's a FastMCP Image object with PNG data
+        from fastmcp.utilities.types import Image
+
+        assert isinstance(chart, Image), (
+            "lens3_retention_trend should be an Image object"
+        )
+        assert hasattr(chart, "data"), "Image should have data attribute"
+        assert chart.data.startswith(b"\x89PNG\r\n\x1a\n"), (
+            "Should have valid PNG header"
+        )
+        assert len(chart.data) > 1000, "Non-trivial PNG"
 
     shared_state.clear()
 
@@ -495,17 +501,22 @@ async def test_formatted_outputs_executive_dashboard():
     formatted_outputs = result.get("formatted_outputs", {})
     lenses_executed = result.get("lenses_executed", [])
 
-    # If 2+ lenses executed, should have executive dashboard
-    if len(lenses_executed) >= 2:
+    # If lens1 and lens5 both executed, should have executive dashboard
+    if "lens1" in lenses_executed and "lens5" in lenses_executed:
         assert "executive_dashboard" in formatted_outputs
         dashboard = formatted_outputs["executive_dashboard"]
 
-        # Verify dual format (PNG + JSON)
-        assert "plotly_json" in dashboard
-        assert "image_base64" in dashboard
-        assert dashboard["format"] == "png"
-        assert isinstance(dashboard["image_base64"], str)
-        assert len(dashboard["image_base64"]) > 1000  # Non-trivial PNG
+        # Verify it's a FastMCP Image object with PNG data
+        from fastmcp.utilities.types import Image
+
+        assert isinstance(dashboard, Image), (
+            "executive_dashboard should be an Image object"
+        )
+        assert hasattr(dashboard, "data"), "Image should have data attribute"
+        assert dashboard.data.startswith(b"\x89PNG\r\n\x1a\n"), (
+            "Should have valid PNG header"
+        )
+        assert len(dashboard.data) > 1000, "Non-trivial PNG"
 
     shared_state.clear()
 
@@ -598,7 +609,13 @@ async def test_include_visualizations_explicit_true():
     # Should have formatted_outputs with Sankey diagram
     formatted_outputs = result.get("formatted_outputs", {})
     assert formatted_outputs != {}
-    assert "lens2_sankey" in formatted_outputs
+
+    # Verify lens2_sankey is present and is a FastMCP Image object
+    if "lens2" in result.get("lenses_executed", []):
+        assert "lens2_sankey" in formatted_outputs
+        from fastmcp.utilities.types import Image
+
+        assert isinstance(formatted_outputs["lens2_sankey"], Image)
 
     shared_state.clear()
 
